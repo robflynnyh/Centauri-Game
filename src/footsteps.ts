@@ -70,9 +70,9 @@ export function createFootstepTrail(
 
     if (isBlockedAt(footX, footZ) || isNearWater(footX, footZ)) return;
 
-    const rotation = Math.atan2(direction.x, direction.z) + nextFootSide * 0.08 + (nextRandom() - 0.5) * 0.34;
-    const width = 0.17 + nextRandom() * 0.06;
-    const length = 0.48 + nextRandom() * 0.12;
+    const rotation = Math.atan2(direction.x, direction.z) + (nextRandom() - 0.5) * 0.14;
+    const width = 0.13 + nextRandom() * 0.05;
+    const length = 0.38 + nextRandom() * 0.12;
     const geometry = makeGroundColourGeometry(heightAt, footX, footZ, rotation, width, length);
     const material = new THREE.MeshBasicMaterial({
       color: nextFootSide < 0 ? 0x241151 : 0x321869,
@@ -155,22 +155,21 @@ function makeGroundColourGeometry(
   length: number
 ): THREE.BufferGeometry {
   const crossSections = [
-    { t: -1, width: 0.34, skew: -0.04 },
-    { t: -0.55, width: 0.86, skew: 0.03 },
-    { t: -0.05, width: 1, skew: -0.02 },
-    { t: 0.5, width: 0.62, skew: 0.04 },
-    { t: 1, width: 0.18, skew: -0.01 },
+    { t: -1, width: 0.42 },
+    { t: -0.46, width: 1 },
+    { t: 0.24, width: 0.78 },
+    { t: 1, width: 0.32 },
   ];
   const positions: number[] = [];
   const indices: number[] = [];
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
 
-  crossSections.forEach(({ t, width: sectionWidth, skew }, index) => {
-    const centreWobble = Math.sin(index * 1.73 + centerX * 0.13 + centerZ * 0.09) * 0.035;
+  crossSections.forEach(({ t, width: sectionWidth }, index) => {
+    const centreWobble = Math.sin(index * 1.73 + centerX * 0.13 + centerZ * 0.09) * 0.025;
     [-1, 1].forEach((side) => {
-      const edgeWobble = Math.sin(index * 2.41 + side * 0.7 + centerZ * 0.12) * 0.025;
-      const localX = (side * width * sectionWidth + skew + edgeWobble) * (0.96 + Math.abs(t) * 0.06);
+      const edgeWobble = Math.sin(index * 2.41 + side * 0.7 + centerZ * 0.12) * 0.012;
+      const localX = side * width * sectionWidth + edgeWobble;
       const localZ = t * length + centreWobble;
       const worldX = centerX + cos * localX - sin * localZ;
       const worldZ = centerZ + sin * localX + cos * localZ;
