@@ -25,8 +25,8 @@ const scareSettings = {
   normalHopSpeedMultiplier: 1,
   scaredHopHeight: 1.24,
   scaredHopSpeedMultiplier: 2,
-  scaredHopDistance: 1.38,
-  maxFleeDistanceFromWater: 3.4,
+  scaredHopDistance: 3.1,
+  maxFleeDistanceFromWater: 7.5,
 };
 
 const creatureSpecs = [
@@ -100,7 +100,7 @@ export function createAlienWaterCreatures(
           const scaredHopActive = scaredCycle < 0.42;
           const scaredHopT = scaredHopActive ? THREE.MathUtils.smoothstep(scaredCycle / 0.42, 0, 1) : 1;
           const scaredLocal = new THREE.Vector3().lerpVectors(creature.hopStartLocal, creature.hopTargetLocal, scaredHopT);
-          creature.currentLocal.lerp(scaredLocal, creature.scareBlend);
+          creature.currentLocal.copy(scaredLocal);
         } else {
           creature.currentLocal.lerp(idle.local, 1 - Math.exp(-delta * 1.65));
           creature.lastScaredHopIndex = -1;

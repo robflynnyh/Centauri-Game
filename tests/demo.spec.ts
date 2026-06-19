@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
+import { copyFile, mkdir } from "node:fs/promises";
 
 test("records a deterministic Centauri flythrough", async ({ page }, testInfo) => {
   await page.goto("/?demo=pr");
@@ -11,9 +11,9 @@ test("records a deterministic Centauri flythrough", async ({ page }, testInfo) =
   if (video) {
     const outputPath = "docs/demo/pr-demo.webm";
     await mkdir("docs/demo", { recursive: true });
-    const saveVideo = video.saveAs(outputPath);
+    const videoPath = video.path();
     await page.close();
-    await saveVideo;
+    await copyFile(await videoPath, outputPath);
     await testInfo.attach("pr-demo", { path: outputPath, contentType: "video/webm" });
   } else {
     await page.close();
