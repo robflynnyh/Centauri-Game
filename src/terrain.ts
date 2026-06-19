@@ -275,31 +275,16 @@ function makeTerrainMaterial(): THREE.ShaderMaterial {
         return fract((p3.x + p3.y) * p3.z);
       }
 
-      float blobMask(vec2 p, float gridSize, float seed) {
-        vec2 baseCell = floor(p / gridSize);
-        float best = -1.0;
-
-        for (int y = -1; y <= 1; y += 1) {
-          for (int x = -1; x <= 1; x += 1) {
-            vec2 id = baseCell + vec2(float(x), float(y));
-            float jitterX = hashCell(id + vec2(seed, seed * 2.1));
-            float jitterY = hashCell(id + vec2(seed * 3.7, -seed));
-            vec2 center = (id + vec2(0.28 + jitterX * 0.44, 0.28 + jitterY * 0.44)) * gridSize;
-            vec2 delta = p - center;
-            float angle = atan(delta.y, delta.x);
-            float stretch = mix(0.76, 1.24, hashCell(id + vec2(seed * 0.31, seed * 0.73)));
-            vec2 shapedDelta = vec2(delta.x / stretch, delta.y * stretch);
-            float radius =
-              gridSize * (0.3 + hashCell(id + vec2(seed * 1.9, seed * 0.4)) * 0.16) *
-              (1.0 +
-                sin(angle * 3.0 + seed + hashCell(id) * 6.283) * 0.2 +
-                sin(angle * 7.0 + seed * 0.6) * 0.1);
-            float score = radius - length(shapedDelta);
-            best = max(best, score);
-          }
-        }
-
-        return best;
+      float steppedContour(vec2 p, float seed) {
+        vec2 warped = p + vec2(
+          sin(p.y * 0.042 + seed) * 11.0 + sin((p.x + p.y) * 0.028 + seed * 0.7) * 7.0,
+          cos(p.x * 0.039 - seed) * 10.0 + sin((p.x - p.y) * 0.033 + seed * 1.3) * 6.0
+        );
+        return (
+          sin(warped.x * 0.08 + sin(warped.y * 0.037 + seed) * 2.2) +
+          cos(warped.y * 0.073 + cos(warped.x * 0.041 - seed) * 2.0) +
+          sin((warped.x - warped.y) * 0.052 + seed)
+        ) / 3.0;
       }
 
       vec3 palette(float band) {
@@ -316,21 +301,26 @@ function makeTerrainMaterial(): THREE.ShaderMaterial {
         vec2 cell = floor(vTerrainCoord / pixelSize);
         vec2 p = cell * pixelSize;
         float altitude = clamp((vTerrainHeight + 2.0) / 14.0, 0.0, 1.0);
-        vec2 warpedP = p + vec2(
-          sin(p.y * 0.045) * 10.0 + sin((p.x + p.y) * 0.031) * 6.0,
-          cos(p.x * 0.038) * 9.0 + sin((p.x - p.y) * 0.036) * 5.0
-        );
-        float yellowPatch = blobMask(warpedP + vec2(7.0, -11.0), 52.0, 1.0);
-        float pinkPatch = blobMask(warpedP + vec2(-19.0, 13.0), 58.0, 5.0);
-        float violetPatch = blobMask(warpedP + vec2(23.0, 29.0), 64.0, 9.0);
-        float bluePatch = blobMask(warpedP + vec2(-31.0, -17.0), 46.0, 13.0);
+        float lowBoundary = 0.32 + steppedContour(p, 1.0) * 0.11;
+        float highBoundary = 0.63 + steppedContour(p + vec2(31.0, -17.0), 5.0) * 0.1;
+        float detail = hashCell(cell * 1.9 + vec2(7.0, 13.0));
+        float familyDetail = steppedContour(p + vec2(-23.0, 19.0), 9.0);
 
-        float band = altitude > 0.72 ? 0.0 : 2.0;
-        if (bluePatch > 0.0) band = 1.0;
-        if (yellowPatch > 0.0 && yellowPatch > bluePatch * 0.85) band = 3.0;
-        if (pinkPatch > 0.0 && pinkPatch > yellowPatch * 0.8) band = 4.0;
-        if (violetPatch > 0.0 && violetPatch > pinkPatch * 0.72) band = 0.0;
-        gl_FragColor = vec4(palette(band), 1.0);
+        vec3 colour = vec3(0.7137, 0.7882, 0.3569);
+        if (altitude < lowBoundary) {
+          colour = detail + familyDetail * 0.16 < 0.22
+            ? vec3(0.38, 0.66, 0.80)
+            : vec3(0.3216, 0.7216, 0.7333);
+        } else if (altitude > highBoundary) {
+          colour = detail + familyDetail * 0.18 < 0.3
+            ? vec3(0.76, 0.44, 0.74)
+            : vec3(0.6078, 0.3882, 0.7686);
+        } else {
+          colour = detail + familyDetail * 0.12 < 0.18
+            ? vec3(0.76, 0.74, 0.38)
+            : vec3(0.7137, 0.7882, 0.3569);
+        }
+        gl_FragColor = vec4(colour, 1.0);
       }
     `,
   });
