@@ -2,6 +2,10 @@ name: PR demo video
 
 on:
   pull_request:
+    paths-ignore:
+      - docs/demo/pr-preview.png
+      - docs/demo/pr-demo.webm
+      - docs/demo/pr-preview.svg
 
 permissions:
   contents: write
@@ -22,16 +26,26 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run demo:screenshot
       - run: npm run demo:video
-      - name: Commit PR preview screenshot
+      - name: Stage PR demo assets
+        if: always()
+        run: |
+          mkdir -p docs/demo
+          WEBM_PATH=$(find test-results -name '*.webm' | head -n 1 || true)
+          if [ -n "$WEBM_PATH" ]; then
+            cp "$WEBM_PATH" docs/demo/pr-demo.webm
+          else
+            echo "No WebM found under test-results."
+          fi
+      - name: Commit PR demo assets
         if: always() && github.event.pull_request.head.repo.full_name == github.repository
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/demo/pr-preview.png
+          git add docs/demo/pr-preview.png docs/demo/pr-demo.webm
           if git diff --cached --quiet; then
-            echo "No screenshot changes to commit."
+            echo "No demo asset changes to commit."
           else
-            git commit -m "Update PR preview screenshot"
+            git commit -m "Update PR demo assets"
             git push origin HEAD:${{ github.event.pull_request.head.ref }}
           fi
       - uses: actions/upload-artifact@v4
@@ -40,6 +54,7 @@ jobs:
           name: pr-demo-video
           path: |
             docs/demo/pr-preview.png
+            docs/demo/pr-demo.webm
             test-results/**/*.webm
             playwright-report/**
           if-no-files-found: warn
@@ -51,16 +66,17 @@ jobs:
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          SCREENSHOT_SHA=$(git rev-parse HEAD)
-          SCREENSHOT_URL="https://raw.githubusercontent.com/${REPOSITORY}/${SCREENSHOT_SHA}/docs/demo/pr-preview.png"
+          ASSET_SHA=$(git rev-parse HEAD)
+          SCREENSHOT_URL="https://raw.githubusercontent.com/${REPOSITORY}/${ASSET_SHA}/docs/demo/pr-preview.png"
+          WEBM_URL="https://raw.githubusercontent.com/${REPOSITORY}/${ASSET_SHA}/docs/demo/pr-demo.webm"
           BODY_FILE=$(mktemp)
           UPDATED_BODY_FILE=$(mktemp)
           gh pr view "$PR_NUMBER" --json body --jq .body > "$BODY_FILE"
-          python3 - "$BODY_FILE" "$UPDATED_BODY_FILE" "$SCREENSHOT_URL" "$RUN_URL" <<'PY'
+          python3 - "$BODY_FILE" "$UPDATED_BODY_FILE" "$SCREENSHOT_URL" "$WEBM_URL" "$RUN_URL" <<'PY'
           import sys
           from pathlib import Path
 
-          body_path, updated_body_path, screenshot_url, run_url = sys.argv[1:]
+          body_path, updated_body_path, screenshot_url, webm_url, run_url = sys.argv[1:]
           body = Path(body_path).read_text()
           start = "<!-- centauri-demo-preview:start -->"
           end = "<!-- centauri-demo-preview:end -->"
@@ -69,7 +85,9 @@ jobs:
 
 ![PR visual preview]({screenshot_url})
 
-🎥 Demo video: download the `pr-demo-video` artifact from [this workflow run]({run_url}).
+🎥 [Open/download PR demo WebM]({webm_url})
+
+Fallback: download the `pr-demo-video` artifact from [this workflow run]({run_url}).
 {end}"""
           if start in body and end in body:
             before = body.split(start, 1)[0].rstrip()
@@ -82,5 +100,5 @@ jobs:
           gh pr edit "$PR_NUMBER" --body-file "$UPDATED_BODY_FILE"
           gh pr comment "$PR_NUMBER" --body "🎥 PR demo assets updated.
 
-The PR body now includes a still screenshot. The full video remains in the **pr-demo-video** artifact here:
+The PR body now includes a still screenshot and a direct WebM link. The zipped artifact is still available here:
 $RUN_URL"
