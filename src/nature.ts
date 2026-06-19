@@ -4,18 +4,31 @@ import type { CollisionObstacle } from "./collision";
 type HeightSampler = (x: number, z: number) => number;
 type AddCollisionObstacle = (obstacle: CollisionObstacle) => void;
 
+type ReactiveStalk = {
+  x: number;
+  z: number;
+  cap: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
+  glow: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
+  reaction: number;
+};
+
+const capRestColour = new THREE.Color(0xff5c9e);
+const capNearColour = new THREE.Color(0xfff06a);
+const glowNearColour = new THREE.Color(0xffffb8);
+const floraReactionRadius = 12;
+const floraReactionFullRadius = 5.5;
+
 export function populateNature(
   scene: THREE.Scene,
   heightAt: HeightSampler,
   addCollisionObstacle: AddCollisionObstacle
-): { floraGroup: THREE.Group; natureGroup: THREE.Group } {
+): { floraGroup: THREE.Group; natureGroup: THREE.Group; updateFloraReactivity: (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void } {
   const floraGroup = new THREE.Group();
   scene.add(floraGroup);
 
   const natureGroup = new THREE.Group();
   scene.add(natureGroup);
 
-  const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff5c9e });
   const stalkMaterial = new THREE.MeshBasicMaterial({ color: 0x55c7ba });
   const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x3f2b92 });
   const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x8dff86 });
@@ -29,6 +42,7 @@ export function populateNature(
     side: THREE.DoubleSide,
   });
   const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x6b55d8 });
+  const reactiveStalks: ReactiveStalk[] = [];
 
   const addFlora = (seed: number): void => {
     const angle = seed * 2.399963;
@@ -42,10 +56,28 @@ export function populateNature(
     stalk.rotation.z = Math.sin(seed) * 0.18;
     floraGroup.add(stalk);
 
-    const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.5 + (seed % 4) * 0.12, 0), markerMaterial);
+    const capGeometry = new THREE.OctahedronGeometry(0.5 + (seed % 4) * 0.12, 0);
+    const capMaterial = new THREE.MeshBasicMaterial({ color: capRestColour });
+    const cap = new THREE.Mesh(capGeometry, capMaterial);
     cap.position.set(x, y + 2.8 + (seed % 3) * 0.18, z);
     cap.rotation.set(seed * 0.12, seed * 0.2, seed * 0.07);
     floraGroup.add(cap);
+
+    const glow = new THREE.Mesh(
+      capGeometry.clone(),
+      new THREE.MeshBasicMaterial({
+        color: glowNearColour,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      })
+    );
+    glow.position.copy(cap.position);
+    glow.rotation.copy(cap.rotation);
+    glow.scale.setScalar(1.22);
+    floraGroup.add(glow);
+    reactiveStalks.push({ x, z, cap, glow, reaction: 0 });
   };
 
   const addAlienTree = (x: number, z: number, scale: number, lean: number): void => {
@@ -140,7 +172,30 @@ export function populateNature(
   addStream(natureGroup, heightAt, waterMaterial);
   addRocks(scene, heightAt, stoneMaterial, addCollisionObstacle);
 
-  return { floraGroup, natureGroup };
+  return { floraGroup, natureGroup, updateFloraReactivity: createFloraReactivityUpdater(reactiveStalks) };
+}
+
+function createFloraReactivityUpdater(
+  reactiveStalks: ReactiveStalk[]
+): (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void {
+  return (playerPosition, delta, elapsed) => {
+    const fade = 1 - Math.exp(-delta * 9);
+
+    reactiveStalks.forEach((stalk, index) => {
+      const distance = Math.hypot(playerPosition.x - stalk.x, playerPosition.z - stalk.z);
+      const target = 1 - THREE.MathUtils.smoothstep(distance, floraReactionFullRadius, floraReactionRadius);
+      stalk.reaction = THREE.MathUtils.lerp(stalk.reaction, target, fade);
+
+      const pulse = 0.82 + Math.sin(elapsed * 4.2 + index * 0.73) * 0.18;
+      const glowStrength = stalk.reaction * pulse;
+      stalk.glow.position.copy(stalk.cap.position);
+      stalk.glow.rotation.copy(stalk.cap.rotation);
+      stalk.cap.material.color.lerpColors(capRestColour, capNearColour, stalk.reaction);
+      stalk.cap.scale.setScalar(1 + stalk.reaction * 0.2);
+      stalk.glow.material.opacity = glowStrength * 0.48;
+      stalk.glow.scale.setScalar(1.18 + glowStrength * 0.42);
+    });
+  };
 }
 
 const treePlacements = [

@@ -85,7 +85,7 @@ const sky = createSkySystem(scene, camera, isDemo);
 scene.add(makeTerrain());
 scene.add(makeHorizonLandforms());
 
-const { floraGroup } = populateNature(scene, heightAt, collisionWorld.addObstacle);
+const { floraGroup, updateFloraReactivity } = populateNature(scene, heightAt, collisionWorld.addObstacle);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   footsteps.walk(position, delta);
@@ -266,6 +266,7 @@ function animate(): void {
     child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;
     child.rotation.y += delta * 0.18;
   });
+  updateFloraReactivity(camera.position, delta, elapsed);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
