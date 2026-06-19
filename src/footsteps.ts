@@ -15,9 +15,9 @@ const markLifetime = 5.6;
 const maxMarks = 36;
 const footSideOffset = 0.34;
 const footBackOffset = 0.48;
-const terrainLift = 0.028;
+const terrainLift = 0.055;
 const minGroundSpeed = 0.2;
-const markOpacity = 0.5;
+const markOpacity = 0.46;
 
 const pools = [
   { x: 5.5, z: 7.5, radius: 4.8 },
@@ -70,18 +70,16 @@ export function createFootstepTrail(
 
     if (isBlockedAt(footX, footZ) || isNearWater(footX, footZ)) return;
 
-    const rotation = Math.atan2(direction.x, direction.z) + (nextRandom() - 0.5) * 0.14;
-    const width = 0.13 + nextRandom() * 0.05;
-    const length = 0.38 + nextRandom() * 0.12;
-    const geometry = makeGroundColourGeometry(heightAt, footX, footZ, rotation, width, length);
+    const radius = 0.22 + nextRandom() * 0.06;
+    const geometry = makeGroundColourGeometry(heightAt, footX, footZ, radius);
     const material = new THREE.MeshBasicMaterial({
       color: nextFootSide < 0 ? 0x241151 : 0x321869,
       transparent: true,
       opacity: markOpacity,
       depthWrite: false,
       polygonOffset: true,
-      polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1,
+      polygonOffsetFactor: -4,
+      polygonOffsetUnits: -4,
       side: THREE.DoubleSide,
     });
     const mark = new THREE.Mesh(geometry, material);
@@ -150,36 +148,31 @@ function makeGroundColourGeometry(
   heightAt: HeightSampler,
   centerX: number,
   centerZ: number,
-  rotation: number,
-  width: number,
-  length: number
+  radius: number
 ): THREE.BufferGeometry {
-  const crossSections = [
-    { t: -1, width: 0.42 },
-    { t: -0.46, width: 1 },
-    { t: 0.24, width: 0.78 },
-    { t: 1, width: 0.32 },
-  ];
-  const positions: number[] = [];
+  const segments = 14;
+  const ringScales = [0, 0.52, 1];
+  const positions: number[] = [centerX, heightAt(centerX, centerZ) + terrainLift, centerZ];
   const indices: number[] = [];
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
 
-  crossSections.forEach(({ t, width: sectionWidth }, index) => {
-    const centreWobble = Math.sin(index * 1.73 + centerX * 0.13 + centerZ * 0.09) * 0.025;
-    [-1, 1].forEach((side) => {
-      const edgeWobble = Math.sin(index * 2.41 + side * 0.7 + centerZ * 0.12) * 0.012;
-      const localX = side * width * sectionWidth + edgeWobble;
-      const localZ = t * length + centreWobble;
-      const worldX = centerX + cos * localX - sin * localZ;
-      const worldZ = centerZ + sin * localX + cos * localZ;
+  ringScales.slice(1).forEach((ringScale, ringIndex) => {
+    for (let i = 0; i < segments; i += 1) {
+      const angle = (i / segments) * Math.PI * 2;
+      const wobble = 0.94 + Math.sin(i * 1.93 + ringIndex * 0.71 + centerX * 0.08 + centerZ * 0.1) * 0.045;
+      const ringRadius = radius * ringScale * wobble;
+      const worldX = centerX + Math.cos(angle) * ringRadius;
+      const worldZ = centerZ + Math.sin(angle) * ringRadius;
       positions.push(worldX, heightAt(worldX, worldZ) + terrainLift, worldZ);
-    });
+    }
   });
 
-  for (let i = 0; i < crossSections.length - 1; i += 1) {
-    const left = i * 2;
-    indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
+  for (let i = 0; i < segments; i += 1) {
+    const next = (i + 1) % segments;
+    const inner = 1 + i;
+    const nextInner = 1 + next;
+    const outer = 1 + segments + i;
+    const nextOuter = 1 + segments + next;
+    indices.push(0, inner, nextInner, inner, outer, nextInner, nextInner, outer, nextOuter);
   }
 
   const geometry = new THREE.BufferGeometry();
