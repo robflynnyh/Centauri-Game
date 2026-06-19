@@ -30,7 +30,7 @@ hooks:
       git checkout -B symphony-source FETCH_HEAD
     fi
 agent:
-  max_concurrent_agents: 1
+  max_concurrent_agents: 2
   max_turns: 30
 codex:
   command: /home/acp21rjf/.npm-global/bin/codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=medium app-server
