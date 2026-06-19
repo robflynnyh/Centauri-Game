@@ -71,3 +71,5 @@ Expanded the generated pockets into larger start-area-like biome patches dotted 
 Added a trippy color-shifting planet fog and capped generated nature complexity by distance, keeping dense biome patches near the player while reducing far-off trees, reactive stalks, pools, streams, and colliders.
 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
+
+Fixed shortcut-driven tab return input cleanup so stale held modifier keys do not leave the player crouched and unable to jump after returning to pointer-lock play.
