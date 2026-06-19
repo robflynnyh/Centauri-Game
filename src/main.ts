@@ -269,32 +269,53 @@ for (let i = 1; i <= 120; i += 1) {
   addGroundSprout(i);
 }
 
-function addPool(x: number, z: number, radius: number, colourShift: number): void {
-  const y = heightAt(x, z) + 0.16;
-  const pool = new THREE.Group();
-  pool.position.set(x, y, z);
-  pool.rotation.y = colourShift;
+function makePoolGeometry(x: number, z: number, radius: number, rotation: number, scaleX: number, scaleZ: number): THREE.BufferGeometry {
+  const segments = 22;
+  const positions: number[] = [x, heightAt(x, z) + 0.045, z];
+  const indices: number[] = [];
 
-  const water = new THREE.Mesh(new THREE.CircleGeometry(radius, 18), waterMaterial.clone());
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    const localX = Math.cos(angle) * radius * scaleX;
+    const localZ = Math.sin(angle) * radius * scaleZ;
+    const worldX = x + Math.cos(rotation) * localX - Math.sin(rotation) * localZ;
+    const worldZ = z + Math.sin(rotation) * localX + Math.cos(rotation) * localZ;
+    positions.push(worldX, heightAt(worldX, worldZ) + 0.045, worldZ);
+  }
+
+  for (let i = 1; i <= segments; i += 1) {
+    indices.push(0, i, i + 1);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addPool(x: number, z: number, radius: number, colourShift: number): void {
+  const pool = new THREE.Group();
+
+  const water = new THREE.Mesh(makePoolGeometry(x, z, radius, colourShift, 1.45, 0.78), waterMaterial.clone());
   const waterMat = water.material as THREE.MeshStandardMaterial;
   waterMat.color.offsetHSL(colourShift * 0.02, 0, 0);
-  water.rotation.x = -Math.PI / 2;
-  water.scale.set(1.45, 0.78, 1);
   pool.add(water);
 
   const innerGlow = new THREE.Mesh(
-    new THREE.CircleGeometry(radius * 0.56, 14),
+    makePoolGeometry(x, z, radius * 0.56, colourShift, 1.3, 0.68),
     new THREE.MeshBasicMaterial({ color: 0xbaffff, transparent: true, opacity: 0.24, side: THREE.DoubleSide })
   );
-  innerGlow.rotation.x = -Math.PI / 2;
-  innerGlow.position.y = 0.03;
-  innerGlow.scale.set(1.3, 0.68, 1);
   pool.add(innerGlow);
 
   for (let i = 0; i < 14; i += 1) {
     const angle = (i / 14) * Math.PI * 2;
+    const localX = Math.cos(angle) * radius * 1.28;
+    const localZ = Math.sin(angle) * radius * 0.72;
+    const worldX = x + Math.cos(colourShift) * localX - Math.sin(colourShift) * localZ;
+    const worldZ = z + Math.sin(colourShift) * localX + Math.cos(colourShift) * localZ;
     const rim = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2 + (i % 4) * 0.06, 0), stoneMaterial);
-    rim.position.set(Math.cos(angle) * radius * 1.28, 0.1, Math.sin(angle) * radius * 0.72);
+    rim.position.set(worldX, heightAt(worldX, worldZ) + 0.16, worldZ);
     rim.rotation.set(i * 0.2, i * 0.3, i * 0.17);
     pool.add(rim);
   }
@@ -307,13 +328,46 @@ addPool(-18, -3, 2.5, 0.45);
 addPool(21, -15, 2.2, 0.8);
 
 const streamPoints = [
-  new THREE.Vector3(-12, heightAt(-12, 7) + 0.22, 7),
-  new THREE.Vector3(-6, heightAt(-6, 8) + 0.24, 8),
-  new THREE.Vector3(0, heightAt(0, 6) + 0.25, 6),
-  new THREE.Vector3(5.5, heightAt(5.5, 7.5) + 0.25, 7.5),
-  new THREE.Vector3(11, heightAt(11, 4) + 0.22, 4),
+  new THREE.Vector3(-12, 0, 7),
+  new THREE.Vector3(-6, 0, 8),
+  new THREE.Vector3(0, 0, 6),
+  new THREE.Vector3(5.5, 0, 7.5),
+  new THREE.Vector3(11, 0, 4),
 ];
-const stream = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(streamPoints), 80, 0.18, 6, false), waterMaterial);
+
+function makeStreamGeometry(points: THREE.Vector3[]): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(points);
+  const samples = 72;
+  const halfWidth = 0.34;
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= samples; i += 1) {
+    const t = i / samples;
+    const point = curve.getPoint(t);
+    const tangent = curve.getTangent(t);
+    const side = new THREE.Vector3(-tangent.z, 0, tangent.x).normalize().multiplyScalar(halfWidth);
+    const leftX = point.x + side.x;
+    const leftZ = point.z + side.z;
+    const rightX = point.x - side.x;
+    const rightZ = point.z - side.z;
+    positions.push(leftX, heightAt(leftX, leftZ) + 0.055, leftZ);
+    positions.push(rightX, heightAt(rightX, rightZ) + 0.055, rightZ);
+  }
+
+  for (let i = 0; i < samples; i += 1) {
+    const a = i * 2;
+    indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+const stream = new THREE.Mesh(makeStreamGeometry(streamPoints), waterMaterial);
 stream.renderOrder = 1;
 natureGroup.add(stream);
 

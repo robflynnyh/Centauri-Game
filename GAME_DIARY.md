@@ -13,3 +13,5 @@ Added alien nature density: readable low-poly trees, small glowing ground sprout
 Tightened the alien tree silhouettes so the trunks, collars, and canopies overlap as one readable form instead of looking like disconnected stacked pieces.
 
 Reworked the alien trees again with centered, overlapping crowns around a trunk that visibly rises into the canopy to avoid a disjointed stacked read.
+
+Changed pools and the stream into terrain-following water meshes so the demo water sits against the ground instead of floating over uneven terrain.
