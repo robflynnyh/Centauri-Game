@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { pointOnPlanet, surfaceDistanceBetweenLocal } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type IsBlockedAt = (x: number, z: number) => boolean;
@@ -100,8 +101,8 @@ export function createFootstepTrail(
       }
 
       const movement = new THREE.Vector3(position.x - previousPosition.x, 0, position.z - previousPosition.z);
-      const distance = movement.length();
-      const direction = distance > 0 ? movement.clone().multiplyScalar(1 / distance) : movement;
+      const distance = surfaceDistanceBetweenLocal(previousPosition, position);
+      const direction = movement.lengthSq() > 0 ? movement.clone().normalize() : movement;
 
       if (distance / Math.max(delta, 0.001) > minGroundSpeed) {
         travelRemainder.value += distance;
@@ -152,7 +153,8 @@ function makeGroundColourGeometry(
 ): THREE.BufferGeometry {
   const segments = 14;
   const ringScales = [0, 0.52, 1];
-  const positions: number[] = [centerX, heightAt(centerX, centerZ) + terrainLift, centerZ];
+  const center = pointOnPlanet(centerX, centerZ, heightAt(centerX, centerZ) + terrainLift);
+  const positions: number[] = [center.x, center.y, center.z];
   const indices: number[] = [];
 
   ringScales.slice(1).forEach((ringScale, ringIndex) => {
@@ -162,7 +164,8 @@ function makeGroundColourGeometry(
       const ringRadius = radius * ringScale * wobble;
       const worldX = centerX + Math.cos(angle) * ringRadius;
       const worldZ = centerZ + Math.sin(angle) * ringRadius;
-      positions.push(worldX, heightAt(worldX, worldZ) + terrainLift, worldZ);
+      const point = pointOnPlanet(worldX, worldZ, heightAt(worldX, worldZ) + terrainLift);
+      positions.push(point.x, point.y, point.z);
     }
   });
 

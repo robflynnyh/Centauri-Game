@@ -7,9 +7,12 @@ export function createSkySystem(
 ): { update: (elapsed: number) => void } {
   const dayBackgroundColour = new THREE.Color(0x5d91ff);
   const nightBackgroundColour = new THREE.Color(0x171044);
-  const dayFogColour = new THREE.Color(0x76a6df);
+  const dayFogColour = new THREE.Color(0x74e7ff);
+  const dayFogAccentColour = new THREE.Color(0xff9ad6);
   const nightFogColour = new THREE.Color(0x251652);
-  const worldFog = new THREE.FogExp2(dayFogColour.getHex(), 0.014);
+  const nightFogAccentColour = new THREE.Color(0x6d4ee8);
+  const activeFogColour = dayFogColour.clone();
+  const worldFog = new THREE.FogExp2(activeFogColour.getHex(), 0.02);
   scene.background = dayBackgroundColour.clone();
   scene.fog = worldFog;
 
@@ -24,6 +27,10 @@ export function createSkySystem(
   moon.position.set(30, 15, -20);
   scene.add(moon);
 
+  const skyAnchor = new THREE.Group();
+  skyAnchor.name = "camera-anchored-sky";
+  scene.add(skyAnchor);
+
   const skyUniforms = {
     dayAmount: { value: 1 },
     dayHorizonColour: { value: new THREE.Color(0xff9fd0) },
@@ -36,7 +43,7 @@ export function createSkySystem(
     nightZenithColour: { value: new THREE.Color(0x120d35) },
   };
 
-  scene.add(makeSkyDome(skyUniforms));
+  skyAnchor.add(makeSkyDome(skyUniforms));
 
   const skyRing = new THREE.Mesh(
     new THREE.TorusGeometry(42, 0.06, 8, 160),
@@ -44,23 +51,27 @@ export function createSkySystem(
   );
   skyRing.position.set(0, 30, -20);
   skyRing.rotation.x = Math.PI / 2.7;
-  scene.add(skyRing);
+  skyAnchor.add(skyRing);
 
   const celestialGroup = new THREE.Group();
-  scene.add(celestialGroup);
+  skyAnchor.add(celestialGroup);
   celestialBodies.forEach((body, index) => addCelestialBody(celestialGroup, camera, body, index));
   const meteorField = createMeteorField(camera, isDemo);
-  scene.add(meteorField.group);
+  skyAnchor.add(meteorField.group);
 
   return {
     update: (elapsed) => {
+      skyAnchor.position.copy(camera.position);
       const dayAmount = getDayAmount(elapsed, isDemo);
       const nightAmount = 1 - THREE.MathUtils.smoothstep(dayAmount, 0.08, 0.36);
       skyUniforms.dayAmount.value = dayAmount;
 
       (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
-      worldFog.color.copy(nightFogColour).lerp(dayFogColour, dayAmount);
-      worldFog.density = THREE.MathUtils.lerp(0.021, 0.014, dayAmount);
+      const fogPulse = Math.sin(elapsed * 0.16) * 0.5 + 0.5;
+      const dayFog = dayFogColour.clone().lerp(dayFogAccentColour, fogPulse * 0.32);
+      const nightFog = nightFogColour.clone().lerp(nightFogAccentColour, fogPulse * 0.42);
+      worldFog.color.copy(nightFog).lerp(dayFog, dayAmount);
+      worldFog.density = THREE.MathUtils.lerp(0.031, 0.022, dayAmount) + fogPulse * 0.0025;
 
       hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
       sun.intensity = THREE.MathUtils.lerp(0.04, 0.22, dayAmount);
@@ -77,7 +88,7 @@ export function createSkySystem(
 }
 
 function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color }>): THREE.Mesh {
-  const geometry = new THREE.SphereGeometry(180, 24, 14);
+  const geometry = new THREE.SphereGeometry(3600, 24, 14);
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -87,7 +98,7 @@ function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color }
 
       void main() {
         vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-        vWorldPosition = worldPosition.xyz;
+        vWorldPosition = position;
         gl_Position = projectionMatrix * viewMatrix * worldPosition;
       }
     `,
@@ -288,8 +299,9 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
 }
 
 function alignMeteorToTravel(meteor: THREE.Group, path: MeteorPath, camera: THREE.Camera): void {
-  const current = meteor.position.clone().project(camera);
-  const ahead = meteor.position.clone().add(path.end.clone().sub(path.start).setLength(6)).project(camera);
+  const currentWorld = meteor.getWorldPosition(new THREE.Vector3());
+  const current = currentWorld.clone().project(camera);
+  const ahead = currentWorld.clone().add(path.end.clone().sub(path.start).setLength(6)).project(camera);
   const screenTravel = ahead.sub(current);
   if (screenTravel.lengthSq() < 0.000001) return;
   meteor.rotateZ(Math.atan2(screenTravel.y, screenTravel.x));

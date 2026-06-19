@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { placeObjectOnPlanet } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 
@@ -29,12 +30,11 @@ export function createAlienWaterCreatures(
   scene.add(creatureGroup);
 
   const creatures = creatureSpecs.map((spec, index) => {
-    const anchor = new THREE.Vector3(spec.x, heightAt(spec.x, spec.z), spec.z);
+    const anchor = new THREE.Vector3(spec.x, 0, spec.z);
     const route = makePatrolRoute(spec.angle, spec.hopDistance, index);
     const root = makeCreature(index);
     root.scale.multiplyScalar(spec.scale ?? 1);
-    root.position.copy(anchor);
-    root.rotation.y = -spec.angle + Math.PI * 0.5;
+    placeObjectOnPlanet(root, spec.x, spec.z, heightAt(spec.x, spec.z) + 0.08, new THREE.Euler(0, -spec.angle + Math.PI * 0.5, 0));
     creatureGroup.add(root);
 
     return {
@@ -67,9 +67,13 @@ export function createAlienWaterCreatures(
         const idleBob = hopActive ? 0 : Math.sin(elapsed * 3.1 + index) * 0.025;
         const facing = new THREE.Vector3().subVectors(end, start);
 
-        creature.root.position.set(x, heightAt(x, z) + hopArc + idleBob + 0.08, z);
-        creature.root.rotation.y = Math.atan2(facing.x, facing.z);
-        creature.root.rotation.z = hopActive ? Math.sin(hopT * Math.PI) * 0.12 * Math.sign(facing.x || 1) : 0;
+        placeObjectOnPlanet(
+          creature.root,
+          x,
+          z,
+          heightAt(x, z) + hopArc + idleBob + 0.08,
+          new THREE.Euler(0, Math.atan2(facing.x, facing.z), hopActive ? Math.sin(hopT * Math.PI) * 0.12 * Math.sign(facing.x || 1) : 0)
+        );
         creature.body.scale.set(1 + hopArc * 0.16, 1 - hopArc * 0.08, 1 + hopArc * 0.1);
         creature.eyes.position.y = 0.34 + hopArc * 0.05;
         creature.feet.forEach((foot, footIndex) => {

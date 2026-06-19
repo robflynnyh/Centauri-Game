@@ -1,14 +1,37 @@
 import * as THREE from "three";
 import type { CollisionObstacle } from "./collision";
+import { normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, surfaceDistanceBetweenLocal, type LocalPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type AddCollisionObstacle = (obstacle: CollisionObstacle) => void;
+type SetDynamicCollisionObstacles = (obstacles: CollisionObstacle[]) => void;
+
+export type NatureState = {
+  centerX: number;
+  centerZ: number;
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  chunkSize: number;
+  chunkCount: number;
+  complexDetailRadius: number;
+  complexFadeRadius: number;
+  nearestBiomePatchDistance: number;
+  fullDetailBiomePatches: number;
+  generatedBiomePatches: number;
+  generatedObjects: number;
+  generatedObstacles: number;
+  generatedReactiveFlora: number;
+};
 
 type ReactiveStalk = {
   x: number;
   z: number;
   cap: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
   glow: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
+  capAltitude: number;
+  capRotation: THREE.Euler;
   reaction: number;
 };
 
@@ -17,17 +40,42 @@ const capNearColour = new THREE.Color(0xfff06a);
 const glowNearColour = new THREE.Color(0xffffb8);
 const floraReactionRadius = 12;
 const floraReactionFullRadius = 5.5;
+const generatedNatureChunkSize = 96;
+const generatedNatureChunkRadius = 3;
+const generatedBiomeCellSize = generatedNatureChunkSize * 2;
+const generatedComplexDetailRadius = 180;
+const generatedComplexFadeRadius = 292;
+const starterBiomeCellX = 0;
+const starterBiomeCellZ = 0;
+const starterBiomeCenter = { x: 8, z: 18 };
+const baseTreesPerChunk = 3;
+const baseReactiveFloraPerChunk = 9;
+const baseSproutsPerChunk = 6;
+const baseRocksPerChunk = 3;
+const basePoolChance = 0.22;
+const baseStreamChance = 0.12;
 
 export function populateNature(
   scene: THREE.Scene,
   heightAt: HeightSampler,
-  addCollisionObstacle: AddCollisionObstacle
-): { floraGroup: THREE.Group; natureGroup: THREE.Group; updateFloraReactivity: (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void } {
+  addCollisionObstacle: AddCollisionObstacle,
+  setDynamicCollisionObstacles: SetDynamicCollisionObstacles = () => undefined
+): {
+  floraGroup: THREE.Group;
+  natureGroup: THREE.Group;
+  updateFloraReactivity: (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void;
+  updateNatureChunks: (centerX: number, centerZ: number) => void;
+  getNatureState: () => NatureState;
+} {
   const floraGroup = new THREE.Group();
   scene.add(floraGroup);
 
   const natureGroup = new THREE.Group();
   scene.add(natureGroup);
+
+  const generatedNatureGroup = new THREE.Group();
+  generatedNatureGroup.name = "generated-spherical-nature";
+  scene.add(generatedNatureGroup);
 
   const stalkMaterial = new THREE.MeshBasicMaterial({ color: 0x55c7ba });
   const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x3f2b92 });
@@ -43,25 +91,29 @@ export function populateNature(
   });
   const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x6b55d8 });
   const reactiveStalks: ReactiveStalk[] = [];
+  let generatedCenterChunkX = Number.NaN;
+  let generatedCenterChunkZ = Number.NaN;
+  let generatedObjectCount = 0;
+  let generatedObstacleCount = 0;
+  let generatedReactiveFloraCount = 0;
+  let generatedBiomePatchCount = 0;
+  let fullDetailBiomePatchCount = 0;
+  let nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
 
-  const addFlora = (seed: number): void => {
-    const angle = seed * 2.399963;
-    const radius = 8 + ((seed * 17) % 43);
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
+  const addReactiveFloraAt = (x: number, z: number, seed: number, angle: number, targetGroup = generatedNatureGroup): void => {
     const y = heightAt(x, z);
 
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.18, 2.6 + (seed % 5) * 0.35, 5), stalkMaterial);
-    stalk.position.set(x, y + 1.2, z);
-    stalk.rotation.z = Math.sin(seed) * 0.18;
-    floraGroup.add(stalk);
+    placeObjectOnPlanet(stalk, x, z, y + 1.2, new THREE.Euler(0, 0, Math.sin(seed) * 0.18));
+    targetGroup.add(stalk);
 
     const capGeometry = new THREE.OctahedronGeometry(0.5 + (seed % 4) * 0.12, 0);
     const capMaterial = new THREE.MeshBasicMaterial({ color: capRestColour });
     const cap = new THREE.Mesh(capGeometry, capMaterial);
-    cap.position.set(x, y + 2.8 + (seed % 3) * 0.18, z);
-    cap.rotation.set(seed * 0.12, seed * 0.2, seed * 0.07);
-    floraGroup.add(cap);
+    const capAltitude = y + 2.8 + (seed % 3) * 0.18;
+    const capRotation = new THREE.Euler(seed * 0.12, seed * 0.2, seed * 0.07);
+    placeObjectOnPlanet(cap, x, z, capAltitude, capRotation);
+    targetGroup.add(cap);
 
     const glow = new THREE.Mesh(
       capGeometry.clone(),
@@ -73,18 +125,23 @@ export function populateNature(
         blending: THREE.AdditiveBlending,
       })
     );
-    glow.position.copy(cap.position);
-    glow.rotation.copy(cap.rotation);
+    placeObjectOnPlanet(glow, x, z, capAltitude, capRotation);
     glow.scale.setScalar(1.22);
-    floraGroup.add(glow);
-    reactiveStalks.push({ x, z, cap, glow, reaction: 0 });
+    targetGroup.add(glow);
+    reactiveStalks.push({ x, z, cap, glow, capAltitude, capRotation, reaction: 0 });
   };
 
-  const addAlienTree = (x: number, z: number, scale: number, lean: number): void => {
+  const addAlienTree = (
+    x: number,
+    z: number,
+    scale: number,
+    lean: number,
+    targetGroup = natureGroup,
+    dynamicObstacles?: CollisionObstacle[]
+  ): void => {
     const y = heightAt(x, z);
     const tree = new THREE.Group();
-    tree.position.set(x, y, z);
-    tree.rotation.y = x * 0.11 + z * 0.07;
+    placeObjectOnPlanet(tree, x, z, y, new THREE.Euler(0, x * 0.11 + z * 0.07, 0));
     tree.scale.setScalar(scale);
 
     const trunkLeanX = Math.sin(lean) * 0.08;
@@ -123,19 +180,16 @@ export function populateNature(
       tree.add(bead);
     }
 
-    natureGroup.add(tree);
-    addCollisionObstacle({ kind: "tree", x, z, radius: 1.15 * scale });
+    targetGroup.add(tree);
+    const obstacle = { kind: "tree" as const, x, z, radius: 1.15 * scale };
+    if (dynamicObstacles) dynamicObstacles.push(obstacle);
+    else addCollisionObstacle(obstacle);
   };
 
-  const addGroundSprout = (seed: number): void => {
-    const angle = seed * 2.13;
-    const radius = 5 + ((seed * 29) % 49);
-    const x = Math.cos(angle) * radius + Math.sin(seed * 0.7) * 2.4;
-    const z = Math.sin(angle) * radius + Math.cos(seed * 0.41) * 2.4;
+  const addSproutAt = (x: number, z: number, seed: number, angle: number, targetGroup = natureGroup): void => {
     const y = heightAt(x, z);
     const sprout = new THREE.Group();
-    sprout.position.set(x, y + 0.08, z);
-    sprout.rotation.y = angle;
+    placeObjectOnPlanet(sprout, x, z, y + 0.08, new THREE.Euler(0, angle, 0));
 
     const bladeCount = 3 + (seed % 4);
     for (let i = 0; i < bladeCount; i += 1) {
@@ -153,43 +207,169 @@ export function populateNature(
       sprout.add(bloom);
     }
 
-    natureGroup.add(sprout);
+    targetGroup.add(sprout);
   };
 
-  for (let i = 1; i <= 74; i += 1) {
-    addFlora(i);
-  }
+  const addGeneratedRock = (x: number, z: number, size: number, rotation: THREE.Euler, dynamicObstacles: CollisionObstacle[]): void => {
+    const y = heightAt(x, z);
+    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stoneMaterial);
+    placeObjectOnPlanet(stone, x, z, y + 0.7, rotation);
+    generatedNatureGroup.add(stone);
+    dynamicObstacles.push({ kind: "rock", x, z, radius: size * 0.72 });
+  };
 
-  treePlacements.forEach(({ x, z, scale, lean }) => addAlienTree(x, z, scale, lean));
+  const rebuildGeneratedNature = (centerX: number, centerZ: number): void => {
+    const normalized = normalizePlanetCoords(centerX, centerZ);
+    const nextChunkX = Math.floor(normalized.x / generatedNatureChunkSize);
+    const nextChunkZ = Math.floor(normalized.z / generatedNatureChunkSize);
+    if (nextChunkX === generatedCenterChunkX && nextChunkZ === generatedCenterChunkZ) return;
 
-  for (let i = 1; i <= 120; i += 1) {
-    addGroundSprout(i);
-  }
+    disposeGeneratedNature(generatedNatureGroup);
+    generatedNatureGroup.clear();
+    generatedCenterChunkX = nextChunkX;
+    generatedCenterChunkZ = nextChunkZ;
+    generatedObjectCount = 0;
+    generatedReactiveFloraCount = 0;
+    generatedBiomePatchCount = 0;
+    fullDetailBiomePatchCount = 0;
+    nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
+    reactiveStalks.length = 0;
+    const dynamicObstacles: CollisionObstacle[] = [];
 
-  addPool(natureGroup, heightAt, waterMaterial, stoneMaterial, 5.5, 7.5, 3.4, 0.1);
-  addPool(natureGroup, heightAt, waterMaterial, stoneMaterial, -18, -3, 2.5, 0.45);
-  addPool(natureGroup, heightAt, waterMaterial, stoneMaterial, 21, -15, 2.2, 0.8);
-  addStream(natureGroup, heightAt, waterMaterial);
-  addRocks(scene, heightAt, stoneMaterial, addCollisionObstacle);
+    const minX = (generatedCenterChunkX - generatedNatureChunkRadius) * generatedNatureChunkSize;
+    const maxX = (generatedCenterChunkX + generatedNatureChunkRadius + 1) * generatedNatureChunkSize;
+    const minZ = (generatedCenterChunkZ - generatedNatureChunkRadius) * generatedNatureChunkSize;
+    const maxZ = (generatedCenterChunkZ + generatedNatureChunkRadius + 1) * generatedNatureChunkSize;
+    const minBiomeCellX = Math.floor(minX / generatedBiomeCellSize) - 1;
+    const maxBiomeCellX = Math.floor(maxX / generatedBiomeCellSize) + 1;
+    const minBiomeCellZ = Math.floor(minZ / generatedBiomeCellSize) - 1;
+    const maxBiomeCellZ = Math.floor(maxZ / generatedBiomeCellSize) + 1;
 
-  return { floraGroup, natureGroup, updateFloraReactivity: createFloraReactivityUpdater(reactiveStalks) };
+    for (let biomeCellZ = minBiomeCellZ; biomeCellZ <= maxBiomeCellZ; biomeCellZ += 1) {
+      for (let biomeCellX = minBiomeCellX; biomeCellX <= maxBiomeCellX; biomeCellX += 1) {
+        const random = createChunkRandom(biomeCellX * 7 + 3, biomeCellZ * 7 - 5);
+        const starterBiome = biomeCellX === starterBiomeCellX && biomeCellZ === starterBiomeCellZ;
+        const density = starterBiome ? 1.34 : chunkNatureDensity(biomeCellX, biomeCellZ);
+        if (!starterBiome && density < 0.88 && random() < 0.45) continue;
+
+        const clusterX = starterBiome
+          ? starterBiomeCenter.x
+          : biomeCellX * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+        const clusterZ = starterBiome
+          ? starterBiomeCenter.z
+          : biomeCellZ * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+        const clusterRadius = starterBiome ? 46 : 28 + random() * 18;
+        const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x: clusterX, z: clusterZ });
+        const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius, generatedComplexFadeRadius);
+        if (detailAmount <= 0.02) continue;
+
+        generatedBiomePatchCount += 1;
+        if (detailAmount >= 0.98) fullDetailBiomePatchCount += 1;
+        nearestBiomePatchDistance = Math.min(nearestBiomePatchDistance, distanceToFocus);
+        const transitionAmount = THREE.MathUtils.clamp((detailAmount - 0.16) / 0.84, 0, 1);
+        const fullness = starterBiome ? 1.48 : density * (0.85 + random() * 0.38);
+        const nearObjectScale = 0.56 + detailAmount * 0.44;
+        const complexObjectScale = Math.pow(transitionAmount, 0.78);
+        const waterDetailEnabled = detailAmount > 0.5;
+
+        for (let i = 0; i < Math.round((baseTreesPerChunk * 2 + fullness * 5) * nearObjectScale); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.68, random);
+          addAlienTree(point.x, point.z, 0.72 + random() * 0.58, random() * Math.PI * 2 - Math.PI, generatedNatureGroup, dynamicObstacles);
+          generatedObjectCount += 1;
+        }
+
+        for (let i = 0; i < Math.round((baseReactiveFloraPerChunk * 3 + fullness * 24) * complexObjectScale); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius, random);
+          addReactiveFloraAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+          generatedObjectCount += 1;
+          generatedReactiveFloraCount += 1;
+        }
+
+        for (let i = 0; i < Math.round((baseSproutsPerChunk * 2 + fullness * 13) * nearObjectScale); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.9, random);
+          addSproutAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+          generatedObjectCount += 1;
+        }
+
+        for (let i = 0; i < Math.round((baseRocksPerChunk * 2 + fullness * 8) * nearObjectScale); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 1.08, random);
+          addGeneratedRock(
+            point.x,
+            point.z,
+            0.78 + random() * 1.2,
+            new THREE.Euler(random() * Math.PI, random() * Math.PI, random() * Math.PI),
+            dynamicObstacles
+          );
+          generatedObjectCount += 1;
+        }
+
+        const poolCount = waterDetailEnabled ? 1 + (random() < basePoolChance + fullness * 0.34 ? 1 : 0) + (random() < fullness * 0.18 ? 1 : 0) : 0;
+        for (let i = 0; i < poolCount; i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.42, random);
+          addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, point.x, point.z, 2.5 + random() * 2.4, random() * Math.PI);
+          generatedObjectCount += 1;
+        }
+
+        const streamCount = waterDetailEnabled ? 1 + (random() < baseStreamChance + fullness * 0.25 ? 1 : 0) : 0;
+        for (let i = 0; i < streamCount; i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.35, random);
+          addGeneratedStream(
+            generatedNatureGroup,
+            heightAt,
+            waterMaterial,
+            point.x,
+            point.z,
+            14 + random() * 20,
+            random() * Math.PI * 2,
+            random() * Math.PI * 2
+          );
+          generatedObjectCount += 1;
+        }
+      }
+    }
+
+    generatedObstacleCount = dynamicObstacles.length;
+    setDynamicCollisionObstacles(dynamicObstacles);
+  };
+
+  rebuildGeneratedNature(0, 0);
+
+  return {
+    floraGroup,
+    natureGroup,
+    updateFloraReactivity: createFloraReactivityUpdater(reactiveStalks),
+    updateNatureChunks: rebuildGeneratedNature,
+    getNatureState: () =>
+      getGeneratedNatureState(
+        generatedCenterChunkX,
+        generatedCenterChunkZ,
+        generatedObjectCount,
+        generatedObstacleCount,
+        generatedReactiveFloraCount,
+        generatedBiomePatchCount,
+        fullDetailBiomePatchCount,
+        nearestBiomePatchDistance
+      ),
+  };
 }
 
 function createFloraReactivityUpdater(
   reactiveStalks: ReactiveStalk[]
-): (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void {
+): (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void {
   return (playerPosition, delta, elapsed) => {
     const fade = 1 - Math.exp(-delta * 9);
 
     reactiveStalks.forEach((stalk, index) => {
-      const distance = Math.hypot(playerPosition.x - stalk.x, playerPosition.z - stalk.z);
+      const distance = surfaceDistanceBetweenLocal(playerPosition, stalk);
       const target = 1 - THREE.MathUtils.smoothstep(distance, floraReactionFullRadius, floraReactionRadius);
       stalk.reaction = THREE.MathUtils.lerp(stalk.reaction, target, fade);
 
       const pulse = 0.82 + Math.sin(elapsed * 4.2 + index * 0.73) * 0.18;
       const glowStrength = stalk.reaction * pulse;
-      stalk.glow.position.copy(stalk.cap.position);
-      stalk.glow.rotation.copy(stalk.cap.rotation);
+      const bob = Math.sin(elapsed * 1.6 + index) * 0.045;
+      stalk.capRotation.y += delta * 0.18;
+      placeObjectOnPlanet(stalk.cap, stalk.x, stalk.z, stalk.capAltitude + bob, stalk.capRotation);
+      placeObjectOnPlanet(stalk.glow, stalk.x, stalk.z, stalk.capAltitude + bob, stalk.capRotation);
       stalk.cap.material.color.lerpColors(capRestColour, capNearColour, stalk.reaction);
       stalk.cap.scale.setScalar(1 + stalk.reaction * 0.2);
       stalk.glow.material.opacity = glowStrength * 0.48;
@@ -198,17 +378,69 @@ function createFloraReactivityUpdater(
   };
 }
 
-const treePlacements = [
-  { x: -7, z: 11, scale: 0.86, lean: -0.8 },
-  { x: 9, z: 7, scale: 1.05, lean: 0.45 },
-  { x: 15, z: -5, scale: 0.92, lean: 0.9 },
-  { x: -17, z: -10, scale: 1.16, lean: -0.35 },
-  { x: 23, z: 15, scale: 0.82, lean: 0.2 },
-  { x: -25, z: 16, scale: 0.94, lean: -1.0 },
-  { x: 2, z: -21, scale: 1.08, lean: 0.72 },
-  { x: 32, z: -18, scale: 0.78, lean: -0.62 },
-  { x: -33, z: -2, scale: 0.88, lean: 0.58 },
-];
+function createChunkRandom(chunkX: number, chunkZ: number): () => number {
+  let state = (Math.imul(chunkX, 73856093) ^ Math.imul(chunkZ, 19349663) ^ 0x9e3779b9) >>> 0;
+  return () => {
+    state = (Math.imul(state ^ (state >>> 15), 2246822519) ^ Math.imul(state ^ (state >>> 13), 3266489917)) >>> 0;
+    return state / 0xffffffff;
+  };
+}
+
+function chunkNatureDensity(chunkX: number, chunkZ: number): number {
+  const broadWave = (Math.sin(chunkX * 0.91 + chunkZ * 0.37) + Math.cos(chunkZ * 0.73 - chunkX * 0.28) + 2) * 0.25;
+  const pocket = createChunkRandom(chunkX + 101, chunkZ - 211)();
+  return THREE.MathUtils.clamp(0.72 + broadWave * 0.42 + pocket * 0.28, 0.62, 1.34);
+}
+
+function pointNear(x: number, z: number, radius: number, random: () => number): LocalPlanetPoint {
+  const angle = random() * Math.PI * 2;
+  const distance = Math.pow(random(), 0.62) * radius;
+  return {
+    x: x + Math.cos(angle) * distance,
+    z: z + Math.sin(angle) * distance,
+  };
+}
+
+function disposeGeneratedNature(group: THREE.Group): void {
+  group.traverse((child) => {
+    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
+    if (mesh.geometry) mesh.geometry.dispose();
+  });
+}
+
+function getGeneratedNatureState(
+  centerChunkX: number,
+  centerChunkZ: number,
+  generatedObjects: number,
+  generatedObstacles: number,
+  generatedReactiveFlora: number,
+  generatedBiomePatches: number,
+  fullDetailBiomePatches: number,
+  nearestBiomePatchDistance: number
+): NatureState {
+  const minChunkX = centerChunkX - generatedNatureChunkRadius;
+  const maxChunkX = centerChunkX + generatedNatureChunkRadius + 1;
+  const minChunkZ = centerChunkZ - generatedNatureChunkRadius;
+  const maxChunkZ = centerChunkZ + generatedNatureChunkRadius + 1;
+  return {
+    centerX: (minChunkX + maxChunkX) * 0.5 * generatedNatureChunkSize,
+    centerZ: (minChunkZ + maxChunkZ) * 0.5 * generatedNatureChunkSize,
+    minX: minChunkX * generatedNatureChunkSize,
+    maxX: maxChunkX * generatedNatureChunkSize,
+    minZ: minChunkZ * generatedNatureChunkSize,
+    maxZ: maxChunkZ * generatedNatureChunkSize,
+    chunkSize: generatedNatureChunkSize,
+    chunkCount: Math.pow(generatedNatureChunkRadius * 2 + 1, 2),
+    complexDetailRadius: generatedComplexDetailRadius,
+    complexFadeRadius: generatedComplexFadeRadius,
+    nearestBiomePatchDistance,
+    fullDetailBiomePatches,
+    generatedBiomePatches,
+    generatedObjects,
+    generatedObstacles,
+    generatedReactiveFlora,
+  };
+}
 
 function makePoolGeometry(
   heightAt: HeightSampler,
@@ -220,7 +452,8 @@ function makePoolGeometry(
   scaleZ: number
 ): THREE.BufferGeometry {
   const segments = 22;
-  const positions: number[] = [x, heightAt(x, z) + 0.045, z];
+  const center = pointOnPlanet(x, z, heightAt(x, z) + 0.045);
+  const positions: number[] = [center.x, center.y, center.z];
   const indices: number[] = [];
 
   for (let i = 0; i <= segments; i += 1) {
@@ -229,7 +462,8 @@ function makePoolGeometry(
     const localZ = Math.sin(angle) * radius * scaleZ;
     const worldX = x + Math.cos(rotation) * localX - Math.sin(rotation) * localZ;
     const worldZ = z + Math.sin(rotation) * localX + Math.cos(rotation) * localZ;
-    positions.push(worldX, heightAt(worldX, worldZ) + 0.045, worldZ);
+    const point = pointOnPlanet(worldX, worldZ, heightAt(worldX, worldZ) + 0.045);
+    positions.push(point.x, point.y, point.z);
   }
 
   for (let i = 1; i <= segments; i += 1) {
@@ -273,31 +507,38 @@ function addPool(
     const worldX = x + Math.cos(colourShift) * localX - Math.sin(colourShift) * localZ;
     const worldZ = z + Math.sin(colourShift) * localX + Math.cos(colourShift) * localZ;
     const rim = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2 + (i % 4) * 0.06, 0), stoneMaterial);
-    rim.position.set(worldX, heightAt(worldX, worldZ) + 0.16, worldZ);
-    rim.rotation.set(i * 0.2, i * 0.3, i * 0.17);
+    placeObjectOnPlanet(rim, worldX, worldZ, heightAt(worldX, worldZ) + 0.16, new THREE.Euler(i * 0.2, i * 0.3, i * 0.17));
     pool.add(rim);
   }
 
   natureGroup.add(pool);
 }
 
-function addStream(natureGroup: THREE.Group, heightAt: HeightSampler, waterMaterial: THREE.MeshBasicMaterial): void {
-  const streamPoints = [
-    new THREE.Vector3(-12, 0, 7),
-    new THREE.Vector3(-6, 0, 8),
-    new THREE.Vector3(0, 0, 6),
-    new THREE.Vector3(5.5, 0, 7.5),
-    new THREE.Vector3(11, 0, 4),
-  ];
-  const stream = new THREE.Mesh(makeStreamGeometry(heightAt, streamPoints), waterMaterial);
+function addGeneratedStream(
+  natureGroup: THREE.Group,
+  heightAt: HeightSampler,
+  waterMaterial: THREE.MeshBasicMaterial,
+  x: number,
+  z: number,
+  length: number,
+  rotation: number,
+  bend: number
+): void {
+  const points = Array.from({ length: 5 }, (_, index) => {
+    const t = index / 4;
+    const along = (t - 0.5) * length;
+    const side = Math.sin(t * Math.PI * 2 + bend) * length * 0.12;
+    return new THREE.Vector3(x + Math.cos(rotation) * along - Math.sin(rotation) * side, 0, z + Math.sin(rotation) * along + Math.cos(rotation) * side);
+  });
+  const stream = new THREE.Mesh(makeStreamGeometry(heightAt, points), waterMaterial);
   stream.renderOrder = 1;
   natureGroup.add(stream);
 }
 
 function makeStreamGeometry(heightAt: HeightSampler, points: THREE.Vector3[]): THREE.BufferGeometry {
   const curve = new THREE.CatmullRomCurve3(points);
-  const samples = 72;
-  const halfWidth = 0.34;
+  const samples = 36;
+  const halfWidth = 0.28;
   const positions: number[] = [];
   const indices: number[] = [];
 
@@ -310,8 +551,10 @@ function makeStreamGeometry(heightAt: HeightSampler, points: THREE.Vector3[]): T
     const leftZ = point.z + side.z;
     const rightX = point.x - side.x;
     const rightZ = point.z - side.z;
-    positions.push(leftX, heightAt(leftX, leftZ) + 0.055, leftZ);
-    positions.push(rightX, heightAt(rightX, rightZ) + 0.055, rightZ);
+    const left = pointOnPlanet(leftX, leftZ, heightAt(leftX, leftZ) + 0.055);
+    const right = pointOnPlanet(rightX, rightZ, heightAt(rightX, rightZ) + 0.055);
+    positions.push(left.x, left.y, left.z);
+    positions.push(right.x, right.y, right.z);
   }
 
   for (let i = 0; i < samples; i += 1) {
@@ -324,31 +567,4 @@ function makeStreamGeometry(heightAt: HeightSampler, points: THREE.Vector3[]): T
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
-}
-
-function addRocks(
-  scene: THREE.Scene,
-  heightAt: HeightSampler,
-  stoneMaterial: THREE.MeshBasicMaterial,
-  addCollisionObstacle: AddCollisionObstacle
-): void {
-  const rockPlacements = Array.from({ length: 34 }, (_, i) => {
-    const angle = i * 1.71;
-    const radius = 10 + ((i * 23) % 50);
-    return {
-      x: Math.cos(angle) * radius,
-      z: Math.sin(angle) * radius,
-      size: 0.9 + (i % 5) * 0.28,
-      rotation: new THREE.Euler(i * 0.2, i * 0.4, i * 0.1),
-    };
-  });
-
-  rockPlacements.forEach(({ x, z, size, rotation }) => {
-    const y = heightAt(x, z);
-    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stoneMaterial);
-    stone.position.set(x, y + 0.7, z);
-    stone.rotation.copy(rotation);
-    scene.add(stone);
-    addCollisionObstacle({ kind: "rock", x, z, radius: size * 0.72 });
-  });
 }
