@@ -12,6 +12,7 @@ declare global {
     __centauriDebug?: {
       obstacles: CollisionObstacle[];
       getPlayer: () => { x: number; y: number; z: number };
+      getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -28,12 +29,20 @@ if (!app) {
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
 const enableCollisionDebug = params.get("test") === "collision";
+const standHeight = 2.2;
+const crouchHeight = 1.28;
+const walkSpeed = 6.4;
+const crouchSpeed = 2.9;
+const acceleration = 19;
+const braking = 24;
+const gravity = 18;
+const jumpImpulse = 7.2;
 
 app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
       <h1>Centauri Field Note 001</h1>
-      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, drag to look. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
+      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, drag to look. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : "exploration mode"}</div>
   </div>
@@ -54,8 +63,14 @@ const keys = new Set<string>();
 const player = {
   yaw: 0,
   pitch: -0.12,
-  position: new THREE.Vector3(0, 5.2, 24),
+  position: new THREE.Vector3(0, heightAt(0, 24) + standHeight, 24),
   velocity: new THREE.Vector3(),
+  verticalVelocity: 0,
+  verticalOffset: 0,
+  cameraHeight: standHeight,
+  grounded: true,
+  jumpQueued: false,
+  walkDistance: 0,
 };
 
 const collisionWorld = createCollisionWorld();
@@ -74,13 +89,22 @@ if (enableCollisionDebug) {
   window.__centauriDebug = {
     obstacles: collisionWorld.obstacles.map((obstacle) => ({ ...obstacle })),
     getPlayer: () => ({ x: player.position.x, y: player.position.y, z: player.position.z }),
+    getMovementState: () => ({
+      grounded: player.grounded,
+      crouching: isCrouchPressed(),
+      cameraHeight: player.cameraHeight,
+    }),
     setPlayer: (x: number, z: number) => {
-      player.position.set(x, heightAt(x, z) + 2.2, z);
+      player.position.set(x, heightAt(x, z) + standHeight, z);
       player.velocity.set(0, 0, 0);
+      player.verticalVelocity = 0;
+      player.verticalOffset = 0;
+      player.cameraHeight = standHeight;
+      player.grounded = true;
     },
     attemptMove: (x: number, z: number) => {
       collisionWorld.resolveMove(player.position, new THREE.Vector3(x, 0, z));
-      player.position.y = heightAt(player.position.x, player.position.z) + 2.2;
+      player.position.y = heightAt(player.position.x, player.position.z) + standHeight;
       return { x: player.position.x, z: player.position.z };
     },
     isBlockedAt: collisionWorld.isBlockedAt,
@@ -111,6 +135,10 @@ function startAudio(): void {
 
 window.addEventListener("keydown", (event) => {
   keys.add(event.code);
+  if (event.code === "Space") {
+    event.preventDefault();
+    if (!event.repeat) player.jumpQueued = true;
+  }
   void audio.resume();
   startAudio();
 });
@@ -130,6 +158,15 @@ window.addEventListener("pointermove", (event) => {
   player.pitch = THREE.MathUtils.clamp(player.pitch - event.movementY * 0.003, -1.1, 0.6);
 });
 
+function isCrouchPressed(): boolean {
+  return keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("ShiftLeft") || keys.has("ShiftRight") || keys.has("KeyC");
+}
+
+function moveToward(current: number, target: number, maxDelta: number): number {
+  if (Math.abs(target - current) <= maxDelta) return target;
+  return current + Math.sign(target - current) * maxDelta;
+}
+
 function updateExploration(delta: number): void {
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
   const right = new THREE.Vector3(forward.z, 0, -forward.x);
@@ -141,10 +178,50 @@ function updateExploration(delta: number): void {
   if (keys.has("KeyD")) wish.add(right);
 
   if (wish.lengthSq() > 0) wish.normalize();
-  player.velocity.lerp(wish.multiplyScalar(8), 1 - Math.exp(-delta * 6));
+  const crouching = isCrouchPressed();
+  const targetSpeed = crouching ? crouchSpeed : walkSpeed;
+  const targetVelocity = wish.multiplyScalar(targetSpeed);
+  const horizontalRate = targetVelocity.lengthSq() > 0 ? acceleration : braking;
+  const maxVelocityDelta = horizontalRate * delta;
+  player.velocity.x = moveToward(player.velocity.x, targetVelocity.x, maxVelocityDelta);
+  player.velocity.z = moveToward(player.velocity.z, targetVelocity.z, maxVelocityDelta);
+
+  if (player.jumpQueued && player.grounded && !crouching) {
+    player.verticalVelocity = jumpImpulse;
+    player.grounded = false;
+  }
+  player.jumpQueued = false;
+
+  if (!player.grounded) {
+    player.verticalVelocity -= gravity * delta;
+    player.verticalOffset += player.verticalVelocity * delta;
+    if (player.verticalOffset <= 0) {
+      player.verticalOffset = 0;
+      player.verticalVelocity = 0;
+      player.grounded = true;
+    }
+  }
+
+  const beforeX = player.position.x;
+  const beforeZ = player.position.z;
   collisionWorld.resolveMove(player.position, player.velocity.clone().multiplyScalar(delta));
-  player.position.y = heightAt(player.position.x, player.position.z) + 2.2;
-  footsteps.walk(player.position, delta);
+  const movedX = player.position.x - beforeX;
+  const movedZ = player.position.z - beforeZ;
+  const actualHorizontalSpeed = Math.hypot(movedX, movedZ) / Math.max(delta, 0.001);
+  if (actualHorizontalSpeed < 0.02) {
+    player.velocity.x = 0;
+    player.velocity.z = 0;
+  }
+
+  const targetCameraHeight = crouching ? crouchHeight : standHeight;
+  player.cameraHeight = THREE.MathUtils.lerp(player.cameraHeight, targetCameraHeight, 1 - Math.exp(-delta * 12));
+  const walkingOnGround = player.grounded && actualHorizontalSpeed > 0.25;
+  if (walkingOnGround) {
+    player.walkDistance += actualHorizontalSpeed * delta;
+    footsteps.walk(player.position, delta);
+  }
+  const headBob = walkingOnGround ? Math.sin(player.walkDistance * 6.8) * 0.055 + Math.sin(player.walkDistance * 13.6) * 0.018 : 0;
+  player.position.y = heightAt(player.position.x, player.position.z) + player.cameraHeight + player.verticalOffset + headBob;
 
   camera.position.copy(player.position);
   camera.rotation.order = "YXZ";

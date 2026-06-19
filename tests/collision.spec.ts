@@ -40,3 +40,44 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
   expect(result.mountainWalkable).toBe(true);
   expect(result.playerStandsOnMountain).toBe(true);
 });
+
+test("supports grounded jump and visible crouch height changes", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    debug.setPlayer(0, 24);
+  });
+
+  const start = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return { player: debug.getPlayer(), movement: debug.getMovementState() };
+  });
+
+  await page.keyboard.press("Space");
+  await page.waitForFunction(
+    (startY) => {
+      const debug = window.__centauriDebug;
+      return Boolean(debug && debug.getPlayer().y > startY + 0.55 && !debug.getMovementState().grounded);
+    },
+    start.player.y
+  );
+
+  await page.waitForFunction(() => {
+    const debug = window.__centauriDebug;
+    return Boolean(debug && debug.getMovementState().grounded);
+  });
+
+  await page.keyboard.down("Control");
+  await page.waitForFunction(
+    (standingHeight) => {
+      const debug = window.__centauriDebug;
+      return Boolean(debug && debug.getMovementState().cameraHeight < standingHeight - 0.45 && debug.getMovementState().crouching);
+    },
+    start.movement.cameraHeight
+  );
+  await page.keyboard.up("Control");
+});

@@ -4,6 +4,12 @@ type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
 type WalkObserver = (position: THREE.Vector3, delta: number) => void;
 
+function intervalPulse(value: number, start: number, peak: number, end: number): number {
+  if (value < start || value > end) return 0;
+  if (value < peak) return THREE.MathUtils.smoothstep(value, start, peak);
+  return 1 - THREE.MathUtils.smoothstep(value, peak, end);
+}
+
 export function createPrDemoController(
   camera: THREE.Camera,
   heightAt: HeightSampler,
@@ -16,7 +22,9 @@ export function createPrDemoController(
     update: (elapsed, delta) => {
       if (elapsed < 3.6) {
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.18, 0, -delta * 1.6));
-        demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 5.4;
+        const crouchDip = intervalPulse(elapsed, 0.8, 1.25, 1.85) * 1.05;
+        const jumpRise = intervalPulse(elapsed, 2.05, 2.58, 3.15) * 1.65;
+        demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 5.4 - crouchDip + jumpRise;
         onWalk?.(demoPlayer, delta);
         camera.position.copy(demoPlayer);
         camera.lookAt(2, heightAt(0, -72) + 13.5, -96);

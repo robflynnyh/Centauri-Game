@@ -39,3 +39,5 @@ Tightened the footstep patches into smaller tapered smudges with terrain-sampled
 Simplified the footstep shape again into centered narrow ground smudges aligned to walking direction, removing the asymmetric taper that could read as sideways.
 
 Switched the marks to small circular terrain-sampled patches with denser ring geometry and stronger polygon offset after direction/orientation remained distracting.
+
+Retuned first-person walking with faster braking, lower top speed, subtle grounded head bob, Space jump, and held Ctrl/Shift/C crouch that visibly lowers the camera; the PR demo now includes a short crouch-and-jump beat near the start.
