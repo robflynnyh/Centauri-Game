@@ -25,7 +25,6 @@ const terrainPalette = [
   new THREE.Color(0xec7fb2),
   new THREE.Color(0xffb15e),
 ];
-const terrainPatchPalette = [terrainPalette[0], terrainPalette[1], terrainPalette[4]];
 
 export function heightAt(x: number, z: number): number {
   const detail = detailCoordinatesAt(x, z);
@@ -81,7 +80,6 @@ export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
   group.name = "spherical-planet-terrain";
   const terrainMaterial = makeTerrainMaterial();
-  const patchMaterial = makeTerrainPatchMaterial();
 
   let centerChunkX = Number.NaN;
   let centerChunkZ = Number.NaN;
@@ -94,7 +92,7 @@ export function createTerrainSystem(): TerrainSystem {
 
     centerChunkX = nextChunkX;
     centerChunkZ = nextChunkZ;
-    rebuildTerrainChunks(group, terrainMaterial, patchMaterial, centerChunkX, centerChunkZ);
+    rebuildTerrainChunks(group, terrainMaterial, centerChunkX, centerChunkZ);
   };
 
   update(0, 0);
@@ -106,13 +104,7 @@ export function createTerrainSystem(): TerrainSystem {
   };
 }
 
-function rebuildTerrainChunks(
-  group: THREE.Group,
-  terrainMaterial: THREE.MeshBasicMaterial,
-  patchMaterial: THREE.MeshBasicMaterial,
-  centerChunkX: number,
-  centerChunkZ: number
-): void {
+function rebuildTerrainChunks(group: THREE.Group, terrainMaterial: THREE.ShaderMaterial, centerChunkX: number, centerChunkZ: number): void {
   group.children.forEach((child) => {
     const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
     mesh.geometry.dispose();
@@ -129,13 +121,6 @@ function rebuildTerrainChunks(
       );
       chunk.name = `spherical-terrain-chunk-${xChunk}-${zChunk}`;
       group.add(chunk);
-
-      const patchGeometry = makeTerrainPatchGeometry(xMin, zMin, xChunk, zChunk);
-      if (patchGeometry) {
-        const patches = new THREE.Mesh(patchGeometry, patchMaterial);
-        patches.name = `spherical-terrain-stepped-islands-${xChunk}-${zChunk}`;
-        group.add(patches);
-      }
     }
   }
 }
@@ -173,6 +158,8 @@ function makeTerrainGeometry(
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
   const colours: number[] = [];
+  const terrainCoords: number[] = [];
+  const terrainHeights: number[] = [];
   const indices: number[] = [];
   const cellSizeX = (xMax - xMin) / xSegments;
   const cellSizeZ = (zMax - zMin) / zSegments;
@@ -202,6 +189,8 @@ function makeTerrainGeometry(
       const p11 = pointOnPlanet(x1, z1, y11 + lift);
 
       positions.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
+      terrainCoords.push(x0, z0, x1, z0, x0, z1, x1, z1);
+      terrainHeights.push(y00, y10, y01, y11);
 
       for (let i = 0; i < 4; i += 1) {
         colours.push(colour.r, colour.g, colour.b);
@@ -213,6 +202,8 @@ function makeTerrainGeometry(
 
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.setAttribute("terrainCoord", new THREE.Float32BufferAttribute(terrainCoords, 2));
+  geometry.setAttribute("terrainHeight", new THREE.Float32BufferAttribute(terrainHeights, 1));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
@@ -259,101 +250,61 @@ function hashCell(cellX: number, cellZ: number): number {
   return state / 0xffffffff;
 }
 
-function makeTerrainMaterial(): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
-    vertexColors: true,
+function makeTerrainMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
+    vertexShader: `
+      attribute vec2 terrainCoord;
+      attribute float terrainHeight;
+      varying vec2 vTerrainCoord;
+      varying float vTerrainHeight;
+
+      void main() {
+        vTerrainCoord = terrainCoord;
+        vTerrainHeight = terrainHeight;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec2 vTerrainCoord;
+      varying float vTerrainHeight;
+
+      float hashCell(vec2 cell) {
+        vec3 p3 = fract(vec3(cell.xyx) * 0.1031);
+        p3 += dot(p3, p3.yzx + 33.33);
+        return fract((p3.x + p3.y) * p3.z);
+      }
+
+      vec3 palette(float band) {
+        if (band < 0.5) return vec3(0.6078, 0.3882, 0.7686);
+        if (band < 1.5) return vec3(0.4314, 0.4706, 0.8745);
+        if (band < 2.5) return vec3(0.3216, 0.7216, 0.7333);
+        if (band < 3.5) return vec3(0.7137, 0.7882, 0.3569);
+        if (band < 4.5) return vec3(0.9255, 0.4980, 0.6980);
+        return vec3(1.0, 0.6941, 0.3686);
+      }
+
+      void main() {
+        float pixelSize = 2.0;
+        vec2 cell = floor(vTerrainCoord / pixelSize);
+        vec2 p = cell * pixelSize;
+        float warpX = sin(p.y * 0.083) * 9.5 + sin((p.x + p.y) * 0.047) * 5.5;
+        float warpY = cos(p.x * 0.071) * 8.5 + sin((p.x - p.y) * 0.052) * 6.0;
+        vec2 warped = p + vec2(warpX, warpY);
+        float lobeA = sin(warped.x * 0.092 + sin(warped.y * 0.056) * 2.3);
+        float lobeB = cos(warped.y * 0.088 + cos(warped.x * 0.049) * 2.1);
+        float lobeC = sin((warped.x - warped.y) * 0.061 + cos((warped.x + warped.y) * 0.041) * 2.6);
+        float chipped = hashCell(cell + vec2(17.0, -23.0)) * 2.0 - 1.0;
+        float organic = clamp((lobeA + lobeB + lobeC + 3.0) / 6.0 + chipped * 0.12, 0.0, 1.0);
+        float altitude = clamp((vTerrainHeight + 2.0) / 14.0, 0.0, 1.0);
+        float mineral = (sin(p.x * 0.15) + cos(p.y * 0.12) + 2.0) / 4.0;
+        float fleck = hashCell(cell * 1.7 + vec2(5.0, 11.0));
+        float field = altitude * 0.16 + mineral * 0.12 + organic * 0.62 + fleck * 0.1;
+        float band = floor(clamp(field * 6.0, 0.0, 5.999));
+        gl_FragColor = vec4(palette(band), 1.0);
+      }
+    `,
   });
-}
-
-function makeTerrainPatchMaterial(): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({
-    vertexColors: true,
-    side: THREE.DoubleSide,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
-}
-
-function makeTerrainPatchGeometry(xMin: number, zMin: number, xChunk: number, zChunk: number): THREE.BufferGeometry | null {
-  const positions: number[] = [];
-  const colours: number[] = [];
-  const indices: number[] = [];
-  const random = createDeterministicRandom(xChunk, zChunk);
-  const patchCount = 1 + (random() > 0.45 ? 1 : 0);
-
-  for (let patchIndex = 0; patchIndex < patchCount; patchIndex += 1) {
-    const centerX = xMin + (0.2 + random() * 0.6) * terrainChunkSize;
-    const centerZ = zMin + (0.2 + random() * 0.6) * terrainChunkSize;
-    const radiusX = 12 + random() * 18;
-    const radiusZ = 10 + random() * 16;
-    const rotation = random() * Math.PI * 2;
-    const colour = terrainPatchPalette[Math.floor(random() * terrainPatchPalette.length)];
-    addJaggedPatch(positions, colours, indices, centerX, centerZ, radiusX, radiusZ, rotation, patchIndex, colour);
-  }
-
-  if (positions.length === 0) return null;
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
-function addJaggedPatch(
-  positions: number[],
-  colours: number[],
-  indices: number[],
-  centerX: number,
-  centerZ: number,
-  radiusX: number,
-  radiusZ: number,
-  rotation: number,
-  patchIndex: number,
-  colour: THREE.Color
-): void {
-  const cos = Math.cos(rotation);
-  const sin = Math.sin(rotation);
-  const steps = 22;
-  const vertexIndex = positions.length / 3;
-  const lift = 0.04;
-  const center = pointOnPlanet(centerX, centerZ, heightAt(centerX, centerZ) + lift);
-  positions.push(center.x, center.y, center.z);
-  colours.push(colour.r, colour.g, colour.b);
-
-  for (let i = 0; i < steps; i += 1) {
-    const angle = (i / steps) * Math.PI * 2;
-    const cellX = Math.floor(centerX / boundaryStepSize) + i * 3 + patchIndex * 11;
-    const cellZ = Math.floor(centerZ / boundaryStepSize) - i * 5 + patchIndex * 7;
-    const edgeNoise =
-      Math.sin(i * 1.7 + patchIndex) * 0.18 +
-      Math.cos(i * 0.83 + centerX * 0.01) * 0.14 +
-      (hashCell(cellX, cellZ) - 0.5) * 0.34;
-    const localX = Math.cos(angle) * radiusX * (0.9 + edgeNoise);
-    const localZ = Math.sin(angle) * radiusZ * (0.9 - edgeNoise * 0.3);
-    const rawX = centerX + cos * localX - sin * localZ;
-    const rawZ = centerZ + sin * localX + cos * localZ;
-    const worldX = Math.round(rawX / boundaryStepSize) * boundaryStepSize;
-    const worldZ = Math.round(rawZ / boundaryStepSize) * boundaryStepSize;
-    const point = pointOnPlanet(worldX, worldZ, heightAt(worldX, worldZ) + lift);
-    positions.push(point.x, point.y, point.z);
-    colours.push(colour.r, colour.g, colour.b);
-  }
-
-  for (let i = 0; i < steps; i += 1) {
-    const next = i === steps - 1 ? 1 : i + 2;
-    indices.push(vertexIndex, vertexIndex + 1 + i, vertexIndex + next);
-  }
-}
-
-function createDeterministicRandom(chunkX: number, chunkZ: number): () => number {
-  let state = (Math.imul(chunkX, 1103515245) ^ Math.imul(chunkZ, 12345) ^ 0x9e3779b9) >>> 0;
-  return () => {
-    state = (Math.imul(state ^ (state >>> 16), 2246822519) ^ Math.imul(state ^ (state >>> 13), 3266489917)) >>> 0;
-    return state / 0xffffffff;
-  };
 }
 
 export function makeHorizonLandforms(): THREE.Group {
