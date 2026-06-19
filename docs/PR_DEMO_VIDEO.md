@@ -34,4 +34,6 @@ npm run demo:video
 
 ## CI artifact
 
-On PRs, open the `PR demo video` workflow run and download the `pr-demo-video` artifact.
+On PRs, open the `PR demo video` workflow run and download the `pr-demo-video` artifact from the bottom of the run page.
+
+GitHub does not embed Actions artifacts directly in the PR conversation by default. The workflow posts a PR comment with the run link once the artifact upload step has executed.
