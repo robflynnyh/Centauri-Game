@@ -71,3 +71,5 @@ Expanded the generated pockets into larger start-area-like biome patches dotted 
 Added a trippy color-shifting planet fog and capped generated nature complexity by distance, keeping dense biome patches near the player while reducing far-off trees, reactive stalks, pools, streams, and colliders.
 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
+
+Rebuilt the lo-fi render direction around a low-resolution whole-scene render target upscaled with nearest filtering, disabled WebGL antialiasing, and retuned terrain colour boundaries into broader block-stepped regions without repainting the existing palette.

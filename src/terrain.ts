@@ -74,6 +74,7 @@ const terrainChunkSize = 96;
 const terrainChunkSegments = 24;
 const terrainChunkRadius = 5;
 const terrainChunkCellSize = terrainChunkSize / terrainChunkSegments;
+const terrainColourBlockSize = terrainChunkCellSize * 2;
 
 export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
@@ -145,6 +146,24 @@ function getTerrainState(
   };
 }
 
+function terrainColourForCell(centerX: number, centerZ: number, centerY: number): THREE.Color {
+  const detail = detailCoordinatesAt(centerX, centerZ);
+  const blockX = Math.floor(detail.x / terrainColourBlockSize);
+  const blockZ = Math.floor(detail.z / terrainColourBlockSize);
+  const blockCenterX = (blockX + 0.5) * terrainColourBlockSize;
+  const blockCenterZ = (blockZ + 0.5) * terrainColourBlockSize;
+
+  const altitude = THREE.MathUtils.clamp((centerY + 2) / 14, 0, 1);
+  const broadMineral = (Math.sin(blockCenterX * 0.095) + Math.cos(blockCenterZ * 0.085) + 2) / 4;
+  const steppedBoundary =
+    Math.sin(blockX * 0.77 + blockZ * 0.31) * 0.42 +
+    Math.cos(blockX * 0.41 - blockZ * 0.69) * 0.36 +
+    Math.sin((blockX + blockZ) * 0.27) * 0.22;
+  const palettePosition = THREE.MathUtils.clamp(altitude * 0.68 + broadMineral * 0.18 + steppedBoundary * 0.14, 0, 0.999);
+  const band = Math.floor(palettePosition * terrainPalette.length);
+  return terrainPalette[band];
+}
+
 function makeTerrainGeometry(
   xMin: number,
   xMax: number,
@@ -174,14 +193,8 @@ function makeTerrainGeometry(
       const centerX = (x0 + x1) * 0.5;
       const centerZ = (z0 + z1) * 0.5;
       const centerY = (y00 + y10 + y01 + y11) * 0.25;
-      const detail = detailCoordinatesAt(centerX, centerZ);
 
-      const altitude = THREE.MathUtils.clamp((centerY + 2) / 14, 0, 1);
-      const mineral = (Math.sin(detail.x * 0.15) + Math.cos(detail.z * 0.12) + 2) / 4;
-      const pixelFleck = (Math.sin(detail.x * 1.45 + detail.z * 2.1) + 1) * 0.5;
-      const palettePosition = altitude * 0.64 + mineral * 0.28 + pixelFleck * 0.08;
-      const band = THREE.MathUtils.clamp(Math.floor(palettePosition * terrainPalette.length), 0, terrainPalette.length - 1);
-      const colour = terrainPalette[band];
+      const colour = terrainColourForCell(centerX, centerZ, centerY);
       const vertexIndex = positions.length / 3;
       const p00 = pointOnPlanet(x0, z0, y00 + lift);
       const p10 = pointOnPlanet(x1, z0, y10 + lift);
