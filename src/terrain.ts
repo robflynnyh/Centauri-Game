@@ -1,5 +1,11 @@
 import * as THREE from "three";
-import { detailCoordinatesAt, placeObjectOnPlanet, pointOnPlanet, PLANET_CIRCUMFERENCE } from "./planet";
+import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, PLANET_CIRCUMFERENCE } from "./planet";
+
+export type TerrainSystem = {
+  group: THREE.Group;
+  update: (centerX: number, centerZ: number) => void;
+  getDetailPatchState: () => { centerX: number; centerZ: number; halfSize: number };
+};
 
 const terrainPalette = [
   new THREE.Color(0x9b63c4),
@@ -43,12 +49,50 @@ function mound(x: number, z: number, centerX: number, centerZ: number, radiusX: 
   return Math.max(0, 1 - dx * dx - dz * dz) * height;
 }
 
-export function makeTerrain(): THREE.Group {
+const detailPatchSize = 260;
+const detailPatchHalfSize = detailPatchSize * 0.5;
+const detailPatchSegments = 96;
+const detailPatchLift = 0.045;
+const detailPatchSnap = 8;
+
+export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
   group.name = "spherical-planet-terrain";
   group.add(makeTerrainMesh(-PLANET_CIRCUMFERENCE * 0.5, PLANET_CIRCUMFERENCE * 0.5, -PLANET_CIRCUMFERENCE * 0.25, PLANET_CIRCUMFERENCE * 0.25, 192, 72, 0));
-  group.add(makeTerrainMesh(-130, 130, -130, 130, 96, 96, 0.045, true));
-  return group;
+
+  const detailMaterial = makeTerrainMaterial(true);
+  const detailPatch = new THREE.Mesh(makeTerrainGeometry(-detailPatchHalfSize, detailPatchHalfSize, -detailPatchHalfSize, detailPatchHalfSize, detailPatchSegments, detailPatchSegments, detailPatchLift), detailMaterial);
+  detailPatch.name = "player-centered-detail-terrain";
+  group.add(detailPatch);
+
+  let detailCenterX = 0;
+  let detailCenterZ = 0;
+
+  const update = (centerX: number, centerZ: number): void => {
+    const normalized = normalizePlanetCoords(centerX, centerZ);
+    const snappedX = Math.round(normalized.x / detailPatchSnap) * detailPatchSnap;
+    const snappedZ = Math.round(normalized.z / detailPatchSnap) * detailPatchSnap;
+    if (snappedX === detailCenterX && snappedZ === detailCenterZ) return;
+
+    detailCenterX = snappedX;
+    detailCenterZ = snappedZ;
+    detailPatch.geometry.dispose();
+    detailPatch.geometry = makeTerrainGeometry(
+      detailCenterX - detailPatchHalfSize,
+      detailCenterX + detailPatchHalfSize,
+      detailCenterZ - detailPatchHalfSize,
+      detailCenterZ + detailPatchHalfSize,
+      detailPatchSegments,
+      detailPatchSegments,
+      detailPatchLift
+    );
+  };
+
+  return {
+    group,
+    update,
+    getDetailPatchState: () => ({ centerX: detailCenterX, centerZ: detailCenterZ, halfSize: detailPatchHalfSize }),
+  };
 }
 
 function makeTerrainMesh(
@@ -61,6 +105,18 @@ function makeTerrainMesh(
   lift: number,
   polygonOffset = false
 ): THREE.Mesh {
+  return new THREE.Mesh(makeTerrainGeometry(xMin, xMax, zMin, zMax, xSegments, zSegments, lift), makeTerrainMaterial(polygonOffset));
+}
+
+function makeTerrainGeometry(
+  xMin: number,
+  xMax: number,
+  zMin: number,
+  zMax: number,
+  xSegments: number,
+  zSegments: number,
+  lift: number
+): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
   const colours: number[] = [];
@@ -109,15 +165,17 @@ function makeTerrainMesh(
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  return geometry;
+}
 
-  const material = new THREE.MeshBasicMaterial({
+function makeTerrainMaterial(polygonOffset: boolean): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
     polygonOffset,
     polygonOffsetFactor: polygonOffset ? -2 : 0,
     polygonOffsetUnits: polygonOffset ? -2 : 0,
   });
-  return new THREE.Mesh(geometry, material);
 }
 
 export function makeHorizonLandforms(): THREE.Group {

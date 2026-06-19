@@ -15,7 +15,7 @@ import {
   surfaceDistanceBetweenLocal,
 } from "./planet";
 import { createSkySystem } from "./sky";
-import { heightAt, makeHorizonLandforms, makeTerrain } from "./terrain";
+import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
 import "./style.css";
 
 declare global {
@@ -32,6 +32,7 @@ declare global {
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
+      getTerrainState: () => { centerX: number; centerZ: number; halfSize: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -99,8 +100,9 @@ const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
+const terrain = createTerrainSystem();
 
-scene.add(makeTerrain());
+scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
 
 const { updateFloraReactivity } = populateNature(scene, heightAt, collisionWorld.addObstacle);
@@ -139,6 +141,7 @@ if (enableCollisionDebug) {
       crouching: isCrouchPressed(),
       cameraHeight: player.cameraHeight,
     }),
+    getTerrainState: terrain.getDetailPatchState,
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
@@ -148,10 +151,12 @@ if (enableCollisionDebug) {
       player.cameraHeight = standHeight;
       player.grounded = true;
       updatePlayerWorldPosition();
+      terrain.update(player.localPosition.x, player.localPosition.z);
     },
     attemptMove: (x: number, z: number) => {
       collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
       updatePlayerWorldPosition();
+      terrain.update(player.localPosition.x, player.localPosition.z);
       return { x: player.localPosition.x, z: player.localPosition.z };
     },
     isBlockedAt: (x: number, z: number) => {
@@ -305,6 +310,7 @@ function animate(): void {
   footsteps.update(delta);
   sky.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  terrain.update(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
 
   renderer.render(scene, camera);

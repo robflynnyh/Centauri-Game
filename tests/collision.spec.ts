@@ -123,6 +123,32 @@ test("wraps straight walks around the spherical planet", async ({ page }) => {
   expect(result.playerIsAbovePlanet).toBe(true);
 });
 
+test("keeps detailed terrain under the player beyond the starting field", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+
+    debug.setPlayer(420, -360);
+    const player = debug.getPlayer();
+    const terrain = debug.getTerrainState();
+    const standingHeight = debug.getMovementState().cameraHeight;
+    const sampledHeight = debug.terrainHeightAt(player.x, player.z);
+
+    return {
+      detailPatchContainsPlayer: Math.abs(player.x - terrain.centerX) < terrain.halfSize - 12 && Math.abs(player.z - terrain.centerZ) < terrain.halfSize - 12,
+      playerAltitudeMatchesTerrain: Math.abs(player.y - (sampledHeight + standingHeight)) < 0.001,
+      outsideOldPlane: Math.hypot(player.x, player.z) > 220,
+    };
+  });
+
+  expect(result.detailPatchContainsPlayer).toBe(true);
+  expect(result.playerAltitudeMatchesTerrain).toBe(true);
+  expect(result.outsideOldPlane).toBe(true);
+});
+
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
