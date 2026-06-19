@@ -65,7 +65,6 @@ const terrainChunkSize = 96;
 const terrainChunkSegments = 24;
 const terrainChunkRadius = 5;
 const terrainChunkCellSize = terrainChunkSize / terrainChunkSegments;
-const boundaryStepSize = terrainChunkCellSize;
 
 export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
@@ -97,7 +96,7 @@ export function createTerrainSystem(): TerrainSystem {
 
 function rebuildTerrainChunks(group: THREE.Group, terrainMaterial: THREE.ShaderMaterial, centerChunkX: number, centerChunkZ: number): void {
   group.children.forEach((child) => {
-    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
     mesh.geometry.dispose();
   });
   group.clear();
@@ -189,41 +188,61 @@ function makeTerrainGeometry(
 function makeTerrainMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     side: THREE.DoubleSide,
+    fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog]),
     vertexShader: `
       attribute vec2 terrainCoord;
       attribute float terrainHeight;
       varying vec2 vTerrainCoord;
       varying float vTerrainHeight;
+      #include <fog_pars_vertex>
 
       void main() {
         vTerrainCoord = terrainCoord;
         vTerrainHeight = terrainHeight;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_Position = projectionMatrix * mvPosition;
+        #include <fog_vertex>
       }
     `,
     fragmentShader: `
       varying vec2 vTerrainCoord;
       varying float vTerrainHeight;
+      #include <fog_pars_fragment>
 
-      float hashCell(vec2 cell) {
-        vec3 p3 = fract(vec3(cell.xyx) * 0.1031);
-        p3 += dot(p3, p3.yzx + 33.33);
-        return fract((p3.x + p3.y) * p3.z);
-      }
-
-      float steppedContour(vec2 p, float seed) {
-        vec2 warped = p + vec2(
-          sin(p.y * 0.042 + seed) * 11.0 + sin((p.x + p.y) * 0.028 + seed * 0.7) * 7.0,
-          cos(p.x * 0.039 - seed) * 10.0 + sin((p.x - p.y) * 0.033 + seed * 1.3) * 6.0
+      float steppedBoundaryContour(vec2 tile, float seed) {
+        const float stepSize = 2.0;
+        vec2 stepped = (floor(tile / stepSize) + 0.5) * stepSize;
+        vec2 warped = stepped + vec2(
+          sin(stepped.y * 0.047 + seed * 1.7) * 14.0 + sin((stepped.x + stepped.y) * 0.029 + seed * 2.3) * 7.0,
+          cos(stepped.x * 0.041 - seed * 1.1) * 13.0 + sin((stepped.x - stepped.y) * 0.035 + seed * 0.9) * 6.0
         );
-        return (
-          sin(warped.x * 0.08 + sin(warped.y * 0.037 + seed) * 2.2) +
-          cos(warped.y * 0.073 + cos(warped.x * 0.041 - seed) * 2.0) +
-          sin((warped.x - warped.y) * 0.052 + seed)
+        float contour = (
+          sin(warped.x * 0.083 + sin(warped.y * 0.038 + seed) * 1.9) +
+          cos(warped.y * 0.071 + cos(warped.x * 0.036 - seed) * 1.7) +
+          sin((warped.x - warped.y) * 0.052 + seed * 2.1)
         ) / 3.0;
+        float blockTurn =
+          sin(floor((tile.x + tile.y) / (stepSize * 3.0)) * 1.37 + seed) * 0.18 +
+          sin(floor(tile.x / (stepSize * 2.0)) * 1.21 + seed * 1.9) * 0.12 +
+          cos(floor(tile.y / (stepSize * 2.0)) * 1.43 - seed * 1.4) * 0.12;
+        float combined = contour + blockTurn;
+        float quantized = sign(combined) * floor(abs(combined) * 4.0 + 0.5) / 4.0;
+        return clamp(quantized, -1.0, 1.0);
       }
 
-      vec3 palette(float band) {
+      float materialBand(float palettePosition, vec2 tile) {
+        float band = 0.0;
+        for (int thresholdIndex = 1; thresholdIndex < 6; thresholdIndex += 1) {
+          float threshold = float(thresholdIndex) / 6.0 + steppedBoundaryContour(tile, float(thresholdIndex)) * 0.018;
+          if (palettePosition >= threshold) {
+            band = float(thresholdIndex);
+          }
+        }
+        return band;
+      }
+
+      vec3 oldTerrainPalette(float band) {
         if (band < 0.5) return vec3(0.6078, 0.3882, 0.7686);
         if (band < 1.5) return vec3(0.4314, 0.4706, 0.8745);
         if (band < 2.5) return vec3(0.3216, 0.7216, 0.7333);
@@ -233,30 +252,23 @@ function makeTerrainMaterial(): THREE.ShaderMaterial {
       }
 
       void main() {
-        float pixelSize = 2.0;
-        vec2 cell = floor(vTerrainCoord / pixelSize);
-        vec2 p = cell * pixelSize;
+        vec2 boundaryTile = (floor(vTerrainCoord / 2.0) + 0.5) * 2.0;
+        vec2 materialTile = (floor(vTerrainCoord / 4.0) + 0.5) * 4.0;
+        vec2 sampleOffset = vec2(
+          steppedBoundaryContour(boundaryTile, 2.8),
+          steppedBoundaryContour(boundaryTile, 4.4)
+        ) * 6.5;
+        vec2 sampleTile = materialTile + sampleOffset;
         float altitude = clamp((vTerrainHeight + 2.0) / 14.0, 0.0, 1.0);
-        float lowBoundary = 0.32 + steppedContour(p, 1.0) * 0.11;
-        float highBoundary = 0.63 + steppedContour(p + vec2(31.0, -17.0), 5.0) * 0.1;
-        float detail = hashCell(cell * 1.9 + vec2(7.0, 13.0));
-        float familyDetail = steppedContour(p + vec2(-23.0, 19.0), 9.0);
-
-        vec3 colour = vec3(0.7137, 0.7882, 0.3569);
-        if (altitude < lowBoundary) {
-          colour = detail + familyDetail * 0.16 < 0.22
-            ? vec3(0.38, 0.66, 0.80)
-            : vec3(0.3216, 0.7216, 0.7333);
-        } else if (altitude > highBoundary) {
-          colour = detail + familyDetail * 0.18 < 0.3
-            ? vec3(0.76, 0.44, 0.74)
-            : vec3(0.6078, 0.3882, 0.7686);
-        } else {
-          colour = detail + familyDetail * 0.12 < 0.18
-            ? vec3(0.76, 0.74, 0.38)
-            : vec3(0.7137, 0.7882, 0.3569);
-        }
-        gl_FragColor = vec4(colour, 1.0);
+        float mineral = (sin(sampleTile.x * 0.15) + cos(sampleTile.y * 0.12) + 2.0) / 4.0;
+        float pixelFleck = (sin(sampleTile.x * 1.45 + sampleTile.y * 2.1) + 1.0) * 0.5;
+        float palettePosition = clamp(
+          altitude * 0.64 + mineral * 0.28 + pixelFleck * 0.04 + steppedBoundaryContour(boundaryTile, 0.65) * 0.075,
+          0.0,
+          0.999
+        );
+        gl_FragColor = vec4(oldTerrainPalette(materialBand(palettePosition, boundaryTile)), 1.0);
+        #include <fog_fragment>
       }
     `,
   });

@@ -73,3 +73,5 @@ Added a trippy color-shifting planet fog and capped generated nature complexity 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
 
 Naturalized hard terrain material boundaries with a structured pixel-stepped shader field: height-driven terrain families keep low, mid, and high ground coherent while wavy quantized thresholds avoid long straight biome borders in the PR flythrough.
+
+Retuned terrain-boundary polish back toward the original fogged six-colour ground palette: the material shader now reuses the old altitude/mineral palette formula, removes random hash-cell colour pepper, and limits the new work to quantized pixel-step boundary contours visible in the PR preview.
