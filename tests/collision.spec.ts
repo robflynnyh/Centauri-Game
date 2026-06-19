@@ -86,12 +86,12 @@ test("supports grounded jump and visible crouch height changes", async ({ page }
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
-  await expect(page.getByText("click to look")).toBeVisible();
+  await expect(page.getByText("click to lock")).toBeVisible();
 
   await page.mouse.move(400, 300);
   await page.mouse.click(400, 300);
   await page.waitForFunction(() => document.pointerLockElement !== null);
-  await expect(page.getByText("mouse look")).toBeVisible();
+  await expect(page.getByText("mouse locked")).toBeVisible();
 
   const start = await page.evaluate(() => {
     const debug = window.__centauriDebug;
@@ -115,10 +115,10 @@ test("uses pointer lock for continuous mouse-look and releases cleanly", async (
   await page.evaluate(() => {
     const canvas = document.querySelector("canvas");
     if (!canvas) throw new Error("Missing Centauri canvas");
-    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    canvas.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
   await page.waitForFunction(() => document.pointerLockElement === null);
-  await expect(page.getByText("click to look")).toBeVisible();
+  await expect(page.getByText("click to lock")).toBeVisible();
   const released = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");

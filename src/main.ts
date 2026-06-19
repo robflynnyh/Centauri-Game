@@ -44,7 +44,7 @@ app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
       <h1>Centauri Field Note 001</h1>
-      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once for mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
+      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
@@ -146,7 +146,7 @@ function startAudio(): void {
 
 function updateLookStatus(): void {
   if (!lookStatus) return;
-  lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse look" : "click to look";
+  lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse locked" : "click to lock";
 }
 
 updateLookStatus();
@@ -161,7 +161,7 @@ window.addEventListener("keydown", (event) => {
   startAudio();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
-renderer.domElement.addEventListener("pointerdown", () => {
+renderer.domElement.addEventListener("click", () => {
   startAudio();
   if (isDemo) return;
   renderer.domElement.focus();
