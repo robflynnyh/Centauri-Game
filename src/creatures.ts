@@ -10,8 +10,23 @@ type Creature = {
   feet: THREE.Mesh[];
   anchor: THREE.Vector3;
   route: THREE.Vector3[];
+  currentLocal: THREE.Vector3;
+  hopStartLocal: THREE.Vector3;
+  hopTargetLocal: THREE.Vector3;
+  lastScaredHopIndex: number;
+  scareBlend: number;
   phase: number;
   interval: number;
+};
+
+const scareSettings = {
+  radius: 8.5,
+  normalHopHeight: 0.62,
+  normalHopSpeedMultiplier: 1,
+  scaredHopHeight: 1.24,
+  scaredHopSpeedMultiplier: 2,
+  scaredHopDistance: 1.38,
+  maxFleeDistanceFromWater: 3.4,
 };
 
 const creatureSpecs = [
@@ -25,7 +40,7 @@ const creatureSpecs = [
 export function createAlienWaterCreatures(
   scene: THREE.Scene,
   heightAt: HeightSampler
-): { creatureGroup: THREE.Group; update: (elapsed: number) => void } {
+): { creatureGroup: THREE.Group; update: (elapsed: number, delta: number, playerLocalPosition: THREE.Vector3) => void } {
   const creatureGroup = new THREE.Group();
   scene.add(creatureGroup);
 
@@ -44,6 +59,11 @@ export function createAlienWaterCreatures(
       feet: root.userData.feet as THREE.Mesh[],
       anchor,
       route,
+      currentLocal: route[0].clone(),
+      hopStartLocal: route[0].clone(),
+      hopTargetLocal: route[0].clone(),
+      lastScaredHopIndex: -1,
+      scareBlend: 0,
       phase: spec.phase,
       interval: spec.interval,
     } satisfies Creature;
@@ -51,38 +71,94 @@ export function createAlienWaterCreatures(
 
   return {
     creatureGroup,
-    update: (elapsed) => {
+    update: (elapsed, delta, playerLocalPosition) => {
       creatures.forEach((creature, index) => {
-        const rawCycle = (elapsed + creature.phase) / creature.interval;
-        const hopIndex = Math.floor(rawCycle);
-        const cycle = rawCycle - hopIndex;
-        const hopActive = cycle < 0.42;
-        const hopT = hopActive ? THREE.MathUtils.smoothstep(cycle / 0.42, 0, 1) : 0;
-        const start = creature.route[hopIndex % creature.route.length];
-        const end = creature.route[(hopIndex + 1) % creature.route.length];
-        const local = new THREE.Vector3().lerpVectors(start, end, hopActive ? hopT : 1);
+        const idle = sampleHop(creature.route, elapsed, creature.phase, creature.interval / scareSettings.normalHopSpeedMultiplier);
+        const roughX = creature.anchor.x + creature.currentLocal.x;
+        const roughZ = creature.anchor.z + creature.currentLocal.z;
+        const distanceToPlayer = Math.hypot(roughX - playerLocalPosition.x, roughZ - playerLocalPosition.z);
+        const scareTarget = 1 - THREE.MathUtils.smoothstep(distanceToPlayer, scareSettings.radius * 0.72, scareSettings.radius);
+        const scareRate = scareTarget > creature.scareBlend ? 4.4 : 1.15;
+        creature.scareBlend = THREE.MathUtils.lerp(creature.scareBlend, scareTarget, 1 - Math.exp(-delta * scareRate));
+
+        if (creature.scareBlend > 0.04) {
+          const scaredInterval = creature.interval / scareSettings.scaredHopSpeedMultiplier;
+          const rawScaredCycle = (elapsed + creature.phase) / scaredInterval;
+          const scaredHopIndex = Math.floor(rawScaredCycle);
+          const scaredCycle = rawScaredCycle - scaredHopIndex;
+
+          if (scaredHopIndex !== creature.lastScaredHopIndex) {
+            creature.lastScaredHopIndex = scaredHopIndex;
+            creature.hopStartLocal.copy(creature.currentLocal);
+            const fromPlayer = new THREE.Vector3(roughX - playerLocalPosition.x, 0, roughZ - playerLocalPosition.z);
+            if (fromPlayer.lengthSq() < 0.001) fromPlayer.set(Math.sin(index + elapsed), 0, Math.cos(index + elapsed));
+            fromPlayer.normalize();
+            creature.hopTargetLocal.copy(creature.currentLocal).add(fromPlayer.multiplyScalar(scareSettings.scaredHopDistance));
+            clampToWaterLeash(creature.hopTargetLocal);
+          }
+
+          const scaredHopActive = scaredCycle < 0.42;
+          const scaredHopT = scaredHopActive ? THREE.MathUtils.smoothstep(scaredCycle / 0.42, 0, 1) : 1;
+          const scaredLocal = new THREE.Vector3().lerpVectors(creature.hopStartLocal, creature.hopTargetLocal, scaredHopT);
+          creature.currentLocal.lerp(scaredLocal, creature.scareBlend);
+        } else {
+          creature.currentLocal.lerp(idle.local, 1 - Math.exp(-delta * 1.65));
+          creature.lastScaredHopIndex = -1;
+        }
+
+        const local = creature.currentLocal;
         const x = creature.anchor.x + local.x;
         const z = creature.anchor.z + local.z;
-        const hopArc = hopActive ? Math.sin(hopT * Math.PI) * 0.62 : 0;
-        const idleBob = hopActive ? 0 : Math.sin(elapsed * 3.1 + index) * 0.025;
-        const facing = new THREE.Vector3().subVectors(end, start);
+        const scaredCycle = ((elapsed + creature.phase) / (creature.interval / scareSettings.scaredHopSpeedMultiplier)) % 1;
+        const scaredHopActive = scaredCycle < 0.42 && creature.scareBlend > 0.04;
+        const scaredHopT = scaredHopActive ? THREE.MathUtils.smoothstep(scaredCycle / 0.42, 0, 1) : 0;
+        const scaredArc = scaredHopActive ? Math.sin(scaredHopT * Math.PI) * scareSettings.scaredHopHeight : 0;
+        const hopArc = THREE.MathUtils.lerp(idle.hopArc, scaredArc, creature.scareBlend);
+        const idleBob = hopArc > 0.01 ? 0 : Math.sin(elapsed * 3.1 + index) * 0.025;
+        const facing = creature.scareBlend > 0.08 ? new THREE.Vector3(x - playerLocalPosition.x, 0, z - playerLocalPosition.z) : idle.facing;
+        if (facing.lengthSq() < 0.001) facing.set(0, 0, 1);
 
         placeObjectOnPlanet(
           creature.root,
           x,
           z,
           heightAt(x, z) + hopArc + idleBob + 0.08,
-          new THREE.Euler(0, Math.atan2(facing.x, facing.z), hopActive ? Math.sin(hopT * Math.PI) * 0.12 * Math.sign(facing.x || 1) : 0)
+          new THREE.Euler(0, Math.atan2(facing.x, facing.z), hopArc > 0.01 ? Math.sin((scaredHopT || idle.hopT) * Math.PI) * 0.12 * Math.sign(facing.x || 1) : 0)
         );
         creature.body.scale.set(1 + hopArc * 0.16, 1 - hopArc * 0.08, 1 + hopArc * 0.1);
-        creature.eyes.position.y = 0.34 + hopArc * 0.05;
+        creature.eyes.position.y = 0.34 + hopArc * 0.05 + creature.scareBlend * 0.06;
         creature.feet.forEach((foot, footIndex) => {
           foot.position.z = (footIndex === 0 ? -0.28 : 0.28) - hopArc * 0.12;
-          foot.rotation.x = hopActive ? -0.42 + hopArc * 0.25 : -0.42;
+          foot.rotation.x = hopArc > 0.01 ? -0.42 + hopArc * 0.25 : -0.42;
         });
       });
     },
   };
+}
+
+function sampleHop(
+  route: THREE.Vector3[],
+  elapsed: number,
+  phase: number,
+  interval: number
+): { local: THREE.Vector3; facing: THREE.Vector3; hopArc: number; hopT: number } {
+  const rawCycle = (elapsed + phase) / interval;
+  const hopIndex = Math.floor(rawCycle);
+  const cycle = rawCycle - hopIndex;
+  const hopActive = cycle < 0.42;
+  const hopT = hopActive ? THREE.MathUtils.smoothstep(cycle / 0.42, 0, 1) : 0;
+  const start = route[hopIndex % route.length];
+  const end = route[(hopIndex + 1) % route.length];
+  const local = new THREE.Vector3().lerpVectors(start, end, hopActive ? hopT : 1);
+  const hopArc = hopActive ? Math.sin(hopT * Math.PI) * scareSettings.normalHopHeight : 0;
+  const facing = new THREE.Vector3().subVectors(end, start);
+  return { local, facing, hopArc, hopT };
+}
+
+function clampToWaterLeash(local: THREE.Vector3): void {
+  const distanceFromWater = Math.hypot(local.x, local.z);
+  if (distanceFromWater <= scareSettings.maxFleeDistanceFromWater) return;
+  local.multiplyScalar(scareSettings.maxFleeDistanceFromWater / distanceFromWater);
 }
 
 function makePatrolRoute(angle: number, hopDistance: number, seed: number): THREE.Vector3[] {

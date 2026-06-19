@@ -71,3 +71,5 @@ Expanded the generated pockets into larger start-area-like biome patches dotted 
 Added a trippy color-shifting planet fog and capped generated nature complexity by distance, keeping dense biome patches near the player while reducing far-off trees, reactive stalks, pools, streams, and colliders.
 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
+
+Gave the small water-creatures a scared hop response: within an 8.5 metre player radius they flee away with roughly double hop height and speed, then settle back toward their water patrols after the player moves on.

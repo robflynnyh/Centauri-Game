@@ -346,9 +346,9 @@ function animate(): void {
   else updateExploration(delta);
 
   footsteps.update(delta);
-  waterCreatures.update(elapsed);
-  sky.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  waterCreatures.update(elapsed, delta, floraFocus);
+  sky.update(elapsed);
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);

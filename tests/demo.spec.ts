@@ -7,12 +7,15 @@ test("records a deterministic Centauri flythrough", async ({ page }, testInfo) =
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForTimeout(12_000);
   const video = page.video();
-  await page.close();
 
   if (video) {
     const outputPath = "docs/demo/pr-demo.webm";
     await mkdir("docs/demo", { recursive: true });
-    await video.saveAs(outputPath);
+    const saveVideo = video.saveAs(outputPath);
+    await page.close();
+    await saveVideo;
     await testInfo.attach("pr-demo", { path: outputPath, contentType: "video/webm" });
+  } else {
+    await page.close();
   }
 });

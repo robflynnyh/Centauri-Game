@@ -38,17 +38,21 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 6.4) {
-        resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
-        onWalk?.(demoPlayer, delta);
+      if (elapsed < 8.4) {
+        if (elapsed < 6.4) {
+          resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
+          onWalk?.(demoPlayer, delta);
+        } else {
+          onWalk?.(demoPlayer, 0);
+        }
         lookAtPlanetPoint(
           camera,
           demoPlayer.x,
           demoPlayer.z,
           heightAt(demoPlayer.x, demoPlayer.z) + 3.15,
-          6.2,
-          7,
-          heightAt(6.2, 7) + 2.5
+          6.7,
+          10.2,
+          heightAt(6.7, 10.2) + 1.85
         );
         return;
       }
