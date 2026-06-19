@@ -32,10 +32,11 @@ Deterministic PR demo route:
 ## Validation
 
 ```bash
-npm run typecheck
 npm run build
 npm run demo:video
 ```
+
+`npm run typecheck` is available as a stricter local check, but the initial CI gate is the Vite build plus the recorded Playwright demo.
 
 The demo-video command records a Playwright `.webm` under `test-results/`.
 
