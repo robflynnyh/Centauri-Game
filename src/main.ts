@@ -10,10 +10,11 @@ declare global {
   interface Window {
     __centauriDebug?: {
       obstacles: CollisionObstacle[];
-      getPlayer: () => { x: number; z: number };
+      getPlayer: () => { x: number; y: number; z: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
+      terrainHeightAt: (x: number, z: number) => number;
     };
   }
 }
@@ -68,7 +69,7 @@ const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMo
 if (enableCollisionDebug) {
   window.__centauriDebug = {
     obstacles: collisionWorld.obstacles.map((obstacle) => ({ ...obstacle })),
-    getPlayer: () => ({ x: player.position.x, z: player.position.z }),
+    getPlayer: () => ({ x: player.position.x, y: player.position.y, z: player.position.z }),
     setPlayer: (x: number, z: number) => {
       player.position.set(x, heightAt(x, z) + 2.2, z);
       player.velocity.set(0, 0, 0);
@@ -79,6 +80,7 @@ if (enableCollisionDebug) {
       return { x: player.position.x, z: player.position.z };
     },
     isBlockedAt: collisionWorld.isBlockedAt,
+    terrainHeightAt: heightAt,
   };
 }
 

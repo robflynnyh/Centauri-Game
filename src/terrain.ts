@@ -2,17 +2,37 @@ import * as THREE from "three";
 
 export function heightAt(x: number, z: number): number {
   const d = Math.sqrt(x * x + z * z);
-  const island = Math.max(0, 1 - Math.pow(d / 88, 2.35));
+  const island = Math.max(0, 1 - Math.pow(d / 106, 2.28));
   const ridges = Math.sin(x * 0.18) * Math.cos(z * 0.16) * 1.45;
   const alienPulse = Math.sin((x + z) * 0.07) * 0.85 + Math.sin(Math.hypot(x, z) * 0.28) * 0.7;
-  const northShoulder = Math.max(0, 1 - Math.abs(z + 55) / 22) * (1 - Math.min(Math.abs(x) / 96, 1)) * 2.8;
+  const northShoulder = Math.max(0, 1 - Math.abs(z + 55) / 24) * (1 - Math.min(Math.abs(x) / 106, 1)) * 3.1;
   const westShelf = Math.max(0, 1 - Math.abs(x + 64) / 26) * (1 - Math.min(Math.abs(z) / 96, 1)) * 1.8;
-  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf;
+  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(x, z);
+}
+
+function mountainHeightAt(x: number, z: number): number {
+  const northBelt = Math.max(0, 1 - Math.abs(z + 72) / 28);
+  const northTaper = 1 - Math.min(Math.abs(x) / 116, 1);
+  const northCrests = Math.pow(northBelt, 1.8) * Math.pow(Math.max(0, northTaper), 0.75);
+  const serration = 0.64 + Math.abs(Math.sin(x * 0.105 + Math.sin(z * 0.045) * 1.8)) * 0.56;
+
+  const sideMasses =
+    mound(x, z, -78, -42, 18, 24, 7.8) +
+    mound(x, z, 82, -54, 20, 28, 9.4) +
+    mound(x, z, 74, 34, 18, 22, 6.5);
+
+  return northCrests * serration * 14.5 + sideMasses;
+}
+
+function mound(x: number, z: number, centerX: number, centerZ: number, radiusX: number, radiusZ: number, height: number): number {
+  const dx = (x - centerX) / radiusX;
+  const dz = (z - centerZ) / radiusZ;
+  return Math.max(0, 1 - dx * dx - dz * dz) * height;
 }
 
 export function makeTerrain(): THREE.Mesh {
-  const size = 176;
-  const segments = 64;
+  const size = 220;
+  const segments = 80;
   const cellSize = size / segments;
   const halfSize = size / 2;
   const geometry = new THREE.BufferGeometry();
@@ -70,58 +90,31 @@ export function makeTerrain(): THREE.Mesh {
 
 export function makeHorizonLandforms(): THREE.Group {
   const group = new THREE.Group();
-  const ridgeMaterials = [
-    new THREE.MeshBasicMaterial({ color: 0x4e2d88, side: THREE.DoubleSide }),
-    new THREE.MeshBasicMaterial({ color: 0x2f7896, side: THREE.DoubleSide }),
-    new THREE.MeshBasicMaterial({ color: 0xd25598, side: THREE.DoubleSide }),
-  ];
+  const crestMaterial = new THREE.MeshBasicMaterial({ color: 0x4e2d88, side: THREE.DoubleSide });
+  const butteMaterial = new THREE.MeshBasicMaterial({ color: 0xd25598, side: THREE.DoubleSide });
 
-  addRidgeStrip(group, ridgeMaterials[0], -92, -106, 0.95, 0);
-  addRidgeStrip(group, ridgeMaterials[1], -112, -128, 0.68, 0.9);
-  addSideButtes(group, ridgeMaterials[2]);
-
+  addCrestStones(group, crestMaterial);
+  addSideButtes(group, butteMaterial);
   return group;
 }
 
-function addRidgeStrip(
-  group: THREE.Group,
-  material: THREE.Material,
-  z: number,
-  backZ: number,
-  heightScale: number,
-  phase: number
-): void {
-  const geometry = new THREE.BufferGeometry();
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const ridgeCount = 13;
-  const left = -105;
-  const step = 210 / ridgeCount;
+function addCrestStones(group: THREE.Group, material: THREE.Material): void {
+  const placements = [
+    { x: -58, z: -74, height: 2.4, radius: 1.8, lean: -0.35 },
+    { x: -34, z: -80, height: 3.3, radius: 2.2, lean: 0.22 },
+    { x: -8, z: -73, height: 2.8, radius: 1.9, lean: -0.16 },
+    { x: 21, z: -78, height: 3.7, radius: 2.4, lean: 0.31 },
+    { x: 52, z: -70, height: 2.6, radius: 1.8, lean: -0.24 },
+  ];
 
-  for (let i = 0; i <= ridgeCount; i += 1) {
-    const x = left + i * step;
-    const baseY = heightAt(x * 0.58, -76) - 0.35;
-    const peakY =
-      baseY +
-      (8 + Math.sin(i * 1.7 + phase) * 3.2 + ((i * 5) % 4) * 1.5) * heightScale;
-    const forwardZ = z + Math.sin(i * 0.8 + phase) * 4;
-    const rearZ = backZ + Math.cos(i * 0.7 + phase) * 6;
-    positions.push(x, baseY, forwardZ, x + step * 0.48, peakY, (forwardZ + rearZ) * 0.5, x + step, baseY, rearZ);
-  }
-
-  for (let i = 0; i < ridgeCount; i += 1) {
-    const a = i * 3;
-    const b = (i + 1) * 3;
-    indices.push(a, a + 1, a + 2, a + 2, a + 1, b + 1, a + 2, b + 1, b + 2);
-  }
-
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-
-  const ridge = new THREE.Mesh(geometry, material);
-  ridge.renderOrder = -1;
-  group.add(ridge);
+  placements.forEach(({ x, z, height, radius, lean }) => {
+    const crest = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 5), material);
+    crest.position.set(x, heightAt(x, z) + height * 0.5 - 0.08, z);
+    crest.rotation.set(lean * 0.25, x * 0.01, lean);
+    crest.scale.x = 1.2;
+    crest.scale.z = 0.7;
+    group.add(crest);
+  });
 }
 
 function addSideButtes(group: THREE.Group, material: THREE.Material): void {

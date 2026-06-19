@@ -16,12 +16,19 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
     debug.setPlayer(tree.x, startZ);
     const blocked = debug.attemptMove(0, -1.5);
     const waterPassable = !debug.isBlockedAt(5.5, 7.5);
+    const fieldHeight = debug.terrainHeightAt(0, -28);
+    const mountainHeight = debug.terrainHeightAt(0, -74);
+    debug.setPlayer(0, -74);
+    const mountainPlayer = debug.getPlayer();
 
     return {
       colliderCount: debug.obstacles.length,
       treeBlocked: Math.abs(blocked.z - startZ) < 0.001,
       rockBlocked: debug.isBlockedAt(rock.x, rock.z),
       waterPassable,
+      mountainIsTerrain: mountainHeight > fieldHeight + 7,
+      mountainWalkable: !debug.isBlockedAt(0, -74),
+      playerStandsOnMountain: Math.abs(mountainPlayer.y - (mountainHeight + 2.2)) < 0.001,
     };
   });
 
@@ -29,4 +36,7 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
   expect(result.treeBlocked).toBe(true);
   expect(result.rockBlocked).toBe(true);
   expect(result.waterPassable).toBe(true);
+  expect(result.mountainIsTerrain).toBe(true);
+  expect(result.mountainWalkable).toBe(true);
+  expect(result.playerStandsOnMountain).toBe(true);
 });
