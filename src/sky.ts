@@ -49,10 +49,13 @@ export function createSkySystem(
   const celestialGroup = new THREE.Group();
   scene.add(celestialGroup);
   celestialBodies.forEach((body, index) => addCelestialBody(celestialGroup, camera, body, index));
+  const meteorField = createMeteorField(camera, isDemo);
+  scene.add(meteorField.group);
 
   return {
     update: (elapsed) => {
       const dayAmount = getDayAmount(elapsed, isDemo);
+      const nightAmount = 1 - THREE.MathUtils.smoothstep(dayAmount, 0.08, 0.36);
       skyUniforms.dayAmount.value = dayAmount;
 
       (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
@@ -68,6 +71,7 @@ export function createSkySystem(
         child.lookAt(camera.position);
         child.rotation.z += Math.sin(elapsed * 0.12 + index) * 0.0008;
       });
+      meteorField.update(elapsed, nightAmount);
     },
   };
 }
@@ -132,6 +136,16 @@ type CelestialBody = {
   colour: number;
   halo: number;
   ring?: boolean;
+};
+
+type MeteorPath = {
+  start: THREE.Vector3;
+  end: THREE.Vector3;
+  size: number;
+  angle: number;
+  colour: number;
+  glow: number;
+  offset: number;
 };
 
 const celestialBodies: CelestialBody[] = [
@@ -204,4 +218,143 @@ function addCelestialBody(celestialGroup: THREE.Group, camera: THREE.Camera, bod
 
   group.lookAt(camera.position);
   celestialGroup.add(group);
+}
+
+function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THREE.Group; update: (elapsed: number, nightAmount: number) => void } {
+  const group = new THREE.Group();
+  const period = isDemo ? 7.2 : 23;
+  const duration = isDemo ? 2.4 : 2.9;
+  const paths: MeteorPath[] = [
+    {
+      start: new THREE.Vector3(20, 55, -116),
+      end: new THREE.Vector3(-28, 34, -94),
+      size: 1.36,
+      angle: -0.38,
+      colour: 0xfff6b0,
+      glow: 0xff78d2,
+      offset: 1.0,
+    },
+    {
+      start: new THREE.Vector3(-74, 48, -64),
+      end: new THREE.Vector3(-34, 28, -82),
+      size: 0.72,
+      angle: -0.28,
+      colour: 0xa8fff2,
+      glow: 0x7c7dff,
+      offset: 4.4,
+    },
+    {
+      start: new THREE.Vector3(66, 42, -78),
+      end: new THREE.Vector3(22, 24, -100),
+      size: 0.82,
+      angle: -0.34,
+      colour: 0xffcaf5,
+      glow: 0x89d6ff,
+      offset: 7.8,
+    },
+    {
+      start: new THREE.Vector3(-18, 62, 84),
+      end: new THREE.Vector3(35, 38, 62),
+      size: 0.68,
+      angle: -0.4,
+      colour: 0xffec83,
+      glow: 0xff85aa,
+      offset: 11.5,
+    },
+  ];
+  const meteors = paths.map((path) => {
+    const meteor = makeMeteor(path);
+    group.add(meteor);
+    return { path, meteor };
+  });
+
+  return {
+    group,
+    update: (elapsed, nightAmount) => {
+      group.visible = nightAmount > 0.02;
+      meteors.forEach(({ path, meteor }) => {
+        const phase = (elapsed + path.offset) % period;
+        const activeAmount = phase <= duration ? 1 : 0;
+        const progress = THREE.MathUtils.clamp(phase / duration, 0, 1);
+        const easedProgress = THREE.MathUtils.smoothstep(progress, 0, 1);
+        const fade = activeAmount * nightAmount * Math.sin(progress * Math.PI);
+        meteor.visible = fade > 0.015;
+        meteor.position.lerpVectors(path.start, path.end, easedProgress);
+        meteor.lookAt(camera.position);
+        meteor.rotation.z += path.angle;
+        meteor.scale.setScalar(path.size * (0.84 + progress * 0.24));
+        meteor.children.forEach((child, index) => {
+          const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          material.opacity = fade * (index === 0 ? 0.34 : index === 1 ? 0.96 : 0.9);
+        });
+      });
+    },
+  };
+}
+
+function makeMeteor(path: MeteorPath): THREE.Group {
+  const meteor = new THREE.Group();
+  const tailLength = 13;
+  const glow = new THREE.Mesh(
+    new THREE.PlaneGeometry(tailLength + 3, 2.1),
+    new THREE.MeshBasicMaterial({
+      color: path.glow,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    })
+  );
+  glow.position.x = -tailLength * 0.22;
+  meteor.add(glow);
+
+  const streak = new THREE.Mesh(
+    new THREE.PlaneGeometry(tailLength, 0.42),
+    new THREE.MeshBasicMaterial({
+      color: path.colour,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    })
+  );
+  streak.position.x = -tailLength * 0.3;
+  meteor.add(streak);
+
+  const head = new THREE.Mesh(
+    new THREE.CircleGeometry(0.62, 8),
+    new THREE.MeshBasicMaterial({
+      color: path.colour,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    })
+  );
+  head.position.x = tailLength * 0.36;
+  meteor.add(head);
+
+  [
+    [-tailLength * 0.08, -0.48, 0.24],
+    [-tailLength * 0.42, 0.38, 0.18],
+  ].forEach(([x, y, radius]) => {
+    const fragment = new THREE.Mesh(
+      new THREE.CircleGeometry(radius, 7),
+      new THREE.MeshBasicMaterial({
+        color: path.glow,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      })
+    );
+    fragment.position.set(x, y, 0.02);
+    meteor.add(fragment);
+  });
+
+  return meteor;
 }
