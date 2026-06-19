@@ -56,7 +56,7 @@ export function createPrDemoController(
       if (elapsed < 8.4) {
         const generatedBiome = new THREE.Vector3(260, 0, -240);
         onWalk?.(generatedBiome, 0);
-        lookAtPlanetPoint(camera, 236, -196, heightAt(236, -196) + 24, 280, -248, heightAt(280, -248) + 5);
+        lookAtPlanetPoint(camera, 244, -213, heightAt(244, -213) + 13, 263, -239, heightAt(263, -239) + 4.2);
         return;
       }
 
