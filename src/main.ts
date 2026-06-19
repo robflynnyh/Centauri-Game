@@ -53,6 +53,9 @@ declare global {
         maxZ: number;
         chunkSize: number;
         chunkCount: number;
+        complexDetailRadius: number;
+        complexFadeRadius: number;
+        generatedBiomePatches: number;
         generatedObjects: number;
         generatedObstacles: number;
         generatedReactiveFlora: number;

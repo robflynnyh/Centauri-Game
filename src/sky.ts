@@ -7,9 +7,12 @@ export function createSkySystem(
 ): { update: (elapsed: number) => void } {
   const dayBackgroundColour = new THREE.Color(0x5d91ff);
   const nightBackgroundColour = new THREE.Color(0x171044);
-  const dayFogColour = new THREE.Color(0x76a6df);
+  const dayFogColour = new THREE.Color(0x74e7ff);
+  const dayFogAccentColour = new THREE.Color(0xff9ad6);
   const nightFogColour = new THREE.Color(0x251652);
-  const worldFog = new THREE.FogExp2(dayFogColour.getHex(), 0.014);
+  const nightFogAccentColour = new THREE.Color(0x6d4ee8);
+  const activeFogColour = dayFogColour.clone();
+  const worldFog = new THREE.FogExp2(activeFogColour.getHex(), 0.02);
   scene.background = dayBackgroundColour.clone();
   scene.fog = worldFog;
 
@@ -64,8 +67,11 @@ export function createSkySystem(
       skyUniforms.dayAmount.value = dayAmount;
 
       (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
-      worldFog.color.copy(nightFogColour).lerp(dayFogColour, dayAmount);
-      worldFog.density = THREE.MathUtils.lerp(0.021, 0.014, dayAmount);
+      const fogPulse = Math.sin(elapsed * 0.16) * 0.5 + 0.5;
+      const dayFog = dayFogColour.clone().lerp(dayFogAccentColour, fogPulse * 0.32);
+      const nightFog = nightFogColour.clone().lerp(nightFogAccentColour, fogPulse * 0.42);
+      worldFog.color.copy(nightFog).lerp(dayFog, dayAmount);
+      worldFog.density = THREE.MathUtils.lerp(0.031, 0.022, dayAmount) + fogPulse * 0.0025;
 
       hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
       sun.intensity = THREE.MathUtils.lerp(0.04, 0.22, dayAmount);

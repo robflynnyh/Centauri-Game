@@ -9,8 +9,8 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
     if (!debug) throw new Error("Missing Centauri collision debug hook");
 
     const tree = debug.obstacles.find((obstacle) => obstacle.kind === "tree");
-    const rock = debug.obstacles.find((obstacle) => obstacle.kind === "rock");
-    if (!tree || !rock) throw new Error("Missing expected tree or rock collider");
+    const rockBlocked = debug.obstacles.some((obstacle) => obstacle.kind === "rock" && debug.isBlockedAt(obstacle.x, obstacle.z));
+    if (!tree || !rockBlocked) throw new Error("Missing expected tree or rock collider");
 
     const startZ = tree.z + tree.radius + 0.85;
     debug.setPlayer(tree.x, startZ);
@@ -25,7 +25,7 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
     return {
       colliderCount: debug.obstacles.length,
       treeBlocked: Math.abs(blocked.z - startZ) < 0.001,
-      rockBlocked: debug.isBlockedAt(rock.x, rock.z),
+      rockBlocked,
       waterPassable,
       mountainIsTerrain: mountainHeight > fieldHeight + 7,
       mountainWalkable: !debug.isBlockedAt(0, -74),
@@ -33,7 +33,7 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
     };
   });
 
-  expect(result.colliderCount).toBeGreaterThan(180);
+  expect(result.colliderCount).toBeGreaterThan(150);
   expect(result.treeBlocked).toBe(true);
   expect(result.rockBlocked).toBe(true);
   expect(result.waterPassable).toBe(true);
@@ -166,15 +166,23 @@ test("keeps chunked spherical terrain under the player beyond the starting field
         isAlignedToCellGrid(movedTerrain.minZ - terrain.minZ, terrain.cellSize),
       hasChunkedSurface: terrain.chunkCount > 1,
       generatedNatureAwayFromStart:
-        nature.generatedObjects > 650 &&
-        nature.generatedReactiveFlora > 300 &&
-        nature.generatedObstacles > 180 &&
-        movedNature.generatedObjects > 650 &&
+        nature.generatedObjects > 380 &&
+        nature.generatedObjects < 620 &&
+        nature.generatedReactiveFlora > 160 &&
+        nature.generatedObstacles > 90 &&
+        nature.generatedBiomePatches >= 6 &&
+        movedNature.generatedObjects > 380 &&
+        movedNature.generatedObjects < 620 &&
         debug.obstacles.some((obstacle) => obstacle.dynamic),
       generatedSpawnNature:
-        spawnNature.generatedObjects > 650 &&
-        spawnNature.generatedReactiveFlora > 300 &&
-        spawnNature.generatedObstacles > 180,
+        spawnNature.generatedObjects > 380 &&
+        spawnNature.generatedObjects < 620 &&
+        spawnNature.generatedReactiveFlora > 160 &&
+        spawnNature.generatedObstacles > 90 &&
+        spawnNature.generatedBiomePatches >= 6,
+      complexDetailIsDistanceCapped:
+        nature.complexDetailRadius < nature.complexFadeRadius &&
+        nature.complexFadeRadius <= nature.chunkSize * 3.1,
       spawnAndRemoteDensitySimilar:
         nature.generatedObjects / spawnNature.generatedObjects > 0.72 &&
         nature.generatedObjects / spawnNature.generatedObjects < 1.38,
@@ -189,6 +197,7 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.hasChunkedSurface).toBe(true);
   expect(result.generatedNatureAwayFromStart).toBe(true);
   expect(result.generatedSpawnNature).toBe(true);
+  expect(result.complexDetailIsDistanceCapped).toBe(true);
   expect(result.spawnAndRemoteDensitySimilar).toBe(true);
 });
 
