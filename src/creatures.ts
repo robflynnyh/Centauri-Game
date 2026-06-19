@@ -13,6 +13,8 @@ type Creature = {
   currentLocal: THREE.Vector3;
   hopStartLocal: THREE.Vector3;
   hopTargetLocal: THREE.Vector3;
+  fleeDirection: THREE.Vector3;
+  burstEndsAt: number;
   lastScaredHopIndex: number;
   scareBlend: number;
   phase: number;
@@ -25,8 +27,9 @@ const scareSettings = {
   normalHopSpeedMultiplier: 1,
   scaredHopHeight: 1.24,
   scaredHopSpeedMultiplier: 2,
-  scaredHopDistance: 3.1,
-  maxFleeDistanceFromWater: 7.5,
+  scaredHopDistance: 2.35,
+  maxFleeDistanceFromWater: 5.6,
+  fleeBurstSeconds: 2.2,
 };
 
 const creatureSpecs = [
@@ -62,6 +65,8 @@ export function createAlienWaterCreatures(
       currentLocal: route[0].clone(),
       hopStartLocal: route[0].clone(),
       hopTargetLocal: route[0].clone(),
+      fleeDirection: new THREE.Vector3(Math.cos(spec.angle), 0, Math.sin(spec.angle)),
+      burstEndsAt: 0,
       lastScaredHopIndex: -1,
       scareBlend: 0,
       phase: spec.phase,
@@ -82,6 +87,12 @@ export function createAlienWaterCreatures(
         creature.scareBlend = THREE.MathUtils.lerp(creature.scareBlend, scareTarget, 1 - Math.exp(-delta * scareRate));
 
         if (creature.scareBlend > 0.04) {
+          if (scareTarget > 0.2 && elapsed >= creature.burstEndsAt) {
+            creature.fleeDirection.copy(makeFleeDirection(creature.anchor, creature.currentLocal, playerLocalPosition, index, elapsed));
+            creature.burstEndsAt = elapsed + scareSettings.fleeBurstSeconds;
+            creature.lastScaredHopIndex = -1;
+          }
+
           const scaredInterval = creature.interval / scareSettings.scaredHopSpeedMultiplier;
           const rawScaredCycle = (elapsed + creature.phase) / scaredInterval;
           const scaredHopIndex = Math.floor(rawScaredCycle);
@@ -90,19 +101,17 @@ export function createAlienWaterCreatures(
           if (scaredHopIndex !== creature.lastScaredHopIndex) {
             creature.lastScaredHopIndex = scaredHopIndex;
             creature.hopStartLocal.copy(creature.currentLocal);
-            const fromPlayer = new THREE.Vector3(roughX - playerLocalPosition.x, 0, roughZ - playerLocalPosition.z);
-            if (fromPlayer.lengthSq() < 0.001) fromPlayer.set(Math.sin(index + elapsed), 0, Math.cos(index + elapsed));
-            fromPlayer.normalize();
-            creature.hopTargetLocal.copy(creature.currentLocal).add(fromPlayer.multiplyScalar(scareSettings.scaredHopDistance));
-            clampToWaterLeash(creature.hopTargetLocal);
+            creature.hopTargetLocal.copy(
+              chooseFleeLanding(creature.currentLocal, creature.fleeDirection, scareSettings.scaredHopDistance, scareSettings.maxFleeDistanceFromWater)
+            );
           }
 
-          const scaredHopActive = scaredCycle < 0.42;
-          const scaredHopT = scaredHopActive ? THREE.MathUtils.smoothstep(scaredCycle / 0.42, 0, 1) : 1;
-          const scaredLocal = new THREE.Vector3().lerpVectors(creature.hopStartLocal, creature.hopTargetLocal, scaredHopT);
+          const scaredMotion = sampleScaredHop(scaredCycle);
+          const scaredLocal = new THREE.Vector3().lerpVectors(creature.hopStartLocal, creature.hopTargetLocal, scaredMotion.travelT);
           creature.currentLocal.copy(scaredLocal);
         } else {
           creature.currentLocal.lerp(idle.local, 1 - Math.exp(-delta * 1.65));
+          creature.burstEndsAt = 0;
           creature.lastScaredHopIndex = -1;
         }
 
@@ -110,12 +119,11 @@ export function createAlienWaterCreatures(
         const x = creature.anchor.x + local.x;
         const z = creature.anchor.z + local.z;
         const scaredCycle = ((elapsed + creature.phase) / (creature.interval / scareSettings.scaredHopSpeedMultiplier)) % 1;
-        const scaredHopActive = scaredCycle < 0.42 && creature.scareBlend > 0.04;
-        const scaredHopT = scaredHopActive ? THREE.MathUtils.smoothstep(scaredCycle / 0.42, 0, 1) : 0;
-        const scaredArc = scaredHopActive ? Math.sin(scaredHopT * Math.PI) * scareSettings.scaredHopHeight : 0;
+        const scaredMotion = sampleScaredHop(scaredCycle);
+        const scaredArc = scaredMotion.hopArc * scareSettings.scaredHopHeight;
         const hopArc = THREE.MathUtils.lerp(idle.hopArc, scaredArc, creature.scareBlend);
         const idleBob = hopArc > 0.01 ? 0 : Math.sin(elapsed * 3.1 + index) * 0.025;
-        const facing = creature.scareBlend > 0.08 ? new THREE.Vector3(x - playerLocalPosition.x, 0, z - playerLocalPosition.z) : idle.facing;
+        const facing = creature.scareBlend > 0.08 ? creature.fleeDirection.clone() : idle.facing;
         if (facing.lengthSq() < 0.001) facing.set(0, 0, 1);
 
         placeObjectOnPlanet(
@@ -123,13 +131,18 @@ export function createAlienWaterCreatures(
           x,
           z,
           heightAt(x, z) + hopArc + idleBob + 0.08,
-          new THREE.Euler(0, Math.atan2(facing.x, facing.z), hopArc > 0.01 ? Math.sin((scaredHopT || idle.hopT) * Math.PI) * 0.12 * Math.sign(facing.x || 1) : 0)
+          new THREE.Euler(
+            0,
+            Math.atan2(facing.x, facing.z),
+            hopArc > 0.01 ? (Math.sin(scaredMotion.travelT * Math.PI) || Math.sin(idle.hopT * Math.PI)) * 0.12 * Math.sign(facing.x || 1) : 0
+          )
         );
-        creature.body.scale.set(1 + hopArc * 0.16, 1 - hopArc * 0.08, 1 + hopArc * 0.1);
-        creature.eyes.position.y = 0.34 + hopArc * 0.05 + creature.scareBlend * 0.06;
+        const scaredSquash = scaredMotion.squash * creature.scareBlend;
+        creature.body.scale.set(1 + hopArc * 0.16 + scaredSquash * 0.1, 1 - hopArc * 0.08 - scaredSquash * 0.18, 1 + hopArc * 0.1);
+        creature.eyes.position.y = 0.34 + hopArc * 0.05 + creature.scareBlend * 0.06 + scaredMotion.wobble * creature.scareBlend * 0.03;
         creature.feet.forEach((foot, footIndex) => {
           foot.position.z = (footIndex === 0 ? -0.28 : 0.28) - hopArc * 0.12;
-          foot.rotation.x = hopArc > 0.01 ? -0.42 + hopArc * 0.25 : -0.42;
+          foot.rotation.x = hopArc > 0.01 ? -0.42 + hopArc * 0.25 : -0.42 - scaredSquash * 0.22;
         });
       });
     },
@@ -155,10 +168,83 @@ function sampleHop(
   return { local, facing, hopArc, hopT };
 }
 
-function clampToWaterLeash(local: THREE.Vector3): void {
-  const distanceFromWater = Math.hypot(local.x, local.z);
-  if (distanceFromWater <= scareSettings.maxFleeDistanceFromWater) return;
-  local.multiplyScalar(scareSettings.maxFleeDistanceFromWater / distanceFromWater);
+function sampleScaredHop(cycle: number): { travelT: number; hopArc: number; squash: number; wobble: number } {
+  if (cycle < 0.16) {
+    return {
+      travelT: 0,
+      hopArc: 0,
+      squash: 1 - THREE.MathUtils.smoothstep(cycle, 0, 0.16),
+      wobble: 0,
+    };
+  }
+
+  if (cycle < 0.72) {
+    const t = THREE.MathUtils.smoothstep((cycle - 0.16) / 0.56, 0, 1);
+    return {
+      travelT: t,
+      hopArc: Math.sin(t * Math.PI),
+      squash: 0,
+      wobble: 0,
+    };
+  }
+
+  return {
+    travelT: 1,
+    hopArc: 0,
+    squash: 0,
+    wobble: Math.sin((cycle - 0.72) * Math.PI * 10) * (1 - THREE.MathUtils.smoothstep(cycle, 0.72, 1)),
+  };
+}
+
+function makeFleeDirection(
+  anchor: THREE.Vector3,
+  local: THREE.Vector3,
+  playerLocalPosition: THREE.Vector3,
+  seed: number,
+  elapsed: number
+): THREE.Vector3 {
+  const direction = new THREE.Vector3(anchor.x + local.x - playerLocalPosition.x, 0, anchor.z + local.z - playerLocalPosition.z);
+  if (direction.lengthSq() < 0.001) direction.set(Math.sin(seed + elapsed), 0, Math.cos(seed + elapsed));
+  return direction.normalize();
+}
+
+function chooseFleeLanding(currentLocal: THREE.Vector3, fleeDirection: THREE.Vector3, distance: number, leashRadius: number): THREE.Vector3 {
+  const candidateAngles = [0, 0.38, -0.38, 0.76, -0.76, 1.12, -1.12, 1.48, -1.48];
+  let best: THREE.Vector3 | undefined;
+  let bestScore = -Infinity;
+
+  candidateAngles.forEach((angle) => {
+    const stepDirection = rotateFlat(fleeDirection, angle);
+    const candidate = currentLocal.clone().add(stepDirection.multiplyScalar(distance));
+    const distanceFromWater = Math.hypot(candidate.x, candidate.z);
+    if (distanceFromWater > leashRadius) return;
+
+    const awayScore = stepDirection.dot(fleeDirection);
+    const roomScore = 1 - distanceFromWater / leashRadius;
+    const score = awayScore + roomScore * 0.18;
+    if (score > bestScore) {
+      bestScore = score;
+      best = candidate;
+    }
+  });
+
+  if (best) return best;
+
+  const outward = currentLocal.clone();
+  if (outward.lengthSq() < 0.001) outward.copy(fleeDirection);
+  outward.normalize();
+  const tangent = new THREE.Vector3(-outward.z, 0, outward.x);
+  if (tangent.dot(fleeDirection) < 0) tangent.multiplyScalar(-1);
+  const slide = currentLocal.clone().add(tangent.multiplyScalar(distance * 0.75)).add(outward.multiplyScalar(-distance * 0.25));
+  const slideDistance = Math.hypot(slide.x, slide.z);
+  if (slideDistance > leashRadius) slide.multiplyScalar((leashRadius * 0.96) / slideDistance);
+  return slide;
+}
+
+function rotateFlat(direction: THREE.Vector3, radians: number): THREE.Vector3 {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return new THREE.Vector3(direction.x * cos - direction.z * sin, 0, direction.x * sin + direction.z * cos).normalize();
 }
 
 function makePatrolRoute(angle: number, hopDistance: number, seed: number): THREE.Vector3[] {

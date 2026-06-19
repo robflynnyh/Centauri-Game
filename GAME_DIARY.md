@@ -75,3 +75,5 @@ Guaranteed that the default spawn cell produces a dense generated biome patch cl
 Gave the small water-creatures a scared hop response: within an 8.5 metre player radius they flee away with roughly double hop height and speed, then settle back toward their water patrols after the player moves on.
 
 Retuned the scared water-creature response so frightened hops cover more ground away from the player instead of mostly popping in place, with a looser water leash while scared.
+
+Reworked the scared water-creature motion again after review: frogs now choose a stable short flee burst with preselected landings, anticipation, spring, and landing wobble so the behavior reads as playful panic rather than jitter.
