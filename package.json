@@ -9,6 +9,7 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
+    "demo:screenshot": "playwright test tests/screenshot.spec.ts --project=chromium",
     "demo:video": "playwright test tests/demo.spec.ts --project=chromium"
   },
   "dependencies": {
