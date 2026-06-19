@@ -33,8 +33,13 @@ app.innerHTML = `
 `;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x536de0);
-scene.fog = new THREE.FogExp2(0x6b58bb, 0.016);
+const dayBackgroundColour = new THREE.Color(0x5d91ff);
+const nightBackgroundColour = new THREE.Color(0x171044);
+const dayFogColour = new THREE.Color(0x76a6df);
+const nightFogColour = new THREE.Color(0x251652);
+const worldFog = new THREE.FogExp2(dayFogColour.getHex(), 0.014);
+scene.background = dayBackgroundColour.clone();
+scene.fog = worldFog;
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
@@ -100,17 +105,24 @@ const moon = new THREE.DirectionalLight(0xb6c5ff, 0.12);
 moon.position.set(30, 15, -20);
 scene.add(moon);
 
+const skyUniforms = {
+  dayAmount: { value: 1 },
+  dayHorizonColour: { value: new THREE.Color(0xff9fd0) },
+  dayMiddleColour: { value: new THREE.Color(0x78d2ff) },
+  dayUpperColour: { value: new THREE.Color(0x6393ff) },
+  dayZenithColour: { value: new THREE.Color(0x705ed8) },
+  nightHorizonColour: { value: new THREE.Color(0x7d55b4) },
+  nightMiddleColour: { value: new THREE.Color(0x2d3f9b) },
+  nightUpperColour: { value: new THREE.Color(0x1d236f) },
+  nightZenithColour: { value: new THREE.Color(0x120d35) },
+};
+
 function makeSkyDome(): THREE.Mesh {
   const geometry = new THREE.SphereGeometry(180, 24, 14);
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: {
-      horizonColour: { value: new THREE.Color(0xff8fc8) },
-      middleColour: { value: new THREE.Color(0x58b9f6) },
-      upperColour: { value: new THREE.Color(0x536de0) },
-      zenithColour: { value: new THREE.Color(0x5137ad) },
-    },
+    uniforms: skyUniforms,
     vertexShader: `
       varying vec3 vWorldPosition;
 
@@ -122,13 +134,22 @@ function makeSkyDome(): THREE.Mesh {
     `,
     fragmentShader: `
       varying vec3 vWorldPosition;
-      uniform vec3 horizonColour;
-      uniform vec3 middleColour;
-      uniform vec3 upperColour;
-      uniform vec3 zenithColour;
+      uniform float dayAmount;
+      uniform vec3 dayHorizonColour;
+      uniform vec3 dayMiddleColour;
+      uniform vec3 dayUpperColour;
+      uniform vec3 dayZenithColour;
+      uniform vec3 nightHorizonColour;
+      uniform vec3 nightMiddleColour;
+      uniform vec3 nightUpperColour;
+      uniform vec3 nightZenithColour;
 
       void main() {
         float height = clamp(normalize(vWorldPosition).y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 horizonColour = mix(nightHorizonColour, dayHorizonColour, dayAmount);
+        vec3 middleColour = mix(nightMiddleColour, dayMiddleColour, dayAmount);
+        vec3 upperColour = mix(nightUpperColour, dayUpperColour, dayAmount);
+        vec3 zenithColour = mix(nightZenithColour, dayZenithColour, dayAmount);
         vec3 sky = horizonColour;
         if (height > 0.32) sky = middleColour;
         if (height > 0.56) sky = upperColour;
@@ -142,6 +163,26 @@ function makeSkyDome(): THREE.Mesh {
 }
 
 scene.add(makeSkyDome());
+
+function getDayAmount(elapsed: number): number {
+  const cycleLength = isDemo ? 18 : 96;
+  const phase = (elapsed / cycleLength + 0.18) % 1;
+  const daylightWave = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5;
+  return THREE.MathUtils.smoothstep(daylightWave, 0.2, 0.82);
+}
+
+function updateSkyCycle(elapsed: number): void {
+  const dayAmount = getDayAmount(elapsed);
+  skyUniforms.dayAmount.value = dayAmount;
+
+  (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
+  worldFog.color.copy(nightFogColour).lerp(dayFogColour, dayAmount);
+  worldFog.density = THREE.MathUtils.lerp(0.021, 0.014, dayAmount);
+
+  hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
+  sun.intensity = THREE.MathUtils.lerp(0.04, 0.22, dayAmount);
+  moon.intensity = THREE.MathUtils.lerp(0.18, 0.08, dayAmount);
+}
 
 function heightAt(x: number, z: number): number {
   const d = Math.sqrt(x * x + z * z);
@@ -647,6 +688,8 @@ function animate(): void {
 
   if (isDemo) updateDemo(elapsed, delta);
   else updateExploration(delta);
+
+  updateSkyCycle(elapsed);
 
   skyRing.rotation.z = elapsed * 0.035;
   celestialGroup.children.forEach((child, index) => {
