@@ -40,6 +40,8 @@ npm run demo:video
 
 The demo-video command records a Playwright `.webm` under `test-results/`.
 
+On PRs, the `PR demo video` workflow uploads a `pr-demo-video` artifact and comments on the PR with the workflow-run link. GitHub does not display generated video artifacts inline in the PR by default.
+
 ## Agent workflow
 
 Symphony configuration and instructions live under `symphony/`.
