@@ -13,10 +13,10 @@ type ReactiveStalk = {
 };
 
 const capRestColour = new THREE.Color(0xff5c9e);
-const capNearColour = new THREE.Color(0xffc45d);
-const glowNearColour = new THREE.Color(0xffe39a);
-const floraReactionRadius = 6.2;
-const floraReactionFullRadius = 1.8;
+const capNearColour = new THREE.Color(0xfff06a);
+const glowNearColour = new THREE.Color(0xffffb8);
+const floraReactionRadius = 12;
+const floraReactionFullRadius = 5.5;
 
 export function populateNature(
   scene: THREE.Scene,
@@ -179,7 +179,7 @@ function createFloraReactivityUpdater(
   reactiveStalks: ReactiveStalk[]
 ): (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void {
   return (playerPosition, delta, elapsed) => {
-    const fade = 1 - Math.exp(-delta * 5.8);
+    const fade = 1 - Math.exp(-delta * 9);
 
     reactiveStalks.forEach((stalk, index) => {
       const distance = Math.hypot(playerPosition.x - stalk.x, playerPosition.z - stalk.z);
@@ -188,10 +188,12 @@ function createFloraReactivityUpdater(
 
       const pulse = 0.82 + Math.sin(elapsed * 4.2 + index * 0.73) * 0.18;
       const glowStrength = stalk.reaction * pulse;
+      stalk.glow.position.copy(stalk.cap.position);
+      stalk.glow.rotation.copy(stalk.cap.rotation);
       stalk.cap.material.color.lerpColors(capRestColour, capNearColour, stalk.reaction);
-      stalk.cap.scale.setScalar(1 + stalk.reaction * 0.1);
-      stalk.glow.material.opacity = glowStrength * 0.22;
-      stalk.glow.scale.setScalar(1.18 + glowStrength * 0.22);
+      stalk.cap.scale.setScalar(1 + stalk.reaction * 0.2);
+      stalk.glow.material.opacity = glowStrength * 0.48;
+      stalk.glow.scale.setScalar(1.18 + glowStrength * 0.42);
     });
   };
 }

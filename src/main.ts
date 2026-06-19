@@ -262,11 +262,11 @@ function animate(): void {
 
   footsteps.update(delta);
   sky.update(elapsed);
-  updateFloraReactivity(camera.position, delta, elapsed);
   floraGroup.children.forEach((child, index) => {
     child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;
     child.rotation.y += delta * 0.18;
   });
+  updateFloraReactivity(camera.position, delta, elapsed);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
