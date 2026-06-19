@@ -49,3 +49,5 @@ Added night-only meteors as simple billboarded streaks that drift through the ex
 Retuned the meteors after review feedback into more whimsical falling sky glyphs with diamond heads, small fins, bead-like curved tails, and loose glowing fragments instead of plain diagonal smears.
 
 Fixed meteor glyph orientation so the bead trails follow behind the moving heads in the camera view, then refreshed the committed PR demo video for direct meteor review.
+
+Changed first-person look controls so mouse movement over the game view rotates the camera by default, while clicking the planet view toggles into a cursor-free mode and clicking again recaptures mouse-look.

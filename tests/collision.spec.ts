@@ -82,3 +82,58 @@ test("supports grounded jump and visible crouch height changes", async ({ page }
   );
   await page.keyboard.up("Control");
 });
+
+test("rotates view on mouse movement and click toggles cursor release", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("mouse look")).toBeVisible();
+
+  await page.mouse.move(400, 300);
+  const start = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getViewState();
+  });
+
+  await page.mouse.move(520, 360, { steps: 2 });
+  const looked = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getViewState();
+  });
+
+  expect(looked.mouseLookEnabled).toBe(true);
+  expect(Math.abs(looked.yaw - start.yaw)).toBeGreaterThan(0.05);
+  expect(Math.abs(looked.pitch - start.pitch)).toBeGreaterThan(0.02);
+
+  await page.mouse.click(520, 360);
+  await expect(page.getByText("cursor free")).toBeVisible();
+  const released = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getViewState();
+  });
+
+  await page.mouse.move(680, 420, { steps: 2 });
+  const afterReleasedMove = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getViewState();
+  });
+
+  expect(afterReleasedMove.mouseLookEnabled).toBe(false);
+  expect(afterReleasedMove.yaw).toBeCloseTo(released.yaw, 5);
+  expect(afterReleasedMove.pitch).toBeCloseTo(released.pitch, 5);
+
+  await page.mouse.click(680, 420);
+  await expect(page.getByText("mouse look")).toBeVisible();
+  await page.mouse.move(760, 420, { steps: 2 });
+  const recaptured = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getViewState();
+  });
+
+  expect(recaptured.mouseLookEnabled).toBe(true);
+  expect(Math.abs(recaptured.yaw - afterReleasedMove.yaw)).toBeGreaterThan(0.05);
+});
