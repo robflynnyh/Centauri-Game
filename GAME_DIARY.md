@@ -51,3 +51,5 @@ Retuned the meteors after review feedback into more whimsical falling sky glyphs
 Fixed meteor glyph orientation so the bead trails follow behind the moving heads in the camera view, then refreshed the committed PR demo video for direct meteor review.
 
 Changed first-person look controls to use browser pointer lock after one click on the planet view, giving continuous mouse-look without edge limits while Esc or a second click releases the cursor.
+
+Made the cube-top stalk plants react to nearby movement with a smooth six-metre proximity fade, shifting their tops warmer and adding a faint pulsing flat glow that is visible along the PR demo path.
