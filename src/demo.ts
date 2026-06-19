@@ -33,8 +33,8 @@ export function createPrDemoController(
       }
 
       if (elapsed < 8.4) {
-        camera.position.set(14, heightAt(14, 23) + 8.4, 23);
-        camera.lookAt(7.8, heightAt(7.8, 12.4) + 0.3, 12.4);
+        camera.position.set(12.5, heightAt(12.5, 21) + 7.2, 21);
+        camera.lookAt(5.5, heightAt(5.5, 7.5) + 0.18, 7.5);
         return;
       }
 
