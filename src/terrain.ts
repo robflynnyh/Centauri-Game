@@ -25,6 +25,7 @@ const terrainPalette = [
   new THREE.Color(0xec7fb2),
   new THREE.Color(0xffb15e),
 ];
+const terrainPatchPalette = [terrainPalette[0], terrainPalette[1], terrainPalette[4]];
 
 export function heightAt(x: number, z: number): number {
   const detail = detailCoordinatesAt(x, z);
@@ -80,6 +81,7 @@ export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
   group.name = "spherical-planet-terrain";
   const terrainMaterial = makeTerrainMaterial();
+  const patchMaterial = makeTerrainPatchMaterial();
 
   let centerChunkX = Number.NaN;
   let centerChunkZ = Number.NaN;
@@ -92,7 +94,7 @@ export function createTerrainSystem(): TerrainSystem {
 
     centerChunkX = nextChunkX;
     centerChunkZ = nextChunkZ;
-    rebuildTerrainChunks(group, terrainMaterial, centerChunkX, centerChunkZ);
+    rebuildTerrainChunks(group, terrainMaterial, patchMaterial, centerChunkX, centerChunkZ);
   };
 
   update(0, 0);
@@ -104,7 +106,13 @@ export function createTerrainSystem(): TerrainSystem {
   };
 }
 
-function rebuildTerrainChunks(group: THREE.Group, terrainMaterial: THREE.MeshBasicMaterial, centerChunkX: number, centerChunkZ: number): void {
+function rebuildTerrainChunks(
+  group: THREE.Group,
+  terrainMaterial: THREE.MeshBasicMaterial,
+  patchMaterial: THREE.MeshBasicMaterial,
+  centerChunkX: number,
+  centerChunkZ: number
+): void {
   group.children.forEach((child) => {
     const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
     mesh.geometry.dispose();
@@ -121,6 +129,13 @@ function rebuildTerrainChunks(group: THREE.Group, terrainMaterial: THREE.MeshBas
       );
       chunk.name = `spherical-terrain-chunk-${xChunk}-${zChunk}`;
       group.add(chunk);
+
+      const patchGeometry = makeTerrainPatchGeometry(xMin, zMin, xChunk, zChunk);
+      if (patchGeometry) {
+        const patches = new THREE.Mesh(patchGeometry, patchMaterial);
+        patches.name = `spherical-terrain-stepped-islands-${xChunk}-${zChunk}`;
+        group.add(patches);
+      }
     }
   }
 }
@@ -208,8 +223,8 @@ function terrainPalettePosition(centerY: number, detailX: number, detailZ: numbe
   const mineral = (Math.sin(detailX * 0.15) + Math.cos(detailZ * 0.12) + 2) / 4;
   const pixelFleck = (Math.sin(detailX * 1.45 + detailZ * 2.1) + 1) * 0.5;
   const organicField = steppedBoundaryField(detailX, detailZ);
-  const basePosition = altitude * 0.12 + mineral * 0.12 + organicField * 0.68 + pixelFleck * 0.08;
-  const bandPosition = basePosition * terrainPalette.length + steppedBoundaryBandJitter(detailX, detailZ);
+  const basePosition = 0.34 + altitude * 0.18 + mineral * 0.08 + (organicField - 0.5) * 0.18 + pixelFleck * 0.04;
+  const bandPosition = basePosition * terrainPalette.length + steppedBoundaryBandJitter(detailX, detailZ) * 0.18;
   return THREE.MathUtils.clamp(bandPosition / terrainPalette.length, 0, 0.999);
 }
 
@@ -249,6 +264,96 @@ function makeTerrainMaterial(): THREE.MeshBasicMaterial {
     vertexColors: true,
     side: THREE.DoubleSide,
   });
+}
+
+function makeTerrainPatchMaterial(): THREE.MeshBasicMaterial {
+  return new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+}
+
+function makeTerrainPatchGeometry(xMin: number, zMin: number, xChunk: number, zChunk: number): THREE.BufferGeometry | null {
+  const positions: number[] = [];
+  const colours: number[] = [];
+  const indices: number[] = [];
+  const random = createDeterministicRandom(xChunk, zChunk);
+  const patchCount = 1 + (random() > 0.45 ? 1 : 0);
+
+  for (let patchIndex = 0; patchIndex < patchCount; patchIndex += 1) {
+    const centerX = xMin + (0.2 + random() * 0.6) * terrainChunkSize;
+    const centerZ = zMin + (0.2 + random() * 0.6) * terrainChunkSize;
+    const radiusX = 12 + random() * 18;
+    const radiusZ = 10 + random() * 16;
+    const rotation = random() * Math.PI * 2;
+    const colour = terrainPatchPalette[Math.floor(random() * terrainPatchPalette.length)];
+    addJaggedPatch(positions, colours, indices, centerX, centerZ, radiusX, radiusZ, rotation, patchIndex, colour);
+  }
+
+  if (positions.length === 0) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addJaggedPatch(
+  positions: number[],
+  colours: number[],
+  indices: number[],
+  centerX: number,
+  centerZ: number,
+  radiusX: number,
+  radiusZ: number,
+  rotation: number,
+  patchIndex: number,
+  colour: THREE.Color
+): void {
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  const steps = 22;
+  const vertexIndex = positions.length / 3;
+  const lift = 0.04;
+  const center = pointOnPlanet(centerX, centerZ, heightAt(centerX, centerZ) + lift);
+  positions.push(center.x, center.y, center.z);
+  colours.push(colour.r, colour.g, colour.b);
+
+  for (let i = 0; i < steps; i += 1) {
+    const angle = (i / steps) * Math.PI * 2;
+    const cellX = Math.floor(centerX / boundaryStepSize) + i * 3 + patchIndex * 11;
+    const cellZ = Math.floor(centerZ / boundaryStepSize) - i * 5 + patchIndex * 7;
+    const edgeNoise =
+      Math.sin(i * 1.7 + patchIndex) * 0.18 +
+      Math.cos(i * 0.83 + centerX * 0.01) * 0.14 +
+      (hashCell(cellX, cellZ) - 0.5) * 0.34;
+    const localX = Math.cos(angle) * radiusX * (0.9 + edgeNoise);
+    const localZ = Math.sin(angle) * radiusZ * (0.9 - edgeNoise * 0.3);
+    const rawX = centerX + cos * localX - sin * localZ;
+    const rawZ = centerZ + sin * localX + cos * localZ;
+    const worldX = Math.round(rawX / boundaryStepSize) * boundaryStepSize;
+    const worldZ = Math.round(rawZ / boundaryStepSize) * boundaryStepSize;
+    const point = pointOnPlanet(worldX, worldZ, heightAt(worldX, worldZ) + lift);
+    positions.push(point.x, point.y, point.z);
+    colours.push(colour.r, colour.g, colour.b);
+  }
+
+  for (let i = 0; i < steps; i += 1) {
+    const next = i === steps - 1 ? 1 : i + 2;
+    indices.push(vertexIndex, vertexIndex + 1 + i, vertexIndex + next);
+  }
+}
+
+function createDeterministicRandom(chunkX: number, chunkZ: number): () => number {
+  let state = (Math.imul(chunkX, 1103515245) ^ Math.imul(chunkZ, 12345) ^ 0x9e3779b9) >>> 0;
+  return () => {
+    state = (Math.imul(state ^ (state >>> 16), 2246822519) ^ Math.imul(state ^ (state >>> 13), 3266489917)) >>> 0;
+    return state / 0xffffffff;
+  };
 }
 
 export function makeHorizonLandforms(): THREE.Group {
