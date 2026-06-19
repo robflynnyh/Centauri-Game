@@ -1,35 +1,12 @@
-# PR Demo Video Flow
+# PR Demo Asset Flow
 
-Every feature PR should keep the demo route working:
-
-```bash
-npm run demo:video
-```
-
-Every feature PR should also keep the screenshot route working:
-
-```bash
-npm run demo:screenshot
-```
-
-Both commands open:
+Every visual/gameplay PR should keep the deterministic demo route working:
 
 ```text
 http://127.0.0.1:5173/?demo=pr
 ```
 
-The screenshot command captures `docs/demo/pr-preview.png`. The workflow commits that generated PNG back to the PR branch and inserts it into the PR description as a Markdown image.
-
-The video command records a short deterministic flythrough. The workflow copies the generated `.webm` to `docs/demo/pr-demo.webm`, commits it back to the PR branch, and inserts a direct WebM link into the PR description. It also uploads the full `pr-demo-video` artifact as a fallback.
-
-## Expected agent behaviour
-
-For any visual/world/gameplay change, update one of these:
-
-- the deterministic `?demo=pr` path in `src/main.ts`, or
-- a future dedicated demo module under `src/demos/`, once the project grows.
-
-The screenshot should make the PR immediately scannable. The WebM should show enough motion that a reviewer can tell what changed without pulling the branch locally.
+The route should show enough of the changed feature for reviewers to understand it without running the game locally.
 
 ## Local commands
 
@@ -41,15 +18,31 @@ npm run demo:screenshot
 npm run demo:video
 ```
 
+`npm run demo:screenshot` captures:
+
+```text
+docs/demo/pr-preview.png
+```
+
+`npm run demo:video` records a Playwright `.webm` under:
+
+```text
+test-results/
+```
+
+Generated screenshot/video files are local artifacts. They are ignored by Git and should not be committed.
+
 ## PR output
 
-On PRs, the `PR demo video` workflow should:
+On PRs, the `PR demo assets` workflow:
 
-1. generate `docs/demo/pr-preview.png`,
-2. generate/copy `docs/demo/pr-demo.webm`,
-3. commit those demo assets back to the PR branch,
-4. insert the screenshot and direct WebM link into the PR body,
-5. upload the zipped `pr-demo-video` artifact as a fallback,
-6. comment with the workflow-run link.
+1. runs the screenshot command,
+2. runs the video command,
+3. uploads the generated files as a downloadable `pr-demo-assets` artifact,
+4. comments on the PR with the workflow-run link.
 
-GitHub does not reliably embed WebM video players from Actions artifacts inside the PR conversation. The intended review surface is therefore: screenshot inline in the PR body, direct WebM link in the PR body, zipped artifact as fallback.
+GitHub does not reliably embed generated WebM videos directly in PR descriptions. The clean repository policy is therefore: keep deterministic demo code in Git, keep generated media out of Git, and use workflow artifacts for review media.
+
+## Agent rule
+
+For any player-visible change, update the deterministic `?demo=pr` route or add a dedicated demo route/module if the project has grown enough to justify it.
