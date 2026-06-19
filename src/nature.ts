@@ -23,9 +23,9 @@ export function populateNature(
   const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xc5ff4f });
   const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xff58df });
   const waterMaterial = new THREE.MeshBasicMaterial({
-    color: 0x66edf0,
+    color: 0x8cffff,
     transparent: true,
-    opacity: 0.68,
+    opacity: 0.76,
     side: THREE.DoubleSide,
   });
   const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x6b55d8 });
@@ -207,7 +207,7 @@ function addPool(
 
   const innerGlow = new THREE.Mesh(
     makePoolGeometry(heightAt, x, z, radius * 0.56, colourShift, 1.3, 0.68),
-    new THREE.MeshBasicMaterial({ color: 0xbaffff, transparent: true, opacity: 0.24, side: THREE.DoubleSide })
+    new THREE.MeshBasicMaterial({ color: 0xe2ffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
   );
   pool.add(innerGlow);
 
