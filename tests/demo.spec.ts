@@ -1,8 +1,18 @@
 import { expect, test } from "@playwright/test";
+import { mkdir } from "node:fs/promises";
 
-test("records a deterministic Centauri flythrough", async ({ page }) => {
+test("records a deterministic Centauri flythrough", async ({ page }, testInfo) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Centauri Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForTimeout(12_000);
+  const video = page.video();
+  await page.close();
+
+  if (video) {
+    const outputPath = "docs/demo/pr-demo.webm";
+    await mkdir("docs/demo", { recursive: true });
+    await video.saveAs(outputPath);
+    await testInfo.attach("pr-demo", { path: outputPath, contentType: "video/webm" });
+  }
 });
