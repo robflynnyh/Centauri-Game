@@ -54,7 +54,9 @@ export function createPrDemoController(
       }
 
       if (elapsed < 8.4) {
-        lookAtPlanetPoint(camera, 46, 54, heightAt(46, 54) + 84, -18, -260, heightAt(-18, -260) + 8);
+        const generatedBiome = new THREE.Vector3(260, 0, -240);
+        onWalk?.(generatedBiome, 0);
+        lookAtPlanetPoint(camera, 236, -196, heightAt(236, -196) + 24, 280, -248, heightAt(280, -248) + 5);
         return;
       }
 
@@ -62,6 +64,7 @@ export function createPrDemoController(
       const angle = elapsed * 0.14 + 0.35;
       const x = Math.sin(angle) * radius;
       const z = Math.cos(angle) * radius;
+      onWalk?.(new THREE.Vector3(x, 0, z), 0);
 
       const horizonBlend = THREE.MathUtils.smoothstep(Math.sin(elapsed * 0.22) * 0.5 + 0.5, 0.28, 0.82);
       const localTargetX = 5.5 + Math.sin(elapsed * 0.22) * 2.4;

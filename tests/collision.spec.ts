@@ -134,10 +134,12 @@ test("keeps chunked spherical terrain under the player beyond the starting field
     debug.setPlayer(420, -360);
     const player = debug.getPlayer();
     const terrain = debug.getTerrainState();
+    const nature = debug.getNatureState();
     const standingHeight = debug.getMovementState().cameraHeight;
     const sampledHeight = debug.terrainHeightAt(player.x, player.z);
     debug.setPlayer(470, -390);
     const movedTerrain = debug.getTerrainState();
+    const movedNature = debug.getNatureState();
 
     const isAlignedToCellGrid = (value: number, cellSize: number): boolean => {
       const cells = value / cellSize;
@@ -161,6 +163,11 @@ test("keeps chunked spherical terrain under the player beyond the starting field
         isAlignedToCellGrid(movedTerrain.minX - terrain.minX, terrain.cellSize) &&
         isAlignedToCellGrid(movedTerrain.minZ - terrain.minZ, terrain.cellSize),
       hasChunkedSurface: terrain.chunkCount > 1,
+      generatedNatureAwayFromStart:
+        nature.generatedObjects > 120 &&
+        nature.generatedObstacles > 40 &&
+        movedNature.generatedObjects > 120 &&
+        debug.obstacles.some((obstacle) => obstacle.dynamic),
     };
   });
 
@@ -170,6 +177,7 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.terrainGridAligned).toBe(true);
   expect(result.terrainMovedByWholeCells).toBe(true);
   expect(result.hasChunkedSurface).toBe(true);
+  expect(result.generatedNatureAwayFromStart).toBe(true);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {

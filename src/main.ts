@@ -43,6 +43,18 @@ declare global {
         chunkSize: number;
         chunkCount: number;
       };
+      getNatureState: () => {
+        centerX: number;
+        centerZ: number;
+        minX: number;
+        maxX: number;
+        minZ: number;
+        maxZ: number;
+        chunkSize: number;
+        chunkCount: number;
+        generatedObjects: number;
+        generatedObstacles: number;
+      };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -115,17 +127,22 @@ const terrain = createTerrainSystem();
 scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
 
-const { updateFloraReactivity } = populateNature(scene, heightAt, collisionWorld.addObstacle);
+const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNature(
+  scene,
+  heightAt,
+  collisionWorld.addObstacle,
+  collisionWorld.replaceDynamicObstacles
+);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
-  footsteps.walk(position, delta);
+  if (delta > 0) footsteps.walk(position, delta);
 });
 
 if (enableCollisionDebug) {
   window.__centauriDebug = {
-    obstacles: collisionWorld.obstacles.map((obstacle) => ({ ...obstacle })),
+    obstacles: collisionWorld.obstacles,
     getPlayer: () => ({
       x: player.localPosition.x,
       y: player.position.length() - PLANET_RADIUS,
@@ -152,6 +169,7 @@ if (enableCollisionDebug) {
       cameraHeight: player.cameraHeight,
     }),
     getTerrainState: terrain.getTerrainState,
+    getNatureState,
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
@@ -162,11 +180,13 @@ if (enableCollisionDebug) {
       player.grounded = true;
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
+      updateNatureChunks(player.localPosition.x, player.localPosition.z);
     },
     attemptMove: (x: number, z: number) => {
       collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
+      updateNatureChunks(player.localPosition.x, player.localPosition.z);
       return { x: player.localPosition.x, z: player.localPosition.z };
     },
     isBlockedAt: (x: number, z: number) => {
@@ -321,6 +341,7 @@ function animate(): void {
   sky.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   terrain.update(floraFocus.x, floraFocus.z);
+  updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
 
   renderer.render(scene, camera);
