@@ -2,4 +2,6 @@
 
 ## 2026-06-19
 
-Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright, PR demo-video workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
+Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
+
+Cleaned up generated media handling: demo screenshots/videos are produced by Playwright and uploaded as workflow artifacts, but ignored by Git and not committed to the repository.
