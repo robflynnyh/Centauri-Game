@@ -1,0 +1,24 @@
+{
+  "name": "centauri-game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test",
+    "demo:screenshot": "playwright test tests/screenshot.spec.ts --project=chromium",
+    "demo:video": "playwright test tests/demo.spec.ts --project=chromium"
+  },
+  "dependencies": {
+    "three": "^0.179.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.0",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0"
+  }
+}

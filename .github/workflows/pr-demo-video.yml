@@ -1,0 +1,44 @@
+name: PR demo assets
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  demo-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - run: npm run demo:screenshot
+      - run: npm run demo:video
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-demo-assets
+          path: |
+            docs/demo/pr-preview.png
+            test-results/**/*.webm
+            playwright-report/**
+          if-no-files-found: warn
+      - name: Comment with demo artifact link
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh pr comment "$PR_NUMBER" --body "PR demo assets generated.
+
+Download the pr-demo-assets artifact from this workflow run:
+$RUN_URL
+
+The artifact contains the generated screenshot and video. Generated media is intentionally kept out of the repository."
