@@ -1,6 +1,18 @@
 import * as THREE from "three";
 import "./style.css";
 
+declare global {
+  interface Window {
+    __centauriDebug?: {
+      obstacles: CollisionObstacle[];
+      getPlayer: () => { x: number; z: number };
+      setPlayer: (x: number, z: number) => void;
+      attemptMove: (x: number, z: number) => { x: number; z: number };
+      isBlockedAt: (x: number, z: number) => boolean;
+    };
+  }
+}
+
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) {
   throw new Error("Missing #app root");
@@ -8,6 +20,7 @@ if (!app) {
 
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
+const enableCollisionDebug = params.get("test") === "collision";
 
 app.innerHTML = `
   <div class="hud">
@@ -40,6 +53,41 @@ const player = {
   position: new THREE.Vector3(0, 5.2, 24),
   velocity: new THREE.Vector3(),
 };
+
+type CollisionObstacle = {
+  kind: "tree" | "rock";
+  x: number;
+  z: number;
+  radius: number;
+};
+
+const playerRadius = 0.55;
+const collisionObstacles: CollisionObstacle[] = [];
+
+function addCollisionObstacle(obstacle: CollisionObstacle): void {
+  collisionObstacles.push(obstacle);
+}
+
+function isPlayerBlockedAt(x: number, z: number): boolean {
+  return collisionObstacles.some((obstacle) => {
+    const minDistance = playerRadius + obstacle.radius;
+    const dx = x - obstacle.x;
+    const dz = z - obstacle.z;
+    return dx * dx + dz * dz < minDistance * minDistance;
+  });
+}
+
+function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): void {
+  const nextX = position.x + movement.x;
+  if (!isPlayerBlockedAt(nextX, position.z)) {
+    position.x = nextX;
+  }
+
+  const nextZ = position.z + movement.z;
+  if (!isPlayerBlockedAt(position.x, nextZ)) {
+    position.z = nextZ;
+  }
+}
 
 const hemi = new THREE.HemisphereLight(0xfff2c1, 0x191040, 1.8);
 scene.add(hemi);
@@ -220,6 +268,7 @@ function addAlienTree(x: number, z: number, scale: number, lean: number): void {
   }
 
   natureGroup.add(tree);
+  addCollisionObstacle({ kind: "tree", x, z, radius: 1.15 * scale });
 }
 
 const treePlacements = [
@@ -327,6 +376,8 @@ addPool(5.5, 7.5, 3.4, 0.1);
 addPool(-18, -3, 2.5, 0.45);
 addPool(21, -15, 2.2, 0.8);
 
+// Pools, streams, sprouts, and small glowing flora are intentionally passable.
+
 const streamPoints = [
   new THREE.Vector3(-12, 0, 7),
   new THREE.Vector3(-6, 0, 8),
@@ -371,16 +422,41 @@ const stream = new THREE.Mesh(makeStreamGeometry(streamPoints), waterMaterial);
 stream.renderOrder = 1;
 natureGroup.add(stream);
 
-for (let i = 0; i < 34; i += 1) {
+const rockPlacements = Array.from({ length: 34 }, (_, i) => {
   const angle = i * 1.71;
   const radius = 10 + ((i * 23) % 50);
-  const x = Math.cos(angle) * radius;
-  const z = Math.sin(angle) * radius;
+  return {
+    x: Math.cos(angle) * radius,
+    z: Math.sin(angle) * radius,
+    size: 0.9 + (i % 5) * 0.28,
+    rotation: new THREE.Euler(i * 0.2, i * 0.4, i * 0.1),
+  };
+});
+
+rockPlacements.forEach(({ x, z, size, rotation }) => {
   const y = heightAt(x, z);
-  const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9 + (i % 5) * 0.28, 0), stoneMaterial);
+  const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stoneMaterial);
   stone.position.set(x, y + 0.7, z);
-  stone.rotation.set(i * 0.2, i * 0.4, i * 0.1);
+  stone.rotation.copy(rotation);
   scene.add(stone);
+  addCollisionObstacle({ kind: "rock", x, z, radius: size * 0.72 });
+});
+
+if (enableCollisionDebug) {
+  window.__centauriDebug = {
+    obstacles: collisionObstacles.map((obstacle) => ({ ...obstacle })),
+    getPlayer: () => ({ x: player.position.x, z: player.position.z }),
+    setPlayer: (x: number, z: number) => {
+      player.position.set(x, heightAt(x, z) + 2.2, z);
+      player.velocity.set(0, 0, 0);
+    },
+    attemptMove: (x: number, z: number) => {
+      resolvePlayerMove(player.position, new THREE.Vector3(x, 0, z));
+      player.position.y = heightAt(player.position.x, player.position.z) + 2.2;
+      return { x: player.position.x, z: player.position.z };
+    },
+    isBlockedAt: isPlayerBlockedAt,
+  };
 }
 
 const skyRing = new THREE.Mesh(
@@ -528,7 +604,7 @@ function updateExploration(delta: number): void {
 
   if (wish.lengthSq() > 0) wish.normalize();
   player.velocity.lerp(wish.multiplyScalar(8), 1 - Math.exp(-delta * 6));
-  player.position.addScaledVector(player.velocity, delta);
+  resolvePlayerMove(player.position, player.velocity.clone().multiplyScalar(delta));
   player.position.y = heightAt(player.position.x, player.position.z) + 2.2;
 
   camera.position.copy(player.position);
@@ -537,7 +613,17 @@ function updateExploration(delta: number): void {
   camera.rotation.x = player.pitch;
 }
 
-function updateDemo(elapsed: number): void {
+const demoPlayer = new THREE.Vector3(9, heightAt(9, 18) + 4.6, 18);
+
+function updateDemo(elapsed: number, delta: number): void {
+  if (elapsed < 5.2) {
+    resolvePlayerMove(demoPlayer, new THREE.Vector3(0, 0, -delta * 3.2));
+    demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.6;
+    camera.position.copy(demoPlayer);
+    camera.lookAt(9, heightAt(9, 7) + 2.7, 7);
+    return;
+  }
+
   const radius = 24 - Math.sin(elapsed * 0.35) * 4;
   const angle = elapsed * 0.16 + 0.2;
   const x = Math.sin(angle) * radius;
@@ -551,7 +637,7 @@ function animate(): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
 
-  if (isDemo) updateDemo(elapsed);
+  if (isDemo) updateDemo(elapsed, delta);
   else updateExploration(delta);
 
   skyRing.rotation.z = elapsed * 0.035;
