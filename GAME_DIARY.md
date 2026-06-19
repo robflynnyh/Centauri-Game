@@ -15,3 +15,5 @@ Tightened the alien tree silhouettes so the trunks, collars, and canopies overla
 Reworked the alien trees again with centered, overlapping crowns around a trunk that visibly rises into the canopy to avoid a disjointed stacked read.
 
 Changed pools and the stream into terrain-following water meshes so the demo water sits against the ground instead of floating over uneven terrain.
+
+Added lightweight first-person collision against alien trees and larger rocks using explicit circular blockers while keeping water, sprouts, and small glowing flora passable.
