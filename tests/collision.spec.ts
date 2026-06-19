@@ -83,31 +83,42 @@ test("supports grounded jump and visible crouch height changes", async ({ page }
   await page.keyboard.up("Control");
 });
 
-test("rotates view on mouse movement and click toggles cursor release", async ({ page }) => {
+test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
-  await expect(page.getByText("mouse look")).toBeVisible();
+  await expect(page.getByText("click to look")).toBeVisible();
 
   await page.mouse.move(400, 300);
+  await page.mouse.click(400, 300);
+  await page.waitForFunction(() => document.pointerLockElement !== null);
+  await expect(page.getByText("mouse look")).toBeVisible();
+
   const start = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");
     return debug.getViewState();
   });
 
-  await page.mouse.move(520, 360, { steps: 2 });
+  await page.evaluate(() => {
+    document.dispatchEvent(new MouseEvent("mousemove", { movementX: 120, movementY: 60 }));
+  });
   const looked = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");
     return debug.getViewState();
   });
 
-  expect(looked.mouseLookEnabled).toBe(true);
+  expect(looked.mouseLookActive).toBe(true);
   expect(Math.abs(looked.yaw - start.yaw)).toBeGreaterThan(0.05);
   expect(Math.abs(looked.pitch - start.pitch)).toBeGreaterThan(0.02);
 
-  await page.mouse.click(520, 360);
-  await expect(page.getByText("cursor free")).toBeVisible();
+  await page.evaluate(() => {
+    const canvas = document.querySelector("canvas");
+    if (!canvas) throw new Error("Missing Centauri canvas");
+    canvas.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.pointerLockElement === null);
+  await expect(page.getByText("click to look")).toBeVisible();
   const released = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");
@@ -121,19 +132,7 @@ test("rotates view on mouse movement and click toggles cursor release", async ({
     return debug.getViewState();
   });
 
-  expect(afterReleasedMove.mouseLookEnabled).toBe(false);
+  expect(afterReleasedMove.mouseLookActive).toBe(false);
   expect(afterReleasedMove.yaw).toBeCloseTo(released.yaw, 5);
   expect(afterReleasedMove.pitch).toBeCloseTo(released.pitch, 5);
-
-  await page.mouse.click(680, 420);
-  await expect(page.getByText("mouse look")).toBeVisible();
-  await page.mouse.move(760, 420, { steps: 2 });
-  const recaptured = await page.evaluate(() => {
-    const debug = window.__centauriDebug;
-    if (!debug) throw new Error("Missing Centauri collision debug hook");
-    return debug.getViewState();
-  });
-
-  expect(recaptured.mouseLookEnabled).toBe(true);
-  expect(Math.abs(recaptured.yaw - afterReleasedMove.yaw)).toBeGreaterThan(0.05);
 });

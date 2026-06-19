@@ -12,7 +12,7 @@ declare global {
     __centauriDebug?: {
       obstacles: CollisionObstacle[];
       getPlayer: () => { x: number; y: number; z: number };
-      getViewState: () => { yaw: number; pitch: number; mouseLookEnabled: boolean };
+      getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
@@ -44,7 +44,7 @@ app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
       <h1>Centauri Field Note 001</h1>
-      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, move mouse to look. Click the planet view to free or recapture the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
+      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once for mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
@@ -76,7 +76,7 @@ const player = {
   grounded: true,
   jumpQueued: false,
 };
-let mouseLookEnabled = !isDemo;
+let mouseLookActive = false;
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 
 const collisionWorld = createCollisionWorld();
@@ -98,7 +98,7 @@ if (enableCollisionDebug) {
     getViewState: () => ({
       yaw: player.yaw,
       pitch: player.pitch,
-      mouseLookEnabled,
+      mouseLookActive,
     }),
     getMovementState: () => ({
       grounded: player.grounded,
@@ -146,7 +146,7 @@ function startAudio(): void {
 
 function updateLookStatus(): void {
   if (!lookStatus) return;
-  lookStatus.textContent = isDemo ? "" : mouseLookEnabled ? "mouse look" : "cursor free";
+  lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse look" : "click to look";
 }
 
 updateLookStatus();
@@ -164,12 +164,22 @@ window.addEventListener("keyup", (event) => keys.delete(event.code));
 renderer.domElement.addEventListener("pointerdown", () => {
   startAudio();
   if (isDemo) return;
-  mouseLookEnabled = !mouseLookEnabled;
   renderer.domElement.focus();
+  if (document.pointerLockElement === renderer.domElement) {
+    document.exitPointerLock();
+    return;
+  }
+  const pointerLockRequest = renderer.domElement.requestPointerLock();
+  if (pointerLockRequest) {
+    pointerLockRequest.catch(() => updateLookStatus());
+  }
+});
+document.addEventListener("pointerlockchange", () => {
+  mouseLookActive = document.pointerLockElement === renderer.domElement;
   updateLookStatus();
 });
-renderer.domElement.addEventListener("pointermove", (event) => {
-  if (!mouseLookEnabled || isDemo) return;
+document.addEventListener("mousemove", (event) => {
+  if (!mouseLookActive || isDemo) return;
   player.yaw -= event.movementX * mouseLookSensitivity;
   player.pitch = THREE.MathUtils.clamp(player.pitch - event.movementY * mouseLookSensitivity, -1.1, 0.6);
 });

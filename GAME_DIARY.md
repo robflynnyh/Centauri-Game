@@ -50,4 +50,4 @@ Retuned the meteors after review feedback into more whimsical falling sky glyphs
 
 Fixed meteor glyph orientation so the bead trails follow behind the moving heads in the camera view, then refreshed the committed PR demo video for direct meteor review.
 
-Changed first-person look controls so mouse movement over the game view rotates the camera by default, while clicking the planet view toggles into a cursor-free mode and clicking again recaptures mouse-look.
+Changed first-person look controls to use browser pointer lock after one click on the planet view, giving continuous mouse-look without edge limits while Esc or a second click releases the cursor.
