@@ -2,19 +2,7 @@ name: CI
 
 on:
   push:
-    paths-ignore:
-      - docs/demo/pr-demo.webm
-      - docs/demo/pr-preview.png
   pull_request:
-    paths-ignore:
-      - docs/demo/pr-demo.webm
-      - docs/demo/pr-preview.png
-
-permissions:
-  contents: write
-  actions: read
-  pull-requests: write
-  issues: write
 
 jobs:
   build:
@@ -26,77 +14,3 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run build
-
-  import-real-demo-webm:
-    if: github.event_name == 'pull_request' && github.event.pull_request.number == 1
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-      - name: Download original PR demo artifact
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          rm -rf /tmp/pr-demo-video
-          mkdir -p /tmp/pr-demo-video
-          gh run download 27818546600 --name pr-demo-video -D /tmp/pr-demo-video
-          find /tmp/pr-demo-video -maxdepth 6 -type f -print
-      - name: Commit real WebM and update PR body
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          WEBM_PATH=$(find /tmp/pr-demo-video -name '*.webm' | head -n 1)
-          if [ -z "$WEBM_PATH" ]; then
-            echo "No .webm found in downloaded artifact" >&2
-            exit 1
-          fi
-
-          mkdir -p docs/demo
-          cp "$WEBM_PATH" docs/demo/pr-demo.webm
-          sha256sum docs/demo/pr-demo.webm
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/demo/pr-demo.webm
-          if git diff --cached --quiet; then
-            echo "Real WebM already committed."
-          else
-            git commit -m "Replace PR demo WebM with Actions recording"
-            git push origin HEAD:${{ github.event.pull_request.head.ref }}
-          fi
-
-          ASSET_SHA=$(git rev-parse HEAD)
-          SCREENSHOT_URL="https://raw.githubusercontent.com/${REPOSITORY}/${ASSET_SHA}/docs/demo/pr-preview.svg"
-          WEBM_URL="https://raw.githubusercontent.com/${REPOSITORY}/${ASSET_SHA}/docs/demo/pr-demo.webm"
-          BODY_FILE=$(mktemp)
-          UPDATED_BODY_FILE=$(mktemp)
-          gh pr view "$PR_NUMBER" --json body --jq .body > "$BODY_FILE"
-          python3 - "$BODY_FILE" "$UPDATED_BODY_FILE" "$SCREENSHOT_URL" "$WEBM_URL" <<'PY'
-          import sys
-          from pathlib import Path
-
-          body_path, updated_body_path, screenshot_url, webm_url = sys.argv[1:]
-          body = Path(body_path).read_text()
-          start = "<!-- centauri-demo-preview:start -->"
-          end = "<!-- centauri-demo-preview:end -->"
-          block = f"""{start}
-## PR visual preview
-
-![PR visual preview]({screenshot_url})
-
-🎥 [Open/download committed PR demo WebM]({webm_url})
-
-This WebM is the original recording from the successful GitHub Actions `pr-demo-video` artifact.
-{end}"""
-          if start in body and end in body:
-            before = body.split(start, 1)[0].rstrip()
-            after = body.split(end, 1)[1].lstrip()
-            updated = f"{before}\n\n{block}\n\n{after}".rstrip() + "\n"
-          else:
-            updated = body.rstrip() + "\n\n" + block + "\n"
-          Path(updated_body_path).write_text(updated)
-          PY
-          gh pr edit "$PR_NUMBER" --body-file "$UPDATED_BODY_FILE"
