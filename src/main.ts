@@ -33,11 +33,16 @@ app.innerHTML = `
 `;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x4654b5);
-scene.fog = new THREE.FogExp2(0x49396f, 0.024);
+const dayBackgroundColour = new THREE.Color(0x5d91ff);
+const nightBackgroundColour = new THREE.Color(0x171044);
+const dayFogColour = new THREE.Color(0x76a6df);
+const nightFogColour = new THREE.Color(0x251652);
+const worldFog = new THREE.FogExp2(dayFogColour.getHex(), 0.014);
+scene.background = dayBackgroundColour.clone();
+scene.fog = worldFog;
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
@@ -89,27 +94,35 @@ function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): vo
   }
 }
 
-const hemi = new THREE.HemisphereLight(0xfff2c1, 0x191040, 1.8);
+const hemi = new THREE.HemisphereLight(0xf2e9c8, 0x4e4671, 0.35);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xffc78f, 2.6);
+const sun = new THREE.DirectionalLight(0xffd8a3, 0.22);
 sun.position.set(-24, 42, 16);
 scene.add(sun);
 
-const moon = new THREE.DirectionalLight(0x9ab7ff, 1.2);
+const moon = new THREE.DirectionalLight(0xb6c5ff, 0.12);
 moon.position.set(30, 15, -20);
 scene.add(moon);
+
+const skyUniforms = {
+  dayAmount: { value: 1 },
+  dayHorizonColour: { value: new THREE.Color(0xff9fd0) },
+  dayMiddleColour: { value: new THREE.Color(0x78d2ff) },
+  dayUpperColour: { value: new THREE.Color(0x6393ff) },
+  dayZenithColour: { value: new THREE.Color(0x705ed8) },
+  nightHorizonColour: { value: new THREE.Color(0x7d55b4) },
+  nightMiddleColour: { value: new THREE.Color(0x2d3f9b) },
+  nightUpperColour: { value: new THREE.Color(0x1d236f) },
+  nightZenithColour: { value: new THREE.Color(0x120d35) },
+};
 
 function makeSkyDome(): THREE.Mesh {
   const geometry = new THREE.SphereGeometry(180, 24, 14);
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
-    uniforms: {
-      horizonColour: { value: new THREE.Color(0xff8ecf) },
-      middleColour: { value: new THREE.Color(0x6aa8ff) },
-      zenithColour: { value: new THREE.Color(0x191044) },
-    },
+    uniforms: skyUniforms,
     vertexShader: `
       varying vec3 vWorldPosition;
 
@@ -121,14 +134,26 @@ function makeSkyDome(): THREE.Mesh {
     `,
     fragmentShader: `
       varying vec3 vWorldPosition;
-      uniform vec3 horizonColour;
-      uniform vec3 middleColour;
-      uniform vec3 zenithColour;
+      uniform float dayAmount;
+      uniform vec3 dayHorizonColour;
+      uniform vec3 dayMiddleColour;
+      uniform vec3 dayUpperColour;
+      uniform vec3 dayZenithColour;
+      uniform vec3 nightHorizonColour;
+      uniform vec3 nightMiddleColour;
+      uniform vec3 nightUpperColour;
+      uniform vec3 nightZenithColour;
 
       void main() {
         float height = clamp(normalize(vWorldPosition).y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 lowSky = mix(horizonColour, middleColour, smoothstep(0.18, 0.58, height));
-        vec3 sky = mix(lowSky, zenithColour, smoothstep(0.62, 1.0, height));
+        vec3 horizonColour = mix(nightHorizonColour, dayHorizonColour, dayAmount);
+        vec3 middleColour = mix(nightMiddleColour, dayMiddleColour, dayAmount);
+        vec3 upperColour = mix(nightUpperColour, dayUpperColour, dayAmount);
+        vec3 zenithColour = mix(nightZenithColour, dayZenithColour, dayAmount);
+        vec3 sky = horizonColour;
+        if (height > 0.32) sky = middleColour;
+        if (height > 0.56) sky = upperColour;
+        if (height > 0.78) sky = zenithColour;
         gl_FragColor = vec4(sky, 1.0);
       }
     `,
@@ -138,6 +163,26 @@ function makeSkyDome(): THREE.Mesh {
 }
 
 scene.add(makeSkyDome());
+
+function getDayAmount(elapsed: number): number {
+  const cycleLength = isDemo ? 18 : 96;
+  const phase = (elapsed / cycleLength + 0.18) % 1;
+  const daylightWave = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5;
+  return THREE.MathUtils.smoothstep(daylightWave, 0.2, 0.82);
+}
+
+function updateSkyCycle(elapsed: number): void {
+  const dayAmount = getDayAmount(elapsed);
+  skyUniforms.dayAmount.value = dayAmount;
+
+  (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
+  worldFog.color.copy(nightFogColour).lerp(dayFogColour, dayAmount);
+  worldFog.density = THREE.MathUtils.lerp(0.021, 0.014, dayAmount);
+
+  hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
+  sun.intensity = THREE.MathUtils.lerp(0.04, 0.22, dayAmount);
+  moon.intensity = THREE.MathUtils.lerp(0.18, 0.08, dayAmount);
+}
 
 function heightAt(x: number, z: number): number {
   const d = Math.sqrt(x * x + z * z);
@@ -149,30 +194,59 @@ function heightAt(x: number, z: number): number {
 
 function makeTerrain(): THREE.Mesh {
   const size = 120;
-  const segments = 96;
-  const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
-  geometry.rotateX(-Math.PI / 2);
-
-  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const segments = 48;
+  const cellSize = size / segments;
+  const halfSize = size / 2;
+  const geometry = new THREE.BufferGeometry();
+  const positions: number[] = [];
   const colours: number[] = [];
-  const colour = new THREE.Color();
+  const indices: number[] = [];
+  const terrainPalette = [
+    new THREE.Color(0x9b63c4),
+    new THREE.Color(0x6e78df),
+    new THREE.Color(0x52b8bb),
+    new THREE.Color(0xb6c95b),
+    new THREE.Color(0xec7fb2),
+    new THREE.Color(0xffb15e),
+  ];
 
-  for (let i = 0; i < positions.count; i += 1) {
-    const x = positions.getX(i);
-    const z = positions.getZ(i);
-    const y = heightAt(x, z);
-    positions.setY(i, y);
+  for (let zIndex = 0; zIndex < segments; zIndex += 1) {
+    for (let xIndex = 0; xIndex < segments; xIndex += 1) {
+      const x0 = -halfSize + xIndex * cellSize;
+      const x1 = x0 + cellSize;
+      const z0 = -halfSize + zIndex * cellSize;
+      const z1 = z0 + cellSize;
+      const y00 = heightAt(x0, z0);
+      const y10 = heightAt(x1, z0);
+      const y01 = heightAt(x0, z1);
+      const y11 = heightAt(x1, z1);
+      const centerX = (x0 + x1) * 0.5;
+      const centerZ = (z0 + z1) * 0.5;
+      const centerY = (y00 + y10 + y01 + y11) * 0.25;
 
-    const altitude = THREE.MathUtils.clamp((y + 2) / 12, 0, 1);
-    const mineral = (Math.sin(x * 0.41) + Math.cos(z * 0.37) + 2) / 4;
-    colour.setHSL(0.58 + mineral * 0.17, 0.45, 0.18 + altitude * 0.22);
-    colours.push(colour.r, colour.g, colour.b);
+      const altitude = THREE.MathUtils.clamp((centerY + 2) / 12, 0, 1);
+      const mineral = (Math.sin(centerX * 0.18) + Math.cos(centerZ * 0.14) + 2) / 4;
+      const pixelFleck = (Math.sin(centerX * 1.7 + centerZ * 2.3) + 1) * 0.5;
+      const palettePosition = altitude * 0.62 + mineral * 0.3 + pixelFleck * 0.08;
+      const band = THREE.MathUtils.clamp(Math.floor(palettePosition * terrainPalette.length), 0, terrainPalette.length - 1);
+      const colour = terrainPalette[band];
+      const vertexIndex = positions.length / 3;
+
+      positions.push(x0, y00, z0, x1, y10, z0, x0, y01, z1, x1, y11, z1);
+
+      for (let i = 0; i < 4; i += 1) {
+        colours.push(colour.r, colour.g, colour.b);
+      }
+
+      indices.push(vertexIndex, vertexIndex + 2, vertexIndex + 1, vertexIndex + 1, vertexIndex + 2, vertexIndex + 3);
+    }
   }
 
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
-  geometry.computeVertexNormals();
+  geometry.setIndex(indices);
 
-  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   return new THREE.Mesh(geometry, material);
 }
 
@@ -184,23 +258,20 @@ scene.add(floraGroup);
 const natureGroup = new THREE.Group();
 scene.add(natureGroup);
 
-const markerMaterial = new THREE.MeshStandardMaterial({ color: 0xff6fb5, emissive: 0x7b1f4c, roughness: 0.8 });
-const stalkMaterial = new THREE.MeshStandardMaterial({ color: 0x8ae1d2, emissive: 0x0d4c53, roughness: 0.9 });
-const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5140a8, emissive: 0x120b38, roughness: 0.95 });
-const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0x7cff9b, emissive: 0x1f6a44, roughness: 0.82, flatShading: true });
-const canopyAccentMaterial = new THREE.MeshStandardMaterial({ color: 0xffc766, emissive: 0x784015, roughness: 0.78, flatShading: true });
-const reedMaterial = new THREE.MeshStandardMaterial({ color: 0xb8ff6a, emissive: 0x315a13, roughness: 0.9 });
-const bloomMaterial = new THREE.MeshStandardMaterial({ color: 0xf86eff, emissive: 0x7a197c, roughness: 0.75 });
-const waterMaterial = new THREE.MeshStandardMaterial({
-  color: 0x68f4ff,
-  emissive: 0x155c74,
+const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff5c9e });
+const stalkMaterial = new THREE.MeshBasicMaterial({ color: 0x55c7ba });
+const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x3f2b92 });
+const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x8dff86 });
+const canopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xffb84f });
+const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xc5ff4f });
+const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xff58df });
+const waterMaterial = new THREE.MeshBasicMaterial({
+  color: 0x66edf0,
   transparent: true,
-  opacity: 0.7,
-  roughness: 0.28,
-  metalness: 0.05,
+  opacity: 0.68,
   side: THREE.DoubleSide,
 });
-const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x7466ff, emissive: 0x201060, roughness: 1 });
+const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x6b55d8 });
 
 function addFlora(seed: number): void {
   const angle = seed * 2.399963;
@@ -347,8 +418,8 @@ function addPool(x: number, z: number, radius: number, colourShift: number): voi
   const pool = new THREE.Group();
 
   const water = new THREE.Mesh(makePoolGeometry(x, z, radius, colourShift, 1.45, 0.78), waterMaterial.clone());
-  const waterMat = water.material as THREE.MeshStandardMaterial;
-  waterMat.color.offsetHSL(colourShift * 0.02, 0, 0);
+  const waterMat = water.material as THREE.MeshBasicMaterial;
+  waterMat.color.offsetHSL(colourShift * 0.018, -0.05, -0.02);
   pool.add(water);
 
   const innerGlow = new THREE.Mesh(
@@ -617,20 +688,20 @@ const demoPlayer = new THREE.Vector3(9, heightAt(9, 18) + 4.6, 18);
 
 function updateDemo(elapsed: number, delta: number): void {
   if (elapsed < 5.2) {
-    resolvePlayerMove(demoPlayer, new THREE.Vector3(0, 0, -delta * 3.2));
-    demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.6;
+    resolvePlayerMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
+    demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.2;
     camera.position.copy(demoPlayer);
-    camera.lookAt(9, heightAt(9, 7) + 2.7, 7);
+    camera.lookAt(6.2, heightAt(6.2, 7) + 2.5, 7);
     return;
   }
 
-  const radius = 24 - Math.sin(elapsed * 0.35) * 4;
-  const angle = elapsed * 0.16 + 0.2;
+  const radius = 21 - Math.sin(elapsed * 0.35) * 3;
+  const angle = elapsed * 0.14 + 0.35;
   const x = Math.sin(angle) * radius;
   const z = Math.cos(angle) * radius;
-  const y = heightAt(x, z) + 5.1 + Math.sin(elapsed * 0.7) * 1.0;
+  const y = heightAt(x, z) + 4.4 + Math.sin(elapsed * 0.7) * 0.7;
   camera.position.set(x, y, z);
-  camera.lookAt(4 + Math.sin(elapsed * 0.22) * 3, 6.8 + Math.sin(elapsed * 0.31) * 1.2, 6 + Math.cos(elapsed * 0.18) * 3);
+  camera.lookAt(5.5 + Math.sin(elapsed * 0.22) * 2.4, 5.9 + Math.sin(elapsed * 0.31) * 0.8, 6 + Math.cos(elapsed * 0.18) * 2.4);
 }
 
 function animate(): void {
@@ -639,6 +710,8 @@ function animate(): void {
 
   if (isDemo) updateDemo(elapsed, delta);
   else updateExploration(delta);
+
+  updateSkyCycle(elapsed);
 
   skyRing.rotation.z = elapsed * 0.035;
   celestialGroup.children.forEach((child, index) => {
