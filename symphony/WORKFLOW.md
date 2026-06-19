@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: linear
-  project_slug: "centauri-game"
+  project_slug: "centauri-game-faf38ead37cd"
   api_key: $LINEAR_API_KEY
   active_states:
     - Todo
@@ -33,9 +33,10 @@ agent:
   max_concurrent_agents: 1
   max_turns: 30
 codex:
-  command: /home/acp21rjf/.npm-global/bin/codex --config shell_environment_policy.inherit=all app-server
+  command: /home/acp21rjf/.npm-global/bin/codex --config shell_environment_policy.inherit=all --config model_reasoning_effort=medium app-server
   approval_policy: never
   thread_sandbox: danger-full-access
+  issue_label_overrides: true
   turn_sandbox_policy:
     type: dangerFullAccess
 ---
