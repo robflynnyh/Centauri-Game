@@ -17,15 +17,6 @@ export type TerrainSystem = {
   };
 };
 
-const terrainPalette = [
-  new THREE.Color(0x9b63c4),
-  new THREE.Color(0x6e78df),
-  new THREE.Color(0x52b8bb),
-  new THREE.Color(0xb6c95b),
-  new THREE.Color(0xec7fb2),
-  new THREE.Color(0xffb15e),
-];
-
 export function heightAt(x: number, z: number): number {
   const detail = detailCoordinatesAt(x, z);
   const tileX = detail.x;
@@ -157,7 +148,6 @@ function makeTerrainGeometry(
 ): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
-  const colours: number[] = [];
   const terrainCoords: number[] = [];
   const terrainHeights: number[] = [];
   const indices: number[] = [];
@@ -174,14 +164,6 @@ function makeTerrainGeometry(
       const y10 = heightAt(x1, z0);
       const y01 = heightAt(x0, z1);
       const y11 = heightAt(x1, z1);
-      const centerX = (x0 + x1) * 0.5;
-      const centerZ = (z0 + z1) * 0.5;
-      const centerY = (y00 + y10 + y01 + y11) * 0.25;
-      const detail = detailCoordinatesAt(centerX, centerZ);
-
-      const palettePosition = terrainPalettePosition(centerY, detail.x, detail.z);
-      const band = THREE.MathUtils.clamp(Math.floor(palettePosition * terrainPalette.length), 0, terrainPalette.length - 1);
-      const colour = terrainPalette[band];
       const vertexIndex = positions.length / 3;
       const p00 = pointOnPlanet(x0, z0, y00 + lift);
       const p10 = pointOnPlanet(x1, z0, y10 + lift);
@@ -192,62 +174,16 @@ function makeTerrainGeometry(
       terrainCoords.push(x0, z0, x1, z0, x0, z1, x1, z1);
       terrainHeights.push(y00, y10, y01, y11);
 
-      for (let i = 0; i < 4; i += 1) {
-        colours.push(colour.r, colour.g, colour.b);
-      }
-
       indices.push(vertexIndex, vertexIndex + 2, vertexIndex + 1, vertexIndex + 1, vertexIndex + 2, vertexIndex + 3);
     }
   }
 
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
   geometry.setAttribute("terrainCoord", new THREE.Float32BufferAttribute(terrainCoords, 2));
   geometry.setAttribute("terrainHeight", new THREE.Float32BufferAttribute(terrainHeights, 1));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
-}
-
-function terrainPalettePosition(centerY: number, detailX: number, detailZ: number): number {
-  const altitude = THREE.MathUtils.clamp((centerY + 2) / 14, 0, 1);
-  const mineral = (Math.sin(detailX * 0.15) + Math.cos(detailZ * 0.12) + 2) / 4;
-  const pixelFleck = (Math.sin(detailX * 1.45 + detailZ * 2.1) + 1) * 0.5;
-  const organicField = steppedBoundaryField(detailX, detailZ);
-  const basePosition = 0.34 + altitude * 0.18 + mineral * 0.08 + (organicField - 0.5) * 0.18 + pixelFleck * 0.04;
-  const bandPosition = basePosition * terrainPalette.length + steppedBoundaryBandJitter(detailX, detailZ) * 0.18;
-  return THREE.MathUtils.clamp(bandPosition / terrainPalette.length, 0, 0.999);
-}
-
-function steppedBoundaryField(detailX: number, detailZ: number): number {
-  const warpX = Math.sin(detailZ * 0.083) * 9.5 + Math.sin((detailX + detailZ) * 0.047) * 5.5;
-  const warpZ = Math.cos(detailX * 0.071) * 8.5 + Math.sin((detailX - detailZ) * 0.052) * 6;
-  const warpedX = detailX + warpX;
-  const warpedZ = detailZ + warpZ;
-  const cellX = Math.floor(detailX / boundaryStepSize);
-  const cellZ = Math.floor(detailZ / boundaryStepSize);
-  const lobeA = Math.sin(warpedX * 0.092 + Math.sin(warpedZ * 0.056) * 2.3);
-  const lobeB = Math.cos(warpedZ * 0.088 + Math.cos(warpedX * 0.049) * 2.1);
-  const lobeC = Math.sin((warpedX - warpedZ) * 0.061 + Math.cos((warpedX + warpedZ) * 0.041) * 2.6);
-  const chipped = hashCell(cellX + 17, cellZ - 23) * 2 - 1;
-  return THREE.MathUtils.clamp((lobeA + lobeB + lobeC + 3) / 6 + chipped * 0.06, 0, 1);
-}
-
-function steppedBoundaryBandJitter(detailX: number, detailZ: number): number {
-  const cellX = Math.floor(detailX / boundaryStepSize);
-  const cellZ = Math.floor(detailZ / boundaryStepSize);
-  const wobbleA = Math.sin(cellX * 0.63 + cellZ * 0.19 + Math.sin(cellZ * 0.41) * 1.7);
-  const wobbleB = Math.cos(cellZ * 0.58 - cellX * 0.27 + Math.sin(cellX * 0.33) * 1.3);
-  const diagonalBreak = Math.sin((cellX + cellZ) * 0.37 + Math.cos((cellX - cellZ) * 0.29) * 1.9);
-  const pixelNudge = hashCell(cellX, cellZ) * 2 - 1;
-  return wobbleA * 1.42 + wobbleB * 1.12 + diagonalBreak * 0.86 + pixelNudge * 0.72;
-}
-
-function hashCell(cellX: number, cellZ: number): number {
-  let state = (Math.imul(cellX, 374761393) ^ Math.imul(cellZ, 668265263) ^ 0x85ebca6b) >>> 0;
-  state = Math.imul(state ^ (state >>> 13), 1274126177) >>> 0;
-  state = (state ^ (state >>> 16)) >>> 0;
-  return state / 0xffffffff;
 }
 
 function makeTerrainMaterial(): THREE.ShaderMaterial {
