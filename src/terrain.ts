@@ -71,7 +71,7 @@ function mound(x: number, z: number, centerX: number, centerZ: number, radiusX: 
 }
 
 const terrainChunkSize = 96;
-const terrainChunkSegments = 32;
+const terrainChunkSegments = 24;
 const terrainChunkRadius = 5;
 const terrainChunkCellSize = terrainChunkSize / terrainChunkSegments;
 const boundaryStepSize = terrainChunkCellSize;
@@ -208,19 +208,23 @@ function terrainPalettePosition(centerY: number, detailX: number, detailZ: numbe
   const mineral = (Math.sin(detailX * 0.15) + Math.cos(detailZ * 0.12) + 2) / 4;
   const pixelFleck = (Math.sin(detailX * 1.45 + detailZ * 2.1) + 1) * 0.5;
   const organicField = steppedBoundaryField(detailX, detailZ);
-  const basePosition = altitude * 0.48 + mineral * 0.18 + organicField * 0.26 + pixelFleck * 0.08;
+  const basePosition = altitude * 0.12 + mineral * 0.12 + organicField * 0.68 + pixelFleck * 0.08;
   const bandPosition = basePosition * terrainPalette.length + steppedBoundaryBandJitter(detailX, detailZ);
   return THREE.MathUtils.clamp(bandPosition / terrainPalette.length, 0, 0.999);
 }
 
 function steppedBoundaryField(detailX: number, detailZ: number): number {
+  const warpX = Math.sin(detailZ * 0.083) * 9.5 + Math.sin((detailX + detailZ) * 0.047) * 5.5;
+  const warpZ = Math.cos(detailX * 0.071) * 8.5 + Math.sin((detailX - detailZ) * 0.052) * 6;
+  const warpedX = detailX + warpX;
+  const warpedZ = detailZ + warpZ;
   const cellX = Math.floor(detailX / boundaryStepSize);
   const cellZ = Math.floor(detailZ / boundaryStepSize);
-  const lobeA = Math.sin(cellX * 0.38 + Math.sin(cellZ * 0.31) * 2.2);
-  const lobeB = Math.cos(cellZ * 0.43 + Math.cos(cellX * 0.24) * 2.4);
-  const lobeC = Math.sin((cellX - cellZ) * 0.29 + Math.cos((cellX + cellZ) * 0.21) * 1.8);
-  const chipped = hashCell(cellX + 17, cellZ - 23) * 0.65;
-  return THREE.MathUtils.clamp((lobeA + lobeB + lobeC + 3) / 6 + chipped * 0.18, 0, 1);
+  const lobeA = Math.sin(warpedX * 0.092 + Math.sin(warpedZ * 0.056) * 2.3);
+  const lobeB = Math.cos(warpedZ * 0.088 + Math.cos(warpedX * 0.049) * 2.1);
+  const lobeC = Math.sin((warpedX - warpedZ) * 0.061 + Math.cos((warpedX + warpedZ) * 0.041) * 2.6);
+  const chipped = hashCell(cellX + 17, cellZ - 23) * 2 - 1;
+  return THREE.MathUtils.clamp((lobeA + lobeB + lobeC + 3) / 6 + chipped * 0.06, 0, 1);
 }
 
 function steppedBoundaryBandJitter(detailX: number, detailZ: number): number {
@@ -230,7 +234,7 @@ function steppedBoundaryBandJitter(detailX: number, detailZ: number): number {
   const wobbleB = Math.cos(cellZ * 0.58 - cellX * 0.27 + Math.sin(cellX * 0.33) * 1.3);
   const diagonalBreak = Math.sin((cellX + cellZ) * 0.37 + Math.cos((cellX - cellZ) * 0.29) * 1.9);
   const pixelNudge = hashCell(cellX, cellZ) * 2 - 1;
-  return wobbleA * 1.1 + wobbleB * 0.86 + diagonalBreak * 0.68 + pixelNudge * 0.48;
+  return wobbleA * 1.42 + wobbleB * 1.12 + diagonalBreak * 0.86 + pixelNudge * 0.72;
 }
 
 function hashCell(cellX: number, cellZ: number): number {
