@@ -20,6 +20,7 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
     const mountainHeight = debug.terrainHeightAt(0, -74);
     debug.setPlayer(0, -74);
     const mountainPlayer = debug.getPlayer();
+    const standingHeight = debug.getMovementState().cameraHeight;
 
     return {
       colliderCount: debug.obstacles.length,
@@ -28,7 +29,7 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
       waterPassable,
       mountainIsTerrain: mountainHeight > fieldHeight + 7,
       mountainWalkable: !debug.isBlockedAt(0, -74),
-      playerStandsOnMountain: Math.abs(mountainPlayer.y - (mountainHeight + 2.2)) < 0.001,
+      playerStandsOnMountain: Math.abs(mountainPlayer.y - (mountainHeight + standingHeight)) < 0.001,
     };
   });
 

@@ -29,8 +29,8 @@ if (!app) {
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
 const enableCollisionDebug = params.get("test") === "collision";
-const standHeight = 2.2;
-const crouchHeight = 1.28;
+const standHeight = 1.65;
+const crouchHeight = 0.96;
 const walkSpeed = 6.4;
 const crouchSpeed = 2.9;
 const acceleration = 19;
