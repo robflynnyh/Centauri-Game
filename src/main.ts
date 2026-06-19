@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createPrDemoController } from "./demo";
+import { createFootstepTrail } from "./footsteps";
 import { populateNature } from "./nature";
 import { createSkySystem } from "./sky";
 import { heightAt, makeHorizonLandforms, makeTerrain } from "./terrain";
@@ -64,7 +65,10 @@ scene.add(makeTerrain());
 scene.add(makeHorizonLandforms());
 
 const { floraGroup } = populateNature(scene, heightAt, collisionWorld.addObstacle);
-const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove);
+const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
+const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
+  footsteps.walk(position, delta);
+});
 
 if (enableCollisionDebug) {
   window.__centauriDebug = {
@@ -140,6 +144,7 @@ function updateExploration(delta: number): void {
   player.velocity.lerp(wish.multiplyScalar(8), 1 - Math.exp(-delta * 6));
   collisionWorld.resolveMove(player.position, player.velocity.clone().multiplyScalar(delta));
   player.position.y = heightAt(player.position.x, player.position.z) + 2.2;
+  footsteps.walk(player.position, delta);
 
   camera.position.copy(player.position);
   camera.rotation.order = "YXZ";
@@ -154,6 +159,7 @@ function animate(): void {
   if (isDemo) prDemo.update(elapsed, delta);
   else updateExploration(delta);
 
+  footsteps.update(delta);
   sky.update(elapsed);
   floraGroup.children.forEach((child, index) => {
     child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;

@@ -2,11 +2,13 @@ import * as THREE from "three";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
+type WalkObserver = (position: THREE.Vector3, delta: number) => void;
 
 export function createPrDemoController(
   camera: THREE.Camera,
   heightAt: HeightSampler,
-  resolveMove: ResolveMove
+  resolveMove: ResolveMove,
+  onWalk?: WalkObserver
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, heightAt(9, 18) + 4.6, 18);
 
@@ -15,6 +17,7 @@ export function createPrDemoController(
       if (elapsed < 3.6) {
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.18, 0, -delta * 1.6));
         demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 5.4;
+        onWalk?.(demoPlayer, delta);
         camera.position.copy(demoPlayer);
         camera.lookAt(2, heightAt(0, -72) + 13.5, -96);
         return;
@@ -23,8 +26,15 @@ export function createPrDemoController(
       if (elapsed < 6.4) {
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
         demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.2;
+        onWalk?.(demoPlayer, delta);
         camera.position.copy(demoPlayer);
         camera.lookAt(6.2, heightAt(6.2, 7) + 2.5, 7);
+        return;
+      }
+
+      if (elapsed < 8.4) {
+        camera.position.set(14, heightAt(14, 23) + 8.4, 23);
+        camera.lookAt(7.8, heightAt(7.8, 12.4) + 0.3, 12.4);
         return;
       }
 
