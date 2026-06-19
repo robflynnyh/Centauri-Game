@@ -1,13 +1,26 @@
 import * as THREE from "three";
+import { detailCoordinatesAt, placeObjectOnPlanet, pointOnPlanet, PLANET_CIRCUMFERENCE } from "./planet";
+
+const terrainPalette = [
+  new THREE.Color(0x9b63c4),
+  new THREE.Color(0x6e78df),
+  new THREE.Color(0x52b8bb),
+  new THREE.Color(0xb6c95b),
+  new THREE.Color(0xec7fb2),
+  new THREE.Color(0xffb15e),
+];
 
 export function heightAt(x: number, z: number): number {
-  const d = Math.sqrt(x * x + z * z);
+  const detail = detailCoordinatesAt(x, z);
+  const tileX = detail.x;
+  const tileZ = detail.z;
+  const d = Math.sqrt(tileX * tileX + tileZ * tileZ);
   const island = Math.max(0, 1 - Math.pow(d / 106, 2.28));
-  const ridges = Math.sin(x * 0.18) * Math.cos(z * 0.16) * 1.45;
-  const alienPulse = Math.sin((x + z) * 0.07) * 0.85 + Math.sin(Math.hypot(x, z) * 0.28) * 0.7;
-  const northShoulder = Math.max(0, 1 - Math.abs(z + 55) / 24) * (1 - Math.min(Math.abs(x) / 106, 1)) * 3.1;
-  const westShelf = Math.max(0, 1 - Math.abs(x + 64) / 26) * (1 - Math.min(Math.abs(z) / 96, 1)) * 1.8;
-  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(x, z);
+  const ridges = Math.sin(tileX * 0.18) * Math.cos(tileZ * 0.16) * 1.45;
+  const alienPulse = Math.sin((tileX + tileZ) * 0.07) * 0.85 + Math.sin(Math.hypot(tileX, tileZ) * 0.28) * 0.7;
+  const northShoulder = Math.max(0, 1 - Math.abs(tileZ + 55) / 24) * (1 - Math.min(Math.abs(tileX) / 106, 1)) * 3.1;
+  const westShelf = Math.max(0, 1 - Math.abs(tileX + 64) / 26) * (1 - Math.min(Math.abs(tileZ) / 96, 1)) * 1.8;
+  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(tileX, tileZ);
 }
 
 function mountainHeightAt(x: number, z: number): number {
@@ -30,30 +43,37 @@ function mound(x: number, z: number, centerX: number, centerZ: number, radiusX: 
   return Math.max(0, 1 - dx * dx - dz * dz) * height;
 }
 
-export function makeTerrain(): THREE.Mesh {
-  const size = 220;
-  const segments = 80;
-  const cellSize = size / segments;
-  const halfSize = size / 2;
+export function makeTerrain(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "spherical-planet-terrain";
+  group.add(makeTerrainMesh(-PLANET_CIRCUMFERENCE * 0.5, PLANET_CIRCUMFERENCE * 0.5, -PLANET_CIRCUMFERENCE * 0.25, PLANET_CIRCUMFERENCE * 0.25, 192, 72, 0));
+  group.add(makeTerrainMesh(-130, 130, -130, 130, 96, 96, 0.045, true));
+  return group;
+}
+
+function makeTerrainMesh(
+  xMin: number,
+  xMax: number,
+  zMin: number,
+  zMax: number,
+  xSegments: number,
+  zSegments: number,
+  lift: number,
+  polygonOffset = false
+): THREE.Mesh {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
   const colours: number[] = [];
   const indices: number[] = [];
-  const terrainPalette = [
-    new THREE.Color(0x9b63c4),
-    new THREE.Color(0x6e78df),
-    new THREE.Color(0x52b8bb),
-    new THREE.Color(0xb6c95b),
-    new THREE.Color(0xec7fb2),
-    new THREE.Color(0xffb15e),
-  ];
+  const cellSizeX = (xMax - xMin) / xSegments;
+  const cellSizeZ = (zMax - zMin) / zSegments;
 
-  for (let zIndex = 0; zIndex < segments; zIndex += 1) {
-    for (let xIndex = 0; xIndex < segments; xIndex += 1) {
-      const x0 = -halfSize + xIndex * cellSize;
-      const x1 = x0 + cellSize;
-      const z0 = -halfSize + zIndex * cellSize;
-      const z1 = z0 + cellSize;
+  for (let zIndex = 0; zIndex < zSegments; zIndex += 1) {
+    for (let xIndex = 0; xIndex < xSegments; xIndex += 1) {
+      const x0 = xMin + xIndex * cellSizeX;
+      const x1 = x0 + cellSizeX;
+      const z0 = zMin + zIndex * cellSizeZ;
+      const z1 = z0 + cellSizeZ;
       const y00 = heightAt(x0, z0);
       const y10 = heightAt(x1, z0);
       const y01 = heightAt(x0, z1);
@@ -61,16 +81,21 @@ export function makeTerrain(): THREE.Mesh {
       const centerX = (x0 + x1) * 0.5;
       const centerZ = (z0 + z1) * 0.5;
       const centerY = (y00 + y10 + y01 + y11) * 0.25;
+      const detail = detailCoordinatesAt(centerX, centerZ);
 
       const altitude = THREE.MathUtils.clamp((centerY + 2) / 14, 0, 1);
-      const mineral = (Math.sin(centerX * 0.15) + Math.cos(centerZ * 0.12) + 2) / 4;
-      const pixelFleck = (Math.sin(centerX * 1.45 + centerZ * 2.1) + 1) * 0.5;
+      const mineral = (Math.sin(detail.x * 0.15) + Math.cos(detail.z * 0.12) + 2) / 4;
+      const pixelFleck = (Math.sin(detail.x * 1.45 + detail.z * 2.1) + 1) * 0.5;
       const palettePosition = altitude * 0.64 + mineral * 0.28 + pixelFleck * 0.08;
       const band = THREE.MathUtils.clamp(Math.floor(palettePosition * terrainPalette.length), 0, terrainPalette.length - 1);
       const colour = terrainPalette[band];
       const vertexIndex = positions.length / 3;
+      const p00 = pointOnPlanet(x0, z0, y00 + lift);
+      const p10 = pointOnPlanet(x1, z0, y10 + lift);
+      const p01 = pointOnPlanet(x0, z1, y01 + lift);
+      const p11 = pointOnPlanet(x1, z1, y11 + lift);
 
-      positions.push(x0, y00, z0, x1, y10, z0, x0, y01, z1, x1, y11, z1);
+      positions.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
 
       for (let i = 0; i < 4; i += 1) {
         colours.push(colour.r, colour.g, colour.b);
@@ -83,8 +108,15 @@ export function makeTerrain(): THREE.Mesh {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
   geometry.setIndex(indices);
+  geometry.computeVertexNormals();
 
-  const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const material = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    polygonOffset,
+    polygonOffsetFactor: polygonOffset ? -2 : 0,
+    polygonOffsetUnits: polygonOffset ? -2 : 0,
+  });
   return new THREE.Mesh(geometry, material);
 }
 
@@ -109,8 +141,7 @@ function addCrestStones(group: THREE.Group, material: THREE.Material): void {
 
   placements.forEach(({ x, z, height, radius, lean }) => {
     const crest = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 5), material);
-    crest.position.set(x, heightAt(x, z) + height * 0.5 - 0.08, z);
-    crest.rotation.set(lean * 0.25, x * 0.01, lean);
+    placeObjectOnPlanet(crest, x, z, heightAt(x, z) + height * 0.5 - 0.08, new THREE.Euler(lean * 0.25, x * 0.01, lean));
     crest.scale.x = 1.2;
     crest.scale.z = 0.7;
     group.add(crest);
@@ -127,8 +158,7 @@ function addSideButtes(group: THREE.Group, material: THREE.Material): void {
 
   placements.forEach(({ x, z, height, radius, lean }) => {
     const butte = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 5), material);
-    butte.position.set(x, heightAt(x, z) + height * 0.5 - 0.8, z);
-    butte.rotation.set(lean * 0.25, x * 0.01, lean);
+    placeObjectOnPlanet(butte, x, z, heightAt(x, z) + height * 0.5 - 0.8, new THREE.Euler(lean * 0.25, x * 0.01, lean));
     butte.scale.x = 1.4;
     butte.scale.z = 0.72;
     group.add(butte);

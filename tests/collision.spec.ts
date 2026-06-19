@@ -83,6 +83,46 @@ test("supports grounded jump and visible crouch height changes", async ({ page }
   await page.keyboard.up("Control");
 });
 
+test("wraps straight walks around the spherical planet", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+
+    const planet = debug.getPlanetState();
+    debug.setPlayer(0, 0);
+    const start = debug.getPlayer();
+    const equatorEnd = debug.attemptMove(planet.circumference, 0);
+    const afterEquator = debug.getPlayer();
+
+    debug.setPlayer(0, 0);
+    const meridianEnd = debug.attemptMove(0, planet.circumference);
+    const afterMeridian = debug.getPlayer();
+    const expectedRadius = planet.circumference / (Math.PI * 2);
+    const expectedDuration = planet.circumference / planet.assumedWalkSpeed;
+
+    return {
+      radiusMath: Math.abs(planet.radius - expectedRadius),
+      durationMath: Math.abs(expectedDuration - planet.targetCircumnavigationSeconds),
+      equatorLocalDistance: Math.hypot(equatorEnd.x - start.x, equatorEnd.z - start.z),
+      meridianLocalDistance: Math.hypot(meridianEnd.x - start.x, meridianEnd.z - start.z),
+      equatorWorldDistance: Math.hypot(afterEquator.worldX - start.worldX, afterEquator.worldY - start.worldY, afterEquator.worldZ - start.worldZ),
+      meridianWorldDistance: Math.hypot(afterMeridian.worldX - start.worldX, afterMeridian.worldY - start.worldY, afterMeridian.worldZ - start.worldZ),
+      playerIsAbovePlanet: planet.radialDistance > planet.radius,
+    };
+  });
+
+  expect(result.radiusMath).toBeLessThan(0.000001);
+  expect(result.durationMath).toBeLessThan(0.000001);
+  expect(result.equatorLocalDistance).toBeLessThan(0.001);
+  expect(result.meridianLocalDistance).toBeLessThan(0.001);
+  expect(result.equatorWorldDistance).toBeLessThan(0.001);
+  expect(result.meridianWorldDistance).toBeLessThan(0.001);
+  expect(result.playerIsAbovePlanet).toBe(true);
+});
+
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

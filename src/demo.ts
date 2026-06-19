@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { lookAtPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -16,7 +17,7 @@ export function createPrDemoController(
   resolveMove: ResolveMove,
   onWalk?: WalkObserver
 ): { update: (elapsed: number, delta: number) => void } {
-  const demoPlayer = new THREE.Vector3(9, heightAt(9, 18) + 3.45, 18);
+  const demoPlayer = new THREE.Vector3(9, 0, 18);
 
   return {
     update: (elapsed, delta) => {
@@ -24,39 +25,60 @@ export function createPrDemoController(
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.18, 0, -delta * 1.6));
         const crouchDip = intervalPulse(elapsed, 0.8, 1.25, 1.85) * 0.8;
         const jumpRise = intervalPulse(elapsed, 2.05, 2.58, 3.15) * 1.25;
-        demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.05 - crouchDip + jumpRise;
         onWalk?.(demoPlayer, delta);
-        camera.position.copy(demoPlayer);
-        camera.lookAt(2, heightAt(0, -72) + 13.5, -96);
+        lookAtPlanetPoint(
+          camera,
+          demoPlayer.x,
+          demoPlayer.z,
+          heightAt(demoPlayer.x, demoPlayer.z) + 4.05 - crouchDip + jumpRise,
+          2,
+          -96,
+          heightAt(2, -96) + 13.5
+        );
         return;
       }
 
       if (elapsed < 6.4) {
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
-        demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 3.15;
         onWalk?.(demoPlayer, delta);
-        camera.position.copy(demoPlayer);
-        camera.lookAt(6.2, heightAt(6.2, 7) + 2.5, 7);
+        lookAtPlanetPoint(
+          camera,
+          demoPlayer.x,
+          demoPlayer.z,
+          heightAt(demoPlayer.x, demoPlayer.z) + 3.15,
+          6.2,
+          7,
+          heightAt(6.2, 7) + 2.5
+        );
         return;
       }
 
       if (elapsed < 8.4) {
-        camera.position.set(12.5, heightAt(12.5, 21) + 5.4, 21);
-        camera.lookAt(-6, heightAt(0, -72) + 34, -108);
+        lookAtPlanetPoint(camera, 46, 54, heightAt(46, 54) + 84, -18, -260, heightAt(-18, -260) + 8);
         return;
       }
 
-      const radius = 24 - Math.sin(elapsed * 0.35) * 4;
+      const radius = 68 - Math.sin(elapsed * 0.35) * 8;
       const angle = elapsed * 0.14 + 0.35;
       const x = Math.sin(angle) * radius;
       const z = Math.cos(angle) * radius;
-      const y = heightAt(x, z) + 3.6 + Math.sin(elapsed * 0.7) * 0.7;
-      camera.position.set(x, y, z);
 
       const horizonBlend = THREE.MathUtils.smoothstep(Math.sin(elapsed * 0.22) * 0.5 + 0.5, 0.28, 0.82);
-      const localTarget = new THREE.Vector3(5.5 + Math.sin(elapsed * 0.22) * 2.4, 5.9 + Math.sin(elapsed * 0.31) * 0.8, 6 + Math.cos(elapsed * 0.18) * 2.4);
-      const ridgeTarget = new THREE.Vector3(-8 + Math.sin(elapsed * 0.15) * 18, heightAt(0, -72) + 11.5, -104);
-      camera.lookAt(localTarget.lerp(ridgeTarget, horizonBlend * 0.45));
+      const localTargetX = 5.5 + Math.sin(elapsed * 0.22) * 2.4;
+      const localTargetZ = 6 + Math.cos(elapsed * 0.18) * 2.4;
+      const ridgeTargetX = -8 + Math.sin(elapsed * 0.15) * 18;
+      const ridgeTargetZ = -330 + Math.cos(elapsed * 0.18) * 24;
+      const targetX = THREE.MathUtils.lerp(localTargetX, ridgeTargetX, horizonBlend * 0.72);
+      const targetZ = THREE.MathUtils.lerp(localTargetZ, ridgeTargetZ, horizonBlend * 0.72);
+      lookAtPlanetPoint(
+        camera,
+        x,
+        z,
+        heightAt(x, z) + 62 + Math.sin(elapsed * 0.7) * 3,
+        targetX,
+        targetZ,
+        heightAt(targetX, targetZ) + THREE.MathUtils.lerp(5.9, 10.5, horizonBlend * 0.72)
+      );
     },
   };
 }

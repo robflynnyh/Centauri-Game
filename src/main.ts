@@ -3,6 +3,17 @@ import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
 import { populateNature } from "./nature";
+import {
+  normalizeLocalVector,
+  normalizePlanetCoords,
+  PLANET_ASSUMED_WALK_SPEED,
+  PLANET_CIRCUMFERENCE,
+  PLANET_RADIUS,
+  PLANET_TARGET_CIRCUMNAVIGATION_SECONDS,
+  pointOnPlanet,
+  setCameraOnPlanet,
+  surfaceDistanceBetweenLocal,
+} from "./planet";
 import { createSkySystem } from "./sky";
 import { heightAt, makeHorizonLandforms, makeTerrain } from "./terrain";
 import "./style.css";
@@ -11,7 +22,14 @@ declare global {
   interface Window {
     __centauriDebug?: {
       obstacles: CollisionObstacle[];
-      getPlayer: () => { x: number; y: number; z: number };
+      getPlayer: () => { x: number; y: number; z: number; worldX: number; worldY: number; worldZ: number };
+      getPlanetState: () => {
+        radius: number;
+        circumference: number;
+        targetCircumnavigationSeconds: number;
+        assumedWalkSpeed: number;
+        radialDistance: number;
+      };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
       setPlayer: (x: number, z: number) => void;
@@ -32,7 +50,7 @@ const isDemo = params.get("demo") === "pr";
 const enableCollisionDebug = params.get("test") === "collision";
 const standHeight = 1.65;
 const crouchHeight = 0.96;
-const walkSpeed = 6.4;
+const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
 const crouchSpeed = 2.9;
 const acceleration = 19;
 const braking = 24;
@@ -60,15 +78,15 @@ renderer.domElement.tabIndex = 0;
 renderer.domElement.setAttribute("aria-label", "Centauri exploration view");
 app.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 260);
-camera.position.set(0, 6, 24);
+const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 5200);
 
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const player = {
   yaw: 0,
   pitch: -0.12,
-  position: new THREE.Vector3(0, heightAt(0, 24) + standHeight, 24),
+  localPosition: new THREE.Vector3(0, 0, 24),
+  position: pointOnPlanet(0, 24, heightAt(0, 24) + standHeight),
   velocity: new THREE.Vector3(),
   verticalVelocity: 0,
   verticalOffset: 0,
@@ -79,22 +97,38 @@ const player = {
 let mouseLookActive = false;
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 
-const collisionWorld = createCollisionWorld();
+const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
 
 scene.add(makeTerrain());
 scene.add(makeHorizonLandforms());
 
-const { floraGroup, updateFloraReactivity } = populateNature(scene, heightAt, collisionWorld.addObstacle);
+const { updateFloraReactivity } = populateNature(scene, heightAt, collisionWorld.addObstacle);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
+const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
+  demoFloraFocus.copy(position);
   footsteps.walk(position, delta);
 });
 
 if (enableCollisionDebug) {
   window.__centauriDebug = {
     obstacles: collisionWorld.obstacles.map((obstacle) => ({ ...obstacle })),
-    getPlayer: () => ({ x: player.position.x, y: player.position.y, z: player.position.z }),
+    getPlayer: () => ({
+      x: player.localPosition.x,
+      y: player.position.length() - PLANET_RADIUS,
+      z: player.localPosition.z,
+      worldX: player.position.x,
+      worldY: player.position.y,
+      worldZ: player.position.z,
+    }),
+    getPlanetState: () => ({
+      radius: PLANET_RADIUS,
+      circumference: PLANET_CIRCUMFERENCE,
+      targetCircumnavigationSeconds: PLANET_TARGET_CIRCUMNAVIGATION_SECONDS,
+      assumedWalkSpeed: PLANET_ASSUMED_WALK_SPEED,
+      radialDistance: player.position.length(),
+    }),
     getViewState: () => ({
       yaw: player.yaw,
       pitch: player.pitch,
@@ -106,19 +140,24 @@ if (enableCollisionDebug) {
       cameraHeight: player.cameraHeight,
     }),
     setPlayer: (x: number, z: number) => {
-      player.position.set(x, heightAt(x, z) + standHeight, z);
+      const normalized = normalizePlanetCoords(x, z);
+      player.localPosition.set(normalized.x, 0, normalized.z);
       player.velocity.set(0, 0, 0);
       player.verticalVelocity = 0;
       player.verticalOffset = 0;
       player.cameraHeight = standHeight;
       player.grounded = true;
+      updatePlayerWorldPosition();
     },
     attemptMove: (x: number, z: number) => {
-      collisionWorld.resolveMove(player.position, new THREE.Vector3(x, 0, z));
-      player.position.y = heightAt(player.position.x, player.position.z) + standHeight;
-      return { x: player.position.x, z: player.position.z };
+      collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
+      updatePlayerWorldPosition();
+      return { x: player.localPosition.x, z: player.localPosition.z };
     },
-    isBlockedAt: collisionWorld.isBlockedAt,
+    isBlockedAt: (x: number, z: number) => {
+      const normalized = normalizePlanetCoords(x, z);
+      return collisionWorld.isBlockedAt(normalized.x, normalized.z);
+    },
     terrainHeightAt: heightAt,
   };
 }
@@ -193,6 +232,15 @@ function moveToward(current: number, target: number, maxDelta: number): number {
   return current + Math.sign(target - current) * maxDelta;
 }
 
+function playerSurfaceAltitude(): number {
+  return heightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight + player.verticalOffset;
+}
+
+function updatePlayerWorldPosition(): void {
+  normalizeLocalVector(player.localPosition);
+  player.position.copy(pointOnPlanet(player.localPosition.x, player.localPosition.z, playerSurfaceAltitude()));
+}
+
 function updateExploration(delta: number): void {
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
   const right = new THREE.Vector3(forward.z, 0, -forward.x);
@@ -228,12 +276,9 @@ function updateExploration(delta: number): void {
     }
   }
 
-  const beforeX = player.position.x;
-  const beforeZ = player.position.z;
-  collisionWorld.resolveMove(player.position, player.velocity.clone().multiplyScalar(delta));
-  const movedX = player.position.x - beforeX;
-  const movedZ = player.position.z - beforeZ;
-  const actualHorizontalSpeed = Math.hypot(movedX, movedZ) / Math.max(delta, 0.001);
+  const beforeLocal = { x: player.localPosition.x, z: player.localPosition.z };
+  collisionWorld.resolveMove(player.localPosition, player.velocity.clone().multiplyScalar(delta));
+  const actualHorizontalSpeed = surfaceDistanceBetweenLocal(beforeLocal, player.localPosition) / Math.max(delta, 0.001);
   if (actualHorizontalSpeed < 0.02) {
     player.velocity.x = 0;
     player.velocity.z = 0;
@@ -243,14 +288,11 @@ function updateExploration(delta: number): void {
   player.cameraHeight = THREE.MathUtils.lerp(player.cameraHeight, targetCameraHeight, 1 - Math.exp(-delta * 12));
   const walkingOnGround = player.grounded && actualHorizontalSpeed > 0.25;
   if (walkingOnGround) {
-    footsteps.walk(player.position, delta);
+    footsteps.walk(player.localPosition, delta);
   }
-  player.position.y = heightAt(player.position.x, player.position.z) + player.cameraHeight + player.verticalOffset;
 
-  camera.position.copy(player.position);
-  camera.rotation.order = "YXZ";
-  camera.rotation.y = player.yaw;
-  camera.rotation.x = player.pitch;
+  updatePlayerWorldPosition();
+  setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
 }
 
 function animate(): void {
@@ -262,11 +304,8 @@ function animate(): void {
 
   footsteps.update(delta);
   sky.update(elapsed);
-  floraGroup.children.forEach((child, index) => {
-    child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;
-    child.rotation.y += delta * 0.18;
-  });
-  updateFloraReactivity(camera.position, delta, elapsed);
+  const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  updateFloraReactivity(floraFocus, delta, elapsed);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);

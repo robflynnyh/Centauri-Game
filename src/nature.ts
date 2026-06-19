@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { CollisionObstacle } from "./collision";
+import { placeObjectOnPlanet, pointOnPlanet, surfaceDistanceBetweenLocal, type LocalPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type AddCollisionObstacle = (obstacle: CollisionObstacle) => void;
@@ -9,6 +10,8 @@ type ReactiveStalk = {
   z: number;
   cap: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
   glow: THREE.Mesh<THREE.OctahedronGeometry, THREE.MeshBasicMaterial>;
+  capAltitude: number;
+  capRotation: THREE.Euler;
   reaction: number;
 };
 
@@ -22,7 +25,7 @@ export function populateNature(
   scene: THREE.Scene,
   heightAt: HeightSampler,
   addCollisionObstacle: AddCollisionObstacle
-): { floraGroup: THREE.Group; natureGroup: THREE.Group; updateFloraReactivity: (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void } {
+): { floraGroup: THREE.Group; natureGroup: THREE.Group; updateFloraReactivity: (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void } {
   const floraGroup = new THREE.Group();
   scene.add(floraGroup);
 
@@ -52,15 +55,15 @@ export function populateNature(
     const y = heightAt(x, z);
 
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.18, 2.6 + (seed % 5) * 0.35, 5), stalkMaterial);
-    stalk.position.set(x, y + 1.2, z);
-    stalk.rotation.z = Math.sin(seed) * 0.18;
+    placeObjectOnPlanet(stalk, x, z, y + 1.2, new THREE.Euler(0, 0, Math.sin(seed) * 0.18));
     floraGroup.add(stalk);
 
     const capGeometry = new THREE.OctahedronGeometry(0.5 + (seed % 4) * 0.12, 0);
     const capMaterial = new THREE.MeshBasicMaterial({ color: capRestColour });
     const cap = new THREE.Mesh(capGeometry, capMaterial);
-    cap.position.set(x, y + 2.8 + (seed % 3) * 0.18, z);
-    cap.rotation.set(seed * 0.12, seed * 0.2, seed * 0.07);
+    const capAltitude = y + 2.8 + (seed % 3) * 0.18;
+    const capRotation = new THREE.Euler(seed * 0.12, seed * 0.2, seed * 0.07);
+    placeObjectOnPlanet(cap, x, z, capAltitude, capRotation);
     floraGroup.add(cap);
 
     const glow = new THREE.Mesh(
@@ -73,18 +76,16 @@ export function populateNature(
         blending: THREE.AdditiveBlending,
       })
     );
-    glow.position.copy(cap.position);
-    glow.rotation.copy(cap.rotation);
+    placeObjectOnPlanet(glow, x, z, capAltitude, capRotation);
     glow.scale.setScalar(1.22);
     floraGroup.add(glow);
-    reactiveStalks.push({ x, z, cap, glow, reaction: 0 });
+    reactiveStalks.push({ x, z, cap, glow, capAltitude, capRotation, reaction: 0 });
   };
 
   const addAlienTree = (x: number, z: number, scale: number, lean: number): void => {
     const y = heightAt(x, z);
     const tree = new THREE.Group();
-    tree.position.set(x, y, z);
-    tree.rotation.y = x * 0.11 + z * 0.07;
+    placeObjectOnPlanet(tree, x, z, y, new THREE.Euler(0, x * 0.11 + z * 0.07, 0));
     tree.scale.setScalar(scale);
 
     const trunkLeanX = Math.sin(lean) * 0.08;
@@ -134,8 +135,7 @@ export function populateNature(
     const z = Math.sin(angle) * radius + Math.cos(seed * 0.41) * 2.4;
     const y = heightAt(x, z);
     const sprout = new THREE.Group();
-    sprout.position.set(x, y + 0.08, z);
-    sprout.rotation.y = angle;
+    placeObjectOnPlanet(sprout, x, z, y + 0.08, new THREE.Euler(0, angle, 0));
 
     const bladeCount = 3 + (seed % 4);
     for (let i = 0; i < bladeCount; i += 1) {
@@ -177,19 +177,21 @@ export function populateNature(
 
 function createFloraReactivityUpdater(
   reactiveStalks: ReactiveStalk[]
-): (playerPosition: THREE.Vector3, delta: number, elapsed: number) => void {
+): (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void {
   return (playerPosition, delta, elapsed) => {
     const fade = 1 - Math.exp(-delta * 9);
 
     reactiveStalks.forEach((stalk, index) => {
-      const distance = Math.hypot(playerPosition.x - stalk.x, playerPosition.z - stalk.z);
+      const distance = surfaceDistanceBetweenLocal(playerPosition, stalk);
       const target = 1 - THREE.MathUtils.smoothstep(distance, floraReactionFullRadius, floraReactionRadius);
       stalk.reaction = THREE.MathUtils.lerp(stalk.reaction, target, fade);
 
       const pulse = 0.82 + Math.sin(elapsed * 4.2 + index * 0.73) * 0.18;
       const glowStrength = stalk.reaction * pulse;
-      stalk.glow.position.copy(stalk.cap.position);
-      stalk.glow.rotation.copy(stalk.cap.rotation);
+      const bob = Math.sin(elapsed * 1.6 + index) * 0.045;
+      stalk.capRotation.y += delta * 0.18;
+      placeObjectOnPlanet(stalk.cap, stalk.x, stalk.z, stalk.capAltitude + bob, stalk.capRotation);
+      placeObjectOnPlanet(stalk.glow, stalk.x, stalk.z, stalk.capAltitude + bob, stalk.capRotation);
       stalk.cap.material.color.lerpColors(capRestColour, capNearColour, stalk.reaction);
       stalk.cap.scale.setScalar(1 + stalk.reaction * 0.2);
       stalk.glow.material.opacity = glowStrength * 0.48;
@@ -220,7 +222,8 @@ function makePoolGeometry(
   scaleZ: number
 ): THREE.BufferGeometry {
   const segments = 22;
-  const positions: number[] = [x, heightAt(x, z) + 0.045, z];
+  const center = pointOnPlanet(x, z, heightAt(x, z) + 0.045);
+  const positions: number[] = [center.x, center.y, center.z];
   const indices: number[] = [];
 
   for (let i = 0; i <= segments; i += 1) {
@@ -229,7 +232,8 @@ function makePoolGeometry(
     const localZ = Math.sin(angle) * radius * scaleZ;
     const worldX = x + Math.cos(rotation) * localX - Math.sin(rotation) * localZ;
     const worldZ = z + Math.sin(rotation) * localX + Math.cos(rotation) * localZ;
-    positions.push(worldX, heightAt(worldX, worldZ) + 0.045, worldZ);
+    const point = pointOnPlanet(worldX, worldZ, heightAt(worldX, worldZ) + 0.045);
+    positions.push(point.x, point.y, point.z);
   }
 
   for (let i = 1; i <= segments; i += 1) {
@@ -273,8 +277,7 @@ function addPool(
     const worldX = x + Math.cos(colourShift) * localX - Math.sin(colourShift) * localZ;
     const worldZ = z + Math.sin(colourShift) * localX + Math.cos(colourShift) * localZ;
     const rim = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2 + (i % 4) * 0.06, 0), stoneMaterial);
-    rim.position.set(worldX, heightAt(worldX, worldZ) + 0.16, worldZ);
-    rim.rotation.set(i * 0.2, i * 0.3, i * 0.17);
+    placeObjectOnPlanet(rim, worldX, worldZ, heightAt(worldX, worldZ) + 0.16, new THREE.Euler(i * 0.2, i * 0.3, i * 0.17));
     pool.add(rim);
   }
 
@@ -310,8 +313,10 @@ function makeStreamGeometry(heightAt: HeightSampler, points: THREE.Vector3[]): T
     const leftZ = point.z + side.z;
     const rightX = point.x - side.x;
     const rightZ = point.z - side.z;
-    positions.push(leftX, heightAt(leftX, leftZ) + 0.055, leftZ);
-    positions.push(rightX, heightAt(rightX, rightZ) + 0.055, rightZ);
+    const left = pointOnPlanet(leftX, leftZ, heightAt(leftX, leftZ) + 0.055);
+    const right = pointOnPlanet(rightX, rightZ, heightAt(rightX, rightZ) + 0.055);
+    positions.push(left.x, left.y, left.z);
+    positions.push(right.x, right.y, right.z);
   }
 
   for (let i = 0; i < samples; i += 1) {
@@ -346,8 +351,7 @@ function addRocks(
   rockPlacements.forEach(({ x, z, size, rotation }) => {
     const y = heightAt(x, z);
     const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stoneMaterial);
-    stone.position.set(x, y + 0.7, z);
-    stone.rotation.copy(rotation);
+    placeObjectOnPlanet(stone, x, z, y + 0.7, rotation);
     scene.add(stone);
     addCollisionObstacle({ kind: "rock", x, z, radius: size * 0.72 });
   });
