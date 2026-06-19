@@ -42,7 +42,7 @@ export function createPrDemoController(
 
       if (elapsed < 8.4) {
         camera.position.set(12.5, heightAt(12.5, 21) + 5.4, 21);
-        camera.lookAt(5.5, heightAt(5.5, 7.5) + 0.18, 7.5);
+        camera.lookAt(-6, heightAt(0, -72) + 34, -108);
         return;
       }
 
