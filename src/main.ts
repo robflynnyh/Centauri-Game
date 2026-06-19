@@ -55,6 +55,8 @@ declare global {
         chunkCount: number;
         complexDetailRadius: number;
         complexFadeRadius: number;
+        nearestBiomePatchDistance: number;
+        fullDetailBiomePatches: number;
         generatedBiomePatches: number;
         generatedObjects: number;
         generatedObstacles: number;

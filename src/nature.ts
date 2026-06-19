@@ -17,6 +17,8 @@ export type NatureState = {
   chunkCount: number;
   complexDetailRadius: number;
   complexFadeRadius: number;
+  nearestBiomePatchDistance: number;
+  fullDetailBiomePatches: number;
   generatedBiomePatches: number;
   generatedObjects: number;
   generatedObstacles: number;
@@ -43,6 +45,9 @@ const generatedNatureChunkRadius = 3;
 const generatedBiomeCellSize = generatedNatureChunkSize * 2;
 const generatedComplexDetailRadius = 180;
 const generatedComplexFadeRadius = 292;
+const starterBiomeCellX = 0;
+const starterBiomeCellZ = 0;
+const starterBiomeCenter = { x: 8, z: 18 };
 const baseTreesPerChunk = 3;
 const baseReactiveFloraPerChunk = 9;
 const baseSproutsPerChunk = 6;
@@ -92,6 +97,8 @@ export function populateNature(
   let generatedObstacleCount = 0;
   let generatedReactiveFloraCount = 0;
   let generatedBiomePatchCount = 0;
+  let fullDetailBiomePatchCount = 0;
+  let nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
 
   const addReactiveFloraAt = (x: number, z: number, seed: number, angle: number, targetGroup = generatedNatureGroup): void => {
     const y = heightAt(x, z);
@@ -224,6 +231,8 @@ export function populateNature(
     generatedObjectCount = 0;
     generatedReactiveFloraCount = 0;
     generatedBiomePatchCount = 0;
+    fullDetailBiomePatchCount = 0;
+    nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
     reactiveStalks.length = 0;
     const dynamicObstacles: CollisionObstacle[] = [];
 
@@ -239,19 +248,26 @@ export function populateNature(
     for (let biomeCellZ = minBiomeCellZ; biomeCellZ <= maxBiomeCellZ; biomeCellZ += 1) {
       for (let biomeCellX = minBiomeCellX; biomeCellX <= maxBiomeCellX; biomeCellX += 1) {
         const random = createChunkRandom(biomeCellX * 7 + 3, biomeCellZ * 7 - 5);
-        const density = chunkNatureDensity(biomeCellX, biomeCellZ);
-        if (density < 0.88 && random() < 0.45) continue;
+        const starterBiome = biomeCellX === starterBiomeCellX && biomeCellZ === starterBiomeCellZ;
+        const density = starterBiome ? 1.34 : chunkNatureDensity(biomeCellX, biomeCellZ);
+        if (!starterBiome && density < 0.88 && random() < 0.45) continue;
 
-        const clusterX = biomeCellX * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
-        const clusterZ = biomeCellZ * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
-        const clusterRadius = 28 + random() * 18;
+        const clusterX = starterBiome
+          ? starterBiomeCenter.x
+          : biomeCellX * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+        const clusterZ = starterBiome
+          ? starterBiomeCenter.z
+          : biomeCellZ * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+        const clusterRadius = starterBiome ? 46 : 28 + random() * 18;
         const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x: clusterX, z: clusterZ });
         const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius, generatedComplexFadeRadius);
         if (detailAmount <= 0.02) continue;
 
         generatedBiomePatchCount += 1;
+        if (detailAmount >= 0.98) fullDetailBiomePatchCount += 1;
+        nearestBiomePatchDistance = Math.min(nearestBiomePatchDistance, distanceToFocus);
         const transitionAmount = THREE.MathUtils.clamp((detailAmount - 0.16) / 0.84, 0, 1);
-        const fullness = density * (0.85 + random() * 0.38);
+        const fullness = starterBiome ? 1.48 : density * (0.85 + random() * 0.38);
         const nearObjectScale = 0.56 + detailAmount * 0.44;
         const complexObjectScale = Math.pow(transitionAmount, 0.78);
         const waterDetailEnabled = detailAmount > 0.5;
@@ -330,7 +346,9 @@ export function populateNature(
         generatedObjectCount,
         generatedObstacleCount,
         generatedReactiveFloraCount,
-        generatedBiomePatchCount
+        generatedBiomePatchCount,
+        fullDetailBiomePatchCount,
+        nearestBiomePatchDistance
       ),
   };
 }
@@ -396,7 +414,9 @@ function getGeneratedNatureState(
   generatedObjects: number,
   generatedObstacles: number,
   generatedReactiveFlora: number,
-  generatedBiomePatches: number
+  generatedBiomePatches: number,
+  fullDetailBiomePatches: number,
+  nearestBiomePatchDistance: number
 ): NatureState {
   const minChunkX = centerChunkX - generatedNatureChunkRadius;
   const maxChunkX = centerChunkX + generatedNatureChunkRadius + 1;
@@ -413,6 +433,8 @@ function getGeneratedNatureState(
     chunkCount: Math.pow(generatedNatureChunkRadius * 2 + 1, 2),
     complexDetailRadius: generatedComplexDetailRadius,
     complexFadeRadius: generatedComplexFadeRadius,
+    nearestBiomePatchDistance,
+    fullDetailBiomePatches,
     generatedBiomePatches,
     generatedObjects,
     generatedObstacles,

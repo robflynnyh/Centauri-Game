@@ -131,8 +131,9 @@ test("keeps chunked spherical terrain under the player beyond the starting field
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");
 
-    debug.setPlayer(0, 0);
+    debug.setPlayer(0, 24);
     const spawnNature = debug.getNatureState();
+    const spawnIsClear = !debug.isBlockedAt(0, 24);
     debug.setPlayer(420, -360);
     const player = debug.getPlayer();
     const terrain = debug.getTerrainState();
@@ -180,6 +181,10 @@ test("keeps chunked spherical terrain under the player beyond the starting field
         spawnNature.generatedReactiveFlora > 160 &&
         spawnNature.generatedObstacles > 90 &&
         spawnNature.generatedBiomePatches >= 6,
+      spawnStartsInDenseBiome:
+        spawnIsClear &&
+        spawnNature.nearestBiomePatchDistance < 32 &&
+        spawnNature.fullDetailBiomePatches > 0,
       complexDetailIsDistanceCapped:
         nature.complexDetailRadius < nature.complexFadeRadius &&
         nature.complexFadeRadius <= nature.chunkSize * 3.1,
@@ -197,6 +202,7 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.hasChunkedSurface).toBe(true);
   expect(result.generatedNatureAwayFromStart).toBe(true);
   expect(result.generatedSpawnNature).toBe(true);
+  expect(result.spawnStartsInDenseBiome).toBe(true);
   expect(result.complexDetailIsDistanceCapped).toBe(true);
   expect(result.spawnAndRemoteDensitySimilar).toBe(true);
 });
