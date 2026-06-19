@@ -21,7 +21,9 @@ npm run demo:screenshot
 npm run demo:video
 ```
 
-The screenshot command should generate `docs/demo/pr-preview.png`. The demo-video command should generate a Playwright `.webm` under `test-results/`. These are generated artifacts and should not be committed.
+The screenshot command should generate `docs/demo/pr-preview.png`. The demo-video command should generate a Playwright `.webm` under `test-results/`.
+
+Every gameplay or visual PR body must include the generated PR screenshot directly as a visible Markdown image. Keep the tracked `docs/demo/pr-preview.png` current when the screenshot changes so the PR description can embed the branch image. Keep generated video files as local/CI artifacts; do not commit video files unless a human explicitly requests that exception.
 
 Commit completed source, test, workflow, and documentation changes on the issue branch.
 
@@ -32,6 +34,7 @@ Open a GitHub pull request against the issue base branch when provided, otherwis
 The PR body must include:
 
 - Summary of the player-visible change.
+- The generated PR screenshot as a visible Markdown image.
 - Validation commands run.
 - Whether screenshot/video generation was run locally or left to CI.
 - Any residual risk or follow-up work.
