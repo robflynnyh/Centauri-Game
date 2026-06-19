@@ -15,7 +15,7 @@ const markLifetime = 5.6;
 const maxMarks = 36;
 const footSideOffset = 0.34;
 const footBackOffset = 0.48;
-const terrainLift = 0.018;
+const terrainLift = 0.028;
 const minGroundSpeed = 0.2;
 const markOpacity = 0.5;
 
@@ -71,14 +71,17 @@ export function createFootstepTrail(
     if (isBlockedAt(footX, footZ) || isNearWater(footX, footZ)) return;
 
     const rotation = Math.atan2(direction.x, direction.z) + nextFootSide * 0.08 + (nextRandom() - 0.5) * 0.34;
-    const width = 0.34 + nextRandom() * 0.1;
-    const length = 0.54 + nextRandom() * 0.16;
+    const width = 0.17 + nextRandom() * 0.06;
+    const length = 0.48 + nextRandom() * 0.12;
     const geometry = makeGroundColourGeometry(heightAt, footX, footZ, rotation, width, length);
     const material = new THREE.MeshBasicMaterial({
       color: nextFootSide < 0 ? 0x241151 : 0x321869,
       transparent: true,
       opacity: markOpacity,
       depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
       side: THREE.DoubleSide,
     });
     const mark = new THREE.Mesh(geometry, material);
@@ -151,24 +154,33 @@ function makeGroundColourGeometry(
   width: number,
   length: number
 ): THREE.BufferGeometry {
-  const segments = 9;
-  const positions: number[] = [centerX, heightAt(centerX, centerZ) + terrainLift, centerZ];
+  const crossSections = [
+    { t: -1, width: 0.34, skew: -0.04 },
+    { t: -0.55, width: 0.86, skew: 0.03 },
+    { t: -0.05, width: 1, skew: -0.02 },
+    { t: 0.5, width: 0.62, skew: 0.04 },
+    { t: 1, width: 0.18, skew: -0.01 },
+  ];
+  const positions: number[] = [];
   const indices: number[] = [];
   const cos = Math.cos(rotation);
   const sin = Math.sin(rotation);
 
-  for (let i = 0; i <= segments; i += 1) {
-    const angle = (i / segments) * Math.PI * 2;
-    const wobble = 0.9 + Math.sin(i * 2.17 + centerX * 0.11 + centerZ * 0.07) * 0.09;
-    const localX = Math.cos(angle) * width * wobble;
-    const localZ = Math.sin(angle) * length * (0.86 + Math.cos(i * 1.73) * 0.08);
-    const worldX = centerX + cos * localX - sin * localZ;
-    const worldZ = centerZ + sin * localX + cos * localZ;
-    positions.push(worldX, heightAt(worldX, worldZ) + terrainLift, worldZ);
-  }
+  crossSections.forEach(({ t, width: sectionWidth, skew }, index) => {
+    const centreWobble = Math.sin(index * 1.73 + centerX * 0.13 + centerZ * 0.09) * 0.035;
+    [-1, 1].forEach((side) => {
+      const edgeWobble = Math.sin(index * 2.41 + side * 0.7 + centerZ * 0.12) * 0.025;
+      const localX = (side * width * sectionWidth + skew + edgeWobble) * (0.96 + Math.abs(t) * 0.06);
+      const localZ = t * length + centreWobble;
+      const worldX = centerX + cos * localX - sin * localZ;
+      const worldZ = centerZ + sin * localX + cos * localZ;
+      positions.push(worldX, heightAt(worldX, worldZ) + terrainLift, worldZ);
+    });
+  });
 
-  for (let i = 1; i <= segments; i += 1) {
-    indices.push(0, i, i + 1);
+  for (let i = 0; i < crossSections.length - 1; i += 1) {
+    const left = i * 2;
+    indices.push(left, left + 2, left + 1, left + 1, left + 2, left + 3);
   }
 
   const geometry = new THREE.BufferGeometry();
