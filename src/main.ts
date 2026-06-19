@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
+import { createAlienWaterCreatures } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
 import { populateNature } from "./nature";
@@ -134,6 +135,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles
 );
+const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
@@ -339,6 +341,7 @@ function animate(): void {
   else updateExploration(delta);
 
   footsteps.update(delta);
+  waterCreatures.update(elapsed);
   sky.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   terrain.update(floraFocus.x, floraFocus.z);

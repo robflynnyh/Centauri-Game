@@ -4,7 +4,7 @@
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
 
-Cleaned up generated media handling: demo screenshots/videos are produced by Playwright and uploaded as workflow artifacts, but ignored by Git and not committed to the repository.
+Cleaned up generated media handling: demo screenshots/videos are produced by Playwright and uploaded as workflow artifacts
 
 Made the sky more alien: a pink-blue-to-purple gradient dome, many visible moons and ringed bodies, and a slightly higher PR demo gaze so the new sky reads in review captures.
 
@@ -53,6 +53,10 @@ Fixed meteor glyph orientation so the bead trails follow behind the moving heads
 Changed first-person look controls to use browser pointer lock after one click on the planet view, giving continuous mouse-look without edge limits while Esc or a second click releases the cursor.
 
 Made the cube-top stalk plants react to nearby movement with a smooth 12-metre proximity fade, shifting their tops to bright alien amber and adding a pulsing flat glow that is visible along the PR demo path.
+
+Added small alien water-creatures around the authored pools and stream, with deterministic short hop cycles that keep them near water and visible in the PR flythrough without adding collision or interaction systems.
+
+Reworked the water-creatures after review so their low-poly bodies read as connected alien amphibians, their hops follow small patrol loops around water instead of snapping back to one spot, and the PR demo video is refreshed as a committed review artifact.
 
 Turned the local field into a walkable spherical planet: player movement, camera up, terrain, water, rocks, flora, footsteps, collisions, and the PR demo now use planet-surface coordinates with a 25-minute target equatorial circumnavigation.
 
