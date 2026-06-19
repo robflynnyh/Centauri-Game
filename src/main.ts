@@ -66,7 +66,7 @@ function makeTerrain(): THREE.Mesh {
   const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
   geometry.rotateX(-Math.PI / 2);
 
-  const positions = geometry.attributes.position;
+  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
   const colours: number[] = [];
   const colour = new THREE.Color();
 
@@ -183,9 +183,9 @@ function updateExploration(delta: number): void {
   const right = new THREE.Vector3(forward.z, 0, -forward.x);
   const wish = new THREE.Vector3();
 
-  if (keys.has("KeyW")) wish.add(forward.multiplyScalar(-1));
+  if (keys.has("KeyW")) wish.add(forward.clone().multiplyScalar(-1));
   if (keys.has("KeyS")) wish.add(forward);
-  if (keys.has("KeyA")) wish.add(right.multiplyScalar(-1));
+  if (keys.has("KeyA")) wish.add(right.clone().multiplyScalar(-1));
   if (keys.has("KeyD")) wish.add(right);
 
   if (wish.lengthSq() > 0) wish.normalize();
