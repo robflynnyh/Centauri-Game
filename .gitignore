@@ -11,6 +11,6 @@ yarn-error.log*
 .vscode/
 .idea/
 
-docs/demo/*.png
-docs/demo/*.webm
 !docs/demo/.gitkeep
+!docs/demo/pr-preview.png
+!docs/demo/pr-demo.webm

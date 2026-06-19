@@ -20,8 +20,8 @@ app.innerHTML = `
 `;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0d1020);
-scene.fog = new THREE.FogExp2(0x15152c, 0.028);
+scene.background = new THREE.Color(0x4654b5);
+scene.fog = new THREE.FogExp2(0x49396f, 0.024);
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -51,6 +51,45 @@ scene.add(sun);
 const moon = new THREE.DirectionalLight(0x9ab7ff, 1.2);
 moon.position.set(30, 15, -20);
 scene.add(moon);
+
+function makeSkyDome(): THREE.Mesh {
+  const geometry = new THREE.SphereGeometry(180, 24, 14);
+  const material = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    uniforms: {
+      horizonColour: { value: new THREE.Color(0xff8ecf) },
+      middleColour: { value: new THREE.Color(0x6aa8ff) },
+      zenithColour: { value: new THREE.Color(0x191044) },
+    },
+    vertexShader: `
+      varying vec3 vWorldPosition;
+
+      void main() {
+        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+        vWorldPosition = worldPosition.xyz;
+        gl_Position = projectionMatrix * viewMatrix * worldPosition;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vWorldPosition;
+      uniform vec3 horizonColour;
+      uniform vec3 middleColour;
+      uniform vec3 zenithColour;
+
+      void main() {
+        float height = clamp(normalize(vWorldPosition).y * 0.5 + 0.5, 0.0, 1.0);
+        vec3 lowSky = mix(horizonColour, middleColour, smoothstep(0.18, 0.58, height));
+        vec3 sky = mix(lowSky, zenithColour, smoothstep(0.62, 1.0, height));
+        gl_FragColor = vec4(sky, 1.0);
+      }
+    `,
+  });
+
+  return new THREE.Mesh(geometry, material);
+}
+
+scene.add(makeSkyDome());
 
 function heightAt(x: number, z: number): number {
   const d = Math.sqrt(x * x + z * z);
@@ -140,6 +179,93 @@ skyRing.position.set(0, 30, -20);
 skyRing.rotation.x = Math.PI / 2.7;
 scene.add(skyRing);
 
+const celestialGroup = new THREE.Group();
+scene.add(celestialGroup);
+
+type CelestialBody = {
+  angle: number;
+  height: number;
+  distance: number;
+  radius: number;
+  colour: number;
+  halo: number;
+  ring?: boolean;
+};
+
+const celestialBodies: CelestialBody[] = [
+  { angle: -0.86, height: 46, distance: 118, radius: 8.4, colour: 0xff75c9, halo: 0x57225d, ring: true },
+  { angle: -0.42, height: 25, distance: 128, radius: 3.6, colour: 0xb8f7ff, halo: 0x265b7b },
+  { angle: 0.08, height: 56, distance: 132, radius: 5.8, colour: 0xf6ee9d, halo: 0x6f5428, ring: true },
+  { angle: 0.48, height: 33, distance: 125, radius: 2.8, colour: 0x94ffca, halo: 0x21584c },
+  { angle: 0.9, height: 42, distance: 122, radius: 4.4, colour: 0xca96ff, halo: 0x3f2a70 },
+  { angle: 1.32, height: 24, distance: 130, radius: 2.3, colour: 0xffb183, halo: 0x6d352c },
+  { angle: 1.72, height: 62, distance: 135, radius: 6.9, colour: 0x83d3ff, halo: 0x223a75, ring: true },
+  { angle: 2.24, height: 30, distance: 120, radius: 3.2, colour: 0xfff4c8, halo: 0x66552c },
+  { angle: 2.78, height: 47, distance: 128, radius: 4.9, colour: 0xff8ba7, halo: 0x66284a },
+  { angle: 3.3, height: 29, distance: 126, radius: 2.6, colour: 0x91ffe8, halo: 0x1c5d60 },
+  { angle: 3.86, height: 53, distance: 132, radius: 7.6, colour: 0xf79bff, halo: 0x4c2266, ring: true },
+  { angle: 4.42, height: 34, distance: 124, radius: 3.1, colour: 0xffdf74, halo: 0x6b521e },
+];
+
+function addCelestialBody(body: CelestialBody, index: number): void {
+  const group = new THREE.Group();
+  const x = Math.sin(body.angle) * body.distance;
+  const z = Math.cos(body.angle) * body.distance;
+  group.position.set(x, body.height, z);
+
+  const halo = new THREE.Mesh(
+    new THREE.CircleGeometry(body.radius * 1.72, 18),
+    new THREE.MeshBasicMaterial({
+      color: body.halo,
+      transparent: true,
+      opacity: 0.34,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  group.add(halo);
+
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(body.radius, 16),
+    new THREE.MeshBasicMaterial({
+      color: body.colour,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  group.add(disc);
+
+  const moonlet = new THREE.Mesh(
+    new THREE.CircleGeometry(body.radius * 0.18, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xf8fff5,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  moonlet.position.set(body.radius * (1.25 + (index % 3) * 0.22), body.radius * (0.35 - (index % 2) * 0.5), 0.02);
+  group.add(moonlet);
+
+  if (body.ring) {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(body.radius * 1.32, body.radius * 0.055, 6, 48),
+      new THREE.MeshBasicMaterial({ color: 0xfff1bd, transparent: true, opacity: 0.72, depthWrite: false })
+    );
+    ring.rotation.z = 0.42 + index * 0.16;
+    ring.scale.y = 0.24;
+    group.add(ring);
+  }
+
+  group.lookAt(camera.position);
+  celestialGroup.add(group);
+}
+
+celestialBodies.forEach(addCelestialBody);
+
 const audio = new AudioContext();
 let audioStarted = false;
 
@@ -206,7 +332,7 @@ function updateDemo(elapsed: number): void {
   const z = Math.cos(angle) * radius;
   const y = heightAt(x, z) + 5.5 + Math.sin(elapsed * 0.7) * 1.2;
   camera.position.set(x, y, z);
-  camera.lookAt(Math.sin(elapsed * 0.22) * 4, 5.4, Math.cos(elapsed * 0.18) * 4);
+  camera.lookAt(Math.sin(elapsed * 0.22) * 4, 8.6 + Math.sin(elapsed * 0.31) * 1.4, Math.cos(elapsed * 0.18) * 4);
 }
 
 function animate(): void {
@@ -217,6 +343,10 @@ function animate(): void {
   else updateExploration(delta);
 
   skyRing.rotation.z = elapsed * 0.035;
+  celestialGroup.children.forEach((child, index) => {
+    child.lookAt(camera.position);
+    child.rotation.z += Math.sin(elapsed * 0.12 + index) * 0.0008;
+  });
   floraGroup.children.forEach((child, index) => {
     child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;
     child.rotation.y += delta * 0.18;
