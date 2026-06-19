@@ -142,7 +142,6 @@ type MeteorPath = {
   start: THREE.Vector3;
   end: THREE.Vector3;
   size: number;
-  angle: number;
   colour: number;
   glow: number;
   offset: number;
@@ -229,7 +228,6 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
       start: new THREE.Vector3(20, 55, -116),
       end: new THREE.Vector3(-28, 34, -94),
       size: 2.15,
-      angle: -0.38,
       colour: 0xfff6b0,
       glow: 0xff78d2,
       offset: 1.0,
@@ -238,7 +236,6 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
       start: new THREE.Vector3(-74, 48, -64),
       end: new THREE.Vector3(-34, 28, -82),
       size: 1.2,
-      angle: -0.28,
       colour: 0xa8fff2,
       glow: 0x7c7dff,
       offset: 4.4,
@@ -247,7 +244,6 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
       start: new THREE.Vector3(66, 42, -78),
       end: new THREE.Vector3(22, 24, -100),
       size: 1.18,
-      angle: -0.34,
       colour: 0xffcaf5,
       glow: 0x89d6ff,
       offset: 7.8,
@@ -256,7 +252,6 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
       start: new THREE.Vector3(-18, 62, 84),
       end: new THREE.Vector3(35, 38, 62),
       size: 1.08,
-      angle: -0.4,
       colour: 0xffec83,
       glow: 0xff85aa,
       offset: 11.5,
@@ -281,7 +276,7 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
         meteor.visible = fade > 0.015;
         meteor.position.lerpVectors(path.start, path.end, easedProgress);
         meteor.lookAt(camera.position);
-        meteor.rotation.z += path.angle;
+        alignMeteorToTravel(meteor, path, camera);
         meteor.scale.setScalar(path.size * (0.84 + progress * 0.24));
         meteor.children.forEach((child) => {
           const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
@@ -290,6 +285,14 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
       });
     },
   };
+}
+
+function alignMeteorToTravel(meteor: THREE.Group, path: MeteorPath, camera: THREE.Camera): void {
+  const current = meteor.position.clone().project(camera);
+  const ahead = meteor.position.clone().add(path.end.clone().sub(path.start).setLength(6)).project(camera);
+  const screenTravel = ahead.sub(current);
+  if (screenTravel.lengthSq() < 0.000001) return;
+  meteor.rotateZ(Math.atan2(screenTravel.y, screenTravel.x));
 }
 
 function makeMeteor(path: MeteorPath): THREE.Group {
