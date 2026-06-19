@@ -53,10 +53,10 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 8.4) {
+      if (elapsed < 10.8) {
         const generatedBiome = new THREE.Vector3(260, 0, -240);
         onWalk?.(generatedBiome, 0);
-        lookAtPlanetPoint(camera, 244, -213, heightAt(244, -213) + 13, 263, -239, heightAt(263, -239) + 4.2);
+        lookAtPlanetPoint(camera, 278, -248, heightAt(278, -248) + 8.5, 306, -268, heightAt(306, -268) + 2.8);
         return;
       }
 

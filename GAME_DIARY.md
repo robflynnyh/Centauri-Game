@@ -65,3 +65,5 @@ Extended the spherical planet with deterministic generated nature chunks so tree
 Unified the starting biome with the generated spherical nature layer so spawn and off-origin regions are populated by the same deterministic chunk system, including reactive stalks, trees, rocks, pools, and short streams.
 
 Changed generated nature from even scatter into deterministic pocket clusters so off-origin globe regions regain the composed start-biome feel with nearby trees, glowing stalks, rocks, water, and denser silhouettes.
+
+Expanded the generated pockets into larger start-area-like biome patches dotted around the globe, with heavier local clustering and sparse gaps between composed alien garden areas.

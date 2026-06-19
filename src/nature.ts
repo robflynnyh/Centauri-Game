@@ -37,6 +37,7 @@ const floraReactionRadius = 12;
 const floraReactionFullRadius = 5.5;
 const generatedNatureChunkSize = 96;
 const generatedNatureChunkRadius = 3;
+const generatedBiomeCellSize = generatedNatureChunkSize * 2;
 const baseTreesPerChunk = 3;
 const baseReactiveFloraPerChunk = 9;
 const baseSproutsPerChunk = 6;
@@ -219,70 +220,78 @@ export function populateNature(
     reactiveStalks.length = 0;
     const dynamicObstacles: CollisionObstacle[] = [];
 
-    for (let zChunk = generatedCenterChunkZ - generatedNatureChunkRadius; zChunk <= generatedCenterChunkZ + generatedNatureChunkRadius; zChunk += 1) {
-      for (let xChunk = generatedCenterChunkX - generatedNatureChunkRadius; xChunk <= generatedCenterChunkX + generatedNatureChunkRadius; xChunk += 1) {
-        const random = createChunkRandom(xChunk, zChunk);
-        const xMin = xChunk * generatedNatureChunkSize;
-        const zMin = zChunk * generatedNatureChunkSize;
-        const density = chunkNatureDensity(xChunk, zChunk);
-        const clusterCount = Math.max(1, Math.round(1 + density * 0.9 + random() * 0.7));
+    const minX = (generatedCenterChunkX - generatedNatureChunkRadius) * generatedNatureChunkSize;
+    const maxX = (generatedCenterChunkX + generatedNatureChunkRadius + 1) * generatedNatureChunkSize;
+    const minZ = (generatedCenterChunkZ - generatedNatureChunkRadius) * generatedNatureChunkSize;
+    const maxZ = (generatedCenterChunkZ + generatedNatureChunkRadius + 1) * generatedNatureChunkSize;
+    const minBiomeCellX = Math.floor(minX / generatedBiomeCellSize) - 1;
+    const maxBiomeCellX = Math.floor(maxX / generatedBiomeCellSize) + 1;
+    const minBiomeCellZ = Math.floor(minZ / generatedBiomeCellSize) - 1;
+    const maxBiomeCellZ = Math.floor(maxZ / generatedBiomeCellSize) + 1;
 
-        for (let cluster = 0; cluster < clusterCount; cluster += 1) {
-          const clusterX = xMin + (0.18 + random() * 0.64) * generatedNatureChunkSize;
-          const clusterZ = zMin + (0.18 + random() * 0.64) * generatedNatureChunkSize;
-          const clusterRadius = 6.5 + random() * 9.5;
+    for (let biomeCellZ = minBiomeCellZ; biomeCellZ <= maxBiomeCellZ; biomeCellZ += 1) {
+      for (let biomeCellX = minBiomeCellX; biomeCellX <= maxBiomeCellX; biomeCellX += 1) {
+        const random = createChunkRandom(biomeCellX * 7 + 3, biomeCellZ * 7 - 5);
+        const density = chunkNatureDensity(biomeCellX, biomeCellZ);
+        if (density < 0.88 && random() < 0.45) continue;
 
-          for (let i = 0; i < Math.max(1, Math.round((baseTreesPerChunk * density) / clusterCount)); i += 1) {
-            const point = pointNear(clusterX, clusterZ, clusterRadius * 0.62, random);
-            addAlienTree(point.x, point.z, 0.76 + random() * 0.5, random() * Math.PI * 2 - Math.PI, generatedNatureGroup, dynamicObstacles);
-            generatedObjectCount += 1;
-          }
+        const clusterX = biomeCellX * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+        const clusterZ = biomeCellZ * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+        const clusterRadius = 28 + random() * 18;
+        const fullness = density * (0.85 + random() * 0.38);
 
-          for (let i = 0; i < Math.max(4, Math.round((baseReactiveFloraPerChunk * density) / clusterCount)); i += 1) {
-            const point = pointNear(clusterX, clusterZ, clusterRadius, random);
-            addReactiveFloraAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
-            generatedObjectCount += 1;
-            generatedReactiveFloraCount += 1;
-          }
+        for (let i = 0; i < Math.round(baseTreesPerChunk * 2 + fullness * 5); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.68, random);
+          addAlienTree(point.x, point.z, 0.72 + random() * 0.58, random() * Math.PI * 2 - Math.PI, generatedNatureGroup, dynamicObstacles);
+          generatedObjectCount += 1;
+        }
 
-          for (let i = 0; i < Math.max(3, Math.round((baseSproutsPerChunk * density) / clusterCount)); i += 1) {
-            const point = pointNear(clusterX, clusterZ, clusterRadius * 0.9, random);
-            addSproutAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
-            generatedObjectCount += 1;
-          }
+        for (let i = 0; i < Math.round(baseReactiveFloraPerChunk * 3 + fullness * 24); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius, random);
+          addReactiveFloraAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+          generatedObjectCount += 1;
+          generatedReactiveFloraCount += 1;
+        }
 
-          for (let i = 0; i < Math.max(1, Math.round((baseRocksPerChunk * density) / clusterCount)); i += 1) {
-            const point = pointNear(clusterX, clusterZ, clusterRadius * 1.05, random);
-            addGeneratedRock(
-              point.x,
-              point.z,
-              0.78 + random() * 0.84,
-              new THREE.Euler(random() * Math.PI, random() * Math.PI, random() * Math.PI),
-              dynamicObstacles
-            );
-            generatedObjectCount += 1;
-          }
+        for (let i = 0; i < Math.round(baseSproutsPerChunk * 2 + fullness * 13); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.9, random);
+          addSproutAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+          generatedObjectCount += 1;
+        }
 
-          if (random() < basePoolChance * density) {
-            const point = pointNear(clusterX, clusterZ, clusterRadius * 0.45, random);
-            addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, point.x, point.z, 2.2 + random() * 1.8, random() * Math.PI);
-            generatedObjectCount += 1;
-          }
+        for (let i = 0; i < Math.round(baseRocksPerChunk * 2 + fullness * 8); i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 1.08, random);
+          addGeneratedRock(
+            point.x,
+            point.z,
+            0.78 + random() * 1.2,
+            new THREE.Euler(random() * Math.PI, random() * Math.PI, random() * Math.PI),
+            dynamicObstacles
+          );
+          generatedObjectCount += 1;
+        }
 
-          if (random() < baseStreamChance * density) {
-            const point = pointNear(clusterX, clusterZ, clusterRadius * 0.35, random);
-            addGeneratedStream(
-              generatedNatureGroup,
-              heightAt,
-              waterMaterial,
-              point.x,
-              point.z,
-              9 + random() * 14,
-              random() * Math.PI * 2,
-              random() * Math.PI * 2
-            );
-            generatedObjectCount += 1;
-          }
+        const poolCount = 1 + (random() < basePoolChance + fullness * 0.34 ? 1 : 0) + (random() < fullness * 0.18 ? 1 : 0);
+        for (let i = 0; i < poolCount; i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.42, random);
+          addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, point.x, point.z, 2.5 + random() * 2.4, random() * Math.PI);
+          generatedObjectCount += 1;
+        }
+
+        const streamCount = 1 + (random() < baseStreamChance + fullness * 0.25 ? 1 : 0);
+        for (let i = 0; i < streamCount; i += 1) {
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.35, random);
+          addGeneratedStream(
+            generatedNatureGroup,
+            heightAt,
+            waterMaterial,
+            point.x,
+            point.z,
+            14 + random() * 20,
+            random() * Math.PI * 2,
+            random() * Math.PI * 2
+          );
+          generatedObjectCount += 1;
         }
       }
     }
