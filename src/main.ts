@@ -13,6 +13,7 @@ declare global {
     __centauriDebug?: {
       obstacles: CollisionObstacle[];
       getPlayer: () => { x: number; y: number; z: number };
+      getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
@@ -38,14 +39,16 @@ const acceleration = 19;
 const braking = 24;
 const gravity = 18;
 const jumpImpulse = 7.2;
+const mouseLookSensitivity = 0.0024;
 
 app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
       <h1>Centauri Field Note 001</h1>
-      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, drag to look. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
+      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : "exploration mode"}</div>
+    <div class="hud__look" aria-live="polite"></div>
   </div>
 `;
 
@@ -54,6 +57,8 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "hi
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.domElement.tabIndex = 0;
+renderer.domElement.setAttribute("aria-label", "Centauri exploration view");
 app.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 260);
@@ -72,6 +77,8 @@ const player = {
   grounded: true,
   jumpQueued: false,
 };
+let mouseLookActive = false;
+const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 
 const collisionWorld = createCollisionWorld();
 const sky = createSkySystem(scene, camera, isDemo);
@@ -79,7 +86,7 @@ const sky = createSkySystem(scene, camera, isDemo);
 scene.add(makeTerrain());
 scene.add(makeHorizonLandforms());
 
-const { floraGroup } = populateNature(scene, heightAt, collisionWorld.addObstacle);
+const { floraGroup, updateFloraReactivity } = populateNature(scene, heightAt, collisionWorld.addObstacle);
 const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
@@ -90,6 +97,11 @@ if (enableCollisionDebug) {
   window.__centauriDebug = {
     obstacles: collisionWorld.obstacles.map((obstacle) => ({ ...obstacle })),
     getPlayer: () => ({ x: player.position.x, y: player.position.y, z: player.position.z }),
+    getViewState: () => ({
+      yaw: player.yaw,
+      pitch: player.pitch,
+      mouseLookActive,
+    }),
     getMovementState: () => ({
       grounded: player.grounded,
       crouching: isCrouchPressed(),
@@ -134,6 +146,13 @@ function startAudio(): void {
   });
 }
 
+function updateLookStatus(): void {
+  if (!lookStatus) return;
+  lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse locked" : "click to lock";
+}
+
+updateLookStatus();
+
 window.addEventListener("keydown", (event) => {
   keys.add(event.code);
   if (event.code === "Space") {
@@ -144,19 +163,27 @@ window.addEventListener("keydown", (event) => {
   startAudio();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
-window.addEventListener("pointerdown", () => startAudio());
-
-let dragging = false;
-window.addEventListener("pointerdown", () => {
-  dragging = true;
+renderer.domElement.addEventListener("click", () => {
+  startAudio();
+  if (isDemo) return;
+  renderer.domElement.focus();
+  if (document.pointerLockElement === renderer.domElement) {
+    document.exitPointerLock();
+    return;
+  }
+  const pointerLockRequest = renderer.domElement.requestPointerLock();
+  if (pointerLockRequest) {
+    pointerLockRequest.catch(() => updateLookStatus());
+  }
 });
-window.addEventListener("pointerup", () => {
-  dragging = false;
+document.addEventListener("pointerlockchange", () => {
+  mouseLookActive = document.pointerLockElement === renderer.domElement;
+  updateLookStatus();
 });
-window.addEventListener("pointermove", (event) => {
-  if (!dragging || isDemo) return;
-  player.yaw -= event.movementX * 0.003;
-  player.pitch = THREE.MathUtils.clamp(player.pitch - event.movementY * 0.003, -1.1, 0.6);
+document.addEventListener("mousemove", (event) => {
+  if (!mouseLookActive || isDemo) return;
+  player.yaw -= event.movementX * mouseLookSensitivity;
+  player.pitch = THREE.MathUtils.clamp(player.pitch - event.movementY * mouseLookSensitivity, -1.1, 0.6);
 });
 
 function isCrouchPressed(): boolean {
@@ -242,6 +269,7 @@ function animate(): void {
     child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;
     child.rotation.y += delta * 0.18;
   });
+  updateFloraReactivity(camera.position, delta, elapsed);
 
   renderer.render(scene, camera);
   requestAnimationFrame(animate);
