@@ -183,31 +183,38 @@ function addAlienTree(x: number, z: number, scale: number, lean: number): void {
   tree.rotation.y = x * 0.11 + z * 0.07;
   tree.scale.setScalar(scale);
 
-  const lowerTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.52, 3.1, 6), trunkMaterial);
-  lowerTrunk.position.y = 1.42;
-  lowerTrunk.rotation.z = lean * 0.22;
+  const lowerTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.54, 3.15, 6), trunkMaterial);
+  lowerTrunk.position.y = 1.48;
+  lowerTrunk.rotation.z = lean * 0.14;
   tree.add(lowerTrunk);
 
-  const upperTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.36, 2.3, 5), trunkMaterial);
-  upperTrunk.position.set(Math.sin(lean) * 0.34, 3.62, 0);
-  upperTrunk.rotation.z = lean * 0.34;
+  const trunkLeanX = Math.sin(lean) * 0.22;
+  const upperTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.38, 2.35, 5), trunkMaterial);
+  upperTrunk.position.set(trunkLeanX, 3.34, 0);
+  upperTrunk.rotation.z = lean * 0.18;
   tree.add(upperTrunk);
 
   const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.25, 0), canopyMaterial);
-  crown.position.set(Math.sin(lean) * 0.78, 5.02, 0);
-  crown.scale.set(1.25, 0.72, 1.65);
-  crown.rotation.set(0.32, lean, -0.18);
+  crown.position.set(trunkLeanX * 1.55, 4.58, 0);
+  crown.scale.set(1.34, 0.82, 1.55);
+  crown.rotation.set(0.22, lean, -0.1);
   tree.add(crown);
 
-  const fan = new THREE.Mesh(new THREE.ConeGeometry(1.05, 2.0, 5), canopyAccentMaterial);
-  fan.position.set(-Math.cos(lean) * 0.72, 4.48, Math.sin(lean) * 0.44);
-  fan.rotation.set(Math.PI * 0.54, 0.22 + lean, 0.38);
-  tree.add(fan);
+  const collar = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), canopyAccentMaterial);
+  collar.position.set(trunkLeanX * 1.2, 4.1, 0);
+  collar.scale.set(1.1, 0.58, 1.1);
+  collar.rotation.set(0.24, lean, -0.12);
+  tree.add(collar);
+
+  const sideLeaf = new THREE.Mesh(new THREE.ConeGeometry(0.72, 1.35, 5), canopyAccentMaterial);
+  sideLeaf.position.set(trunkLeanX * 1.7, 4.42, Math.cos(lean) * 0.52);
+  sideLeaf.rotation.set(Math.PI * 0.42, lean, 0.18);
+  tree.add(sideLeaf);
 
   for (let i = 0; i < 5; i += 1) {
     const bead = new THREE.Mesh(new THREE.OctahedronGeometry(0.14 + i * 0.012, 0), bloomMaterial);
     const angle = i * 1.34 + lean;
-    bead.position.set(Math.cos(angle) * 0.86, 3.74 - i * 0.28, Math.sin(angle) * 0.86);
+    bead.position.set(trunkLeanX + Math.cos(angle) * 0.62, 3.78 - i * 0.24, Math.sin(angle) * 0.62);
     tree.add(bead);
   }
 
