@@ -136,17 +136,34 @@ test("keeps detailed terrain under the player beyond the starting field", async 
     const terrain = debug.getTerrainState();
     const standingHeight = debug.getMovementState().cameraHeight;
     const sampledHeight = debug.terrainHeightAt(player.x, player.z);
+    debug.setPlayer(470, -390);
+    const movedTerrain = debug.getTerrainState();
+
+    const isAlignedToCellGrid = (value: number, cellSize: number): boolean => {
+      const cells = value / cellSize;
+      return Math.abs(cells - Math.round(cells)) < 0.000001;
+    };
 
     return {
       detailPatchContainsPlayer: Math.abs(player.x - terrain.centerX) < terrain.halfSize - 12 && Math.abs(player.z - terrain.centerZ) < terrain.halfSize - 12,
       playerAltitudeMatchesTerrain: Math.abs(player.y - (sampledHeight + standingHeight)) < 0.001,
       outsideOldPlane: Math.hypot(player.x, player.z) > 220,
+      terrainGridAligned:
+        isAlignedToCellGrid(terrain.minX, terrain.cellSize) &&
+        isAlignedToCellGrid(terrain.minZ, terrain.cellSize) &&
+        isAlignedToCellGrid(movedTerrain.minX, movedTerrain.cellSize) &&
+        isAlignedToCellGrid(movedTerrain.minZ, movedTerrain.cellSize),
+      terrainMovedByWholeCells:
+        isAlignedToCellGrid(movedTerrain.minX - terrain.minX, terrain.cellSize) &&
+        isAlignedToCellGrid(movedTerrain.minZ - terrain.minZ, terrain.cellSize),
     };
   });
 
   expect(result.detailPatchContainsPlayer).toBe(true);
   expect(result.playerAltitudeMatchesTerrain).toBe(true);
   expect(result.outsideOldPlane).toBe(true);
+  expect(result.terrainGridAligned).toBe(true);
+  expect(result.terrainMovedByWholeCells).toBe(true);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {

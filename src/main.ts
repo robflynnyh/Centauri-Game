@@ -32,7 +32,7 @@ declare global {
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
-      getTerrainState: () => { centerX: number; centerZ: number; halfSize: number };
+      getTerrainState: () => { centerX: number; centerZ: number; minX: number; minZ: number; halfSize: number; cellSize: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;

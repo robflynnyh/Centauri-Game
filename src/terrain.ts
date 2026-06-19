@@ -4,7 +4,7 @@ import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointO
 export type TerrainSystem = {
   group: THREE.Group;
   update: (centerX: number, centerZ: number) => void;
-  getDetailPatchState: () => { centerX: number; centerZ: number; halfSize: number };
+  getDetailPatchState: () => { centerX: number; centerZ: number; minX: number; minZ: number; halfSize: number; cellSize: number };
 };
 
 const terrainPalette = [
@@ -53,7 +53,7 @@ const detailPatchSize = 260;
 const detailPatchHalfSize = detailPatchSize * 0.5;
 const detailPatchSegments = 96;
 const detailPatchLift = 0.045;
-const detailPatchSnap = 8;
+const detailPatchCellSize = detailPatchSize / detailPatchSegments;
 
 export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
@@ -65,23 +65,23 @@ export function createTerrainSystem(): TerrainSystem {
   detailPatch.name = "player-centered-detail-terrain";
   group.add(detailPatch);
 
-  let detailCenterX = 0;
-  let detailCenterZ = 0;
+  let detailMinX = -detailPatchHalfSize;
+  let detailMinZ = -detailPatchHalfSize;
 
   const update = (centerX: number, centerZ: number): void => {
     const normalized = normalizePlanetCoords(centerX, centerZ);
-    const snappedX = Math.round(normalized.x / detailPatchSnap) * detailPatchSnap;
-    const snappedZ = Math.round(normalized.z / detailPatchSnap) * detailPatchSnap;
-    if (snappedX === detailCenterX && snappedZ === detailCenterZ) return;
+    const nextMinX = Math.floor((normalized.x - detailPatchHalfSize) / detailPatchCellSize) * detailPatchCellSize;
+    const nextMinZ = Math.floor((normalized.z - detailPatchHalfSize) / detailPatchCellSize) * detailPatchCellSize;
+    if (nextMinX === detailMinX && nextMinZ === detailMinZ) return;
 
-    detailCenterX = snappedX;
-    detailCenterZ = snappedZ;
+    detailMinX = nextMinX;
+    detailMinZ = nextMinZ;
     detailPatch.geometry.dispose();
     detailPatch.geometry = makeTerrainGeometry(
-      detailCenterX - detailPatchHalfSize,
-      detailCenterX + detailPatchHalfSize,
-      detailCenterZ - detailPatchHalfSize,
-      detailCenterZ + detailPatchHalfSize,
+      detailMinX,
+      detailMinX + detailPatchSize,
+      detailMinZ,
+      detailMinZ + detailPatchSize,
       detailPatchSegments,
       detailPatchSegments,
       detailPatchLift
@@ -91,7 +91,14 @@ export function createTerrainSystem(): TerrainSystem {
   return {
     group,
     update,
-    getDetailPatchState: () => ({ centerX: detailCenterX, centerZ: detailCenterZ, halfSize: detailPatchHalfSize }),
+    getDetailPatchState: () => ({
+      centerX: detailMinX + detailPatchHalfSize,
+      centerZ: detailMinZ + detailPatchHalfSize,
+      minX: detailMinX,
+      minZ: detailMinZ,
+      halfSize: detailPatchHalfSize,
+      cellSize: detailPatchCellSize,
+    }),
   };
 }
 
