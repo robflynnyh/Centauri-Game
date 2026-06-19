@@ -15,6 +15,7 @@ import {
   setCameraOnPlanet,
   surfaceDistanceBetweenLocal,
 } from "./planet";
+import { createPixelRenderPipeline } from "./pixel-renderer";
 import { createSkySystem } from "./sky";
 import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
 import "./style.css";
@@ -100,13 +101,13 @@ app.innerHTML = `
 `;
 
 const scene = new THREE.Scene();
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-renderer.setSize(window.innerWidth, window.innerHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(1);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.domElement.tabIndex = 0;
 renderer.domElement.setAttribute("aria-label", "Centauri exploration view");
 app.appendChild(renderer.domElement);
+const pixelRenderer = createPixelRenderPipeline(renderer, window.innerWidth, window.innerHeight);
 
 const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 5200);
 
@@ -353,14 +354,14 @@ function animate(): void {
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
 
-  renderer.render(scene, camera);
+  pixelRenderer.render(scene, camera);
   requestAnimationFrame(animate);
 }
 
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  pixelRenderer.resize(window.innerWidth, window.innerHeight);
 });
 
 animate();
