@@ -17,3 +17,5 @@ Reworked the alien trees again with centered, overlapping crowns around a trunk 
 Changed pools and the stream into terrain-following water meshes so the demo water sits against the ground instead of floating over uneven terrain.
 
 Added lightweight first-person collision against alien trees and larger rocks using explicit circular blockers while keeping water, sprouts, and small glowing flora passable.
+
+Flattened the planet's visual language toward broad Proteus-like graphic masses: unlit world materials, muted flora and stone colors, banded terrain/sky color, lower-resolution pixel edges, and a closer PR demo path for reading silhouettes.

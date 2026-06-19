@@ -33,11 +33,11 @@ app.innerHTML = `
 `;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x4654b5);
-scene.fog = new THREE.FogExp2(0x49396f, 0.024);
+scene.background = new THREE.Color(0x7b8fd6);
+scene.fog = new THREE.FogExp2(0x8b79a6, 0.018);
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.82));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
@@ -89,14 +89,14 @@ function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): vo
   }
 }
 
-const hemi = new THREE.HemisphereLight(0xfff2c1, 0x191040, 1.8);
+const hemi = new THREE.HemisphereLight(0xf2e9c8, 0x4e4671, 0.35);
 scene.add(hemi);
 
-const sun = new THREE.DirectionalLight(0xffc78f, 2.6);
+const sun = new THREE.DirectionalLight(0xffd8a3, 0.22);
 sun.position.set(-24, 42, 16);
 scene.add(sun);
 
-const moon = new THREE.DirectionalLight(0x9ab7ff, 1.2);
+const moon = new THREE.DirectionalLight(0xb6c5ff, 0.12);
 moon.position.set(30, 15, -20);
 scene.add(moon);
 
@@ -106,9 +106,9 @@ function makeSkyDome(): THREE.Mesh {
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      horizonColour: { value: new THREE.Color(0xff8ecf) },
-      middleColour: { value: new THREE.Color(0x6aa8ff) },
-      zenithColour: { value: new THREE.Color(0x191044) },
+      horizonColour: { value: new THREE.Color(0xe0a6c5) },
+      middleColour: { value: new THREE.Color(0x98a9da) },
+      zenithColour: { value: new THREE.Color(0x59619f) },
     },
     vertexShader: `
       varying vec3 vWorldPosition;
@@ -127,8 +127,9 @@ function makeSkyDome(): THREE.Mesh {
 
       void main() {
         float height = clamp(normalize(vWorldPosition).y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 lowSky = mix(horizonColour, middleColour, smoothstep(0.18, 0.58, height));
-        vec3 sky = mix(lowSky, zenithColour, smoothstep(0.62, 1.0, height));
+        vec3 sky = horizonColour;
+        if (height > 0.36) sky = middleColour;
+        if (height > 0.68) sky = zenithColour;
         gl_FragColor = vec4(sky, 1.0);
       }
     `,
@@ -149,13 +150,19 @@ function heightAt(x: number, z: number): number {
 
 function makeTerrain(): THREE.Mesh {
   const size = 120;
-  const segments = 96;
+  const segments = 48;
   const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
   geometry.rotateX(-Math.PI / 2);
 
   const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
   const colours: number[] = [];
-  const colour = new THREE.Color();
+  const terrainPalette = [
+    new THREE.Color(0x8d6f98),
+    new THREE.Color(0x9479a0),
+    new THREE.Color(0x8a87aa),
+    new THREE.Color(0x86a0aa),
+    new THREE.Color(0xa2a588),
+  ];
 
   for (let i = 0; i < positions.count; i += 1) {
     const x = positions.getX(i);
@@ -164,15 +171,15 @@ function makeTerrain(): THREE.Mesh {
     positions.setY(i, y);
 
     const altitude = THREE.MathUtils.clamp((y + 2) / 12, 0, 1);
-    const mineral = (Math.sin(x * 0.41) + Math.cos(z * 0.37) + 2) / 4;
-    colour.setHSL(0.58 + mineral * 0.17, 0.45, 0.18 + altitude * 0.22);
+    const mineral = (Math.sin(x * 0.18) + Math.cos(z * 0.14) + 2) / 4;
+    const band = THREE.MathUtils.clamp(Math.floor((altitude * 0.72 + mineral * 0.28) * terrainPalette.length), 0, terrainPalette.length - 1);
+    const colour = terrainPalette[band];
     colours.push(colour.r, colour.g, colour.b);
   }
 
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
-  geometry.computeVertexNormals();
 
-  const material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true });
   return new THREE.Mesh(geometry, material);
 }
 
@@ -184,23 +191,20 @@ scene.add(floraGroup);
 const natureGroup = new THREE.Group();
 scene.add(natureGroup);
 
-const markerMaterial = new THREE.MeshStandardMaterial({ color: 0xff6fb5, emissive: 0x7b1f4c, roughness: 0.8 });
-const stalkMaterial = new THREE.MeshStandardMaterial({ color: 0x8ae1d2, emissive: 0x0d4c53, roughness: 0.9 });
-const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x5140a8, emissive: 0x120b38, roughness: 0.95 });
-const canopyMaterial = new THREE.MeshStandardMaterial({ color: 0x7cff9b, emissive: 0x1f6a44, roughness: 0.82, flatShading: true });
-const canopyAccentMaterial = new THREE.MeshStandardMaterial({ color: 0xffc766, emissive: 0x784015, roughness: 0.78, flatShading: true });
-const reedMaterial = new THREE.MeshStandardMaterial({ color: 0xb8ff6a, emissive: 0x315a13, roughness: 0.9 });
-const bloomMaterial = new THREE.MeshStandardMaterial({ color: 0xf86eff, emissive: 0x7a197c, roughness: 0.75 });
-const waterMaterial = new THREE.MeshStandardMaterial({
-  color: 0x68f4ff,
-  emissive: 0x155c74,
+const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xd9719d });
+const stalkMaterial = new THREE.MeshBasicMaterial({ color: 0x74aaa1 });
+const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x4a4388 });
+const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x98d68f });
+const canopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xd89a63 });
+const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xa9c960 });
+const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xd765c9 });
+const waterMaterial = new THREE.MeshBasicMaterial({
+  color: 0x85c9c8,
   transparent: true,
-  opacity: 0.7,
-  roughness: 0.28,
-  metalness: 0.05,
+  opacity: 0.62,
   side: THREE.DoubleSide,
 });
-const stoneMaterial = new THREE.MeshStandardMaterial({ color: 0x7466ff, emissive: 0x201060, roughness: 1 });
+const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x7167aa });
 
 function addFlora(seed: number): void {
   const angle = seed * 2.399963;
@@ -347,8 +351,8 @@ function addPool(x: number, z: number, radius: number, colourShift: number): voi
   const pool = new THREE.Group();
 
   const water = new THREE.Mesh(makePoolGeometry(x, z, radius, colourShift, 1.45, 0.78), waterMaterial.clone());
-  const waterMat = water.material as THREE.MeshStandardMaterial;
-  waterMat.color.offsetHSL(colourShift * 0.02, 0, 0);
+  const waterMat = water.material as THREE.MeshBasicMaterial;
+  waterMat.color.offsetHSL(colourShift * 0.018, -0.05, -0.02);
   pool.add(water);
 
   const innerGlow = new THREE.Mesh(
@@ -617,20 +621,20 @@ const demoPlayer = new THREE.Vector3(9, heightAt(9, 18) + 4.6, 18);
 
 function updateDemo(elapsed: number, delta: number): void {
   if (elapsed < 5.2) {
-    resolvePlayerMove(demoPlayer, new THREE.Vector3(0, 0, -delta * 3.2));
-    demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.6;
+    resolvePlayerMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
+    demoPlayer.y = heightAt(demoPlayer.x, demoPlayer.z) + 4.2;
     camera.position.copy(demoPlayer);
-    camera.lookAt(9, heightAt(9, 7) + 2.7, 7);
+    camera.lookAt(6.2, heightAt(6.2, 7) + 2.5, 7);
     return;
   }
 
-  const radius = 24 - Math.sin(elapsed * 0.35) * 4;
-  const angle = elapsed * 0.16 + 0.2;
+  const radius = 21 - Math.sin(elapsed * 0.35) * 3;
+  const angle = elapsed * 0.14 + 0.35;
   const x = Math.sin(angle) * radius;
   const z = Math.cos(angle) * radius;
-  const y = heightAt(x, z) + 5.1 + Math.sin(elapsed * 0.7) * 1.0;
+  const y = heightAt(x, z) + 4.4 + Math.sin(elapsed * 0.7) * 0.7;
   camera.position.set(x, y, z);
-  camera.lookAt(4 + Math.sin(elapsed * 0.22) * 3, 6.8 + Math.sin(elapsed * 0.31) * 1.2, 6 + Math.cos(elapsed * 0.18) * 3);
+  camera.lookAt(5.5 + Math.sin(elapsed * 0.22) * 2.4, 5.9 + Math.sin(elapsed * 0.31) * 0.8, 6 + Math.cos(elapsed * 0.18) * 2.4);
 }
 
 function animate(): void {
