@@ -195,11 +195,12 @@ function heightAt(x: number, z: number): number {
 function makeTerrain(): THREE.Mesh {
   const size = 120;
   const segments = 48;
-  const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
-  geometry.rotateX(-Math.PI / 2);
-
-  const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
+  const cellSize = size / segments;
+  const halfSize = size / 2;
+  const geometry = new THREE.BufferGeometry();
+  const positions: number[] = [];
   const colours: number[] = [];
+  const indices: number[] = [];
   const terrainPalette = [
     new THREE.Color(0x9b63c4),
     new THREE.Color(0x6e78df),
@@ -209,22 +210,43 @@ function makeTerrain(): THREE.Mesh {
     new THREE.Color(0xffb15e),
   ];
 
-  for (let i = 0; i < positions.count; i += 1) {
-    const x = positions.getX(i);
-    const z = positions.getZ(i);
-    const y = heightAt(x, z);
-    positions.setY(i, y);
+  for (let zIndex = 0; zIndex < segments; zIndex += 1) {
+    for (let xIndex = 0; xIndex < segments; xIndex += 1) {
+      const x0 = -halfSize + xIndex * cellSize;
+      const x1 = x0 + cellSize;
+      const z0 = -halfSize + zIndex * cellSize;
+      const z1 = z0 + cellSize;
+      const y00 = heightAt(x0, z0);
+      const y10 = heightAt(x1, z0);
+      const y01 = heightAt(x0, z1);
+      const y11 = heightAt(x1, z1);
+      const centerX = (x0 + x1) * 0.5;
+      const centerZ = (z0 + z1) * 0.5;
+      const centerY = (y00 + y10 + y01 + y11) * 0.25;
 
-    const altitude = THREE.MathUtils.clamp((y + 2) / 12, 0, 1);
-    const mineral = (Math.sin(x * 0.18) + Math.cos(z * 0.14) + 2) / 4;
-    const band = THREE.MathUtils.clamp(Math.floor((altitude * 0.72 + mineral * 0.28) * terrainPalette.length), 0, terrainPalette.length - 1);
-    const colour = terrainPalette[band];
-    colours.push(colour.r, colour.g, colour.b);
+      const altitude = THREE.MathUtils.clamp((centerY + 2) / 12, 0, 1);
+      const mineral = (Math.sin(centerX * 0.18) + Math.cos(centerZ * 0.14) + 2) / 4;
+      const pixelFleck = (Math.sin(centerX * 1.7 + centerZ * 2.3) + 1) * 0.5;
+      const palettePosition = altitude * 0.62 + mineral * 0.3 + pixelFleck * 0.08;
+      const band = THREE.MathUtils.clamp(Math.floor(palettePosition * terrainPalette.length), 0, terrainPalette.length - 1);
+      const colour = terrainPalette[band];
+      const vertexIndex = positions.length / 3;
+
+      positions.push(x0, y00, z0, x1, y10, z0, x0, y01, z1, x1, y11, z1);
+
+      for (let i = 0; i < 4; i += 1) {
+        colours.push(colour.r, colour.g, colour.b);
+      }
+
+      indices.push(vertexIndex, vertexIndex + 2, vertexIndex + 1, vertexIndex + 1, vertexIndex + 2, vertexIndex + 3);
+    }
   }
 
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.setIndex(indices);
 
-  const material = new THREE.MeshBasicMaterial({ vertexColors: true });
+  const material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
   return new THREE.Mesh(geometry, material);
 }
 
