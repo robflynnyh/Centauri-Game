@@ -70,7 +70,6 @@ const player = {
   cameraHeight: standHeight,
   grounded: true,
   jumpQueued: false,
-  walkDistance: 0,
 };
 
 const collisionWorld = createCollisionWorld();
@@ -217,11 +216,9 @@ function updateExploration(delta: number): void {
   player.cameraHeight = THREE.MathUtils.lerp(player.cameraHeight, targetCameraHeight, 1 - Math.exp(-delta * 12));
   const walkingOnGround = player.grounded && actualHorizontalSpeed > 0.25;
   if (walkingOnGround) {
-    player.walkDistance += actualHorizontalSpeed * delta;
     footsteps.walk(player.position, delta);
   }
-  const headBob = walkingOnGround ? Math.sin(player.walkDistance * 6.8) * 0.055 + Math.sin(player.walkDistance * 13.6) * 0.018 : 0;
-  player.position.y = heightAt(player.position.x, player.position.z) + player.cameraHeight + player.verticalOffset + headBob;
+  player.position.y = heightAt(player.position.x, player.position.z) + player.cameraHeight + player.verticalOffset;
 
   camera.position.copy(player.position);
   camera.rotation.order = "YXZ";
