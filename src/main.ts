@@ -54,6 +54,7 @@ declare global {
         chunkCount: number;
         generatedObjects: number;
         generatedObstacles: number;
+        generatedReactiveFlora: number;
       };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };

@@ -33,7 +33,7 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
     };
   });
 
-  expect(result.colliderCount).toBeGreaterThan(30);
+  expect(result.colliderCount).toBeGreaterThan(180);
   expect(result.treeBlocked).toBe(true);
   expect(result.rockBlocked).toBe(true);
   expect(result.waterPassable).toBe(true);
@@ -131,6 +131,8 @@ test("keeps chunked spherical terrain under the player beyond the starting field
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");
 
+    debug.setPlayer(0, 0);
+    const spawnNature = debug.getNatureState();
     debug.setPlayer(420, -360);
     const player = debug.getPlayer();
     const terrain = debug.getTerrainState();
@@ -164,10 +166,18 @@ test("keeps chunked spherical terrain under the player beyond the starting field
         isAlignedToCellGrid(movedTerrain.minZ - terrain.minZ, terrain.cellSize),
       hasChunkedSurface: terrain.chunkCount > 1,
       generatedNatureAwayFromStart:
-        nature.generatedObjects > 120 &&
-        nature.generatedObstacles > 40 &&
-        movedNature.generatedObjects > 120 &&
+        nature.generatedObjects > 650 &&
+        nature.generatedReactiveFlora > 300 &&
+        nature.generatedObstacles > 180 &&
+        movedNature.generatedObjects > 650 &&
         debug.obstacles.some((obstacle) => obstacle.dynamic),
+      generatedSpawnNature:
+        spawnNature.generatedObjects > 650 &&
+        spawnNature.generatedReactiveFlora > 300 &&
+        spawnNature.generatedObstacles > 180,
+      spawnAndRemoteDensitySimilar:
+        nature.generatedObjects / spawnNature.generatedObjects > 0.72 &&
+        nature.generatedObjects / spawnNature.generatedObjects < 1.38,
     };
   });
 
@@ -178,6 +188,8 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.terrainMovedByWholeCells).toBe(true);
   expect(result.hasChunkedSurface).toBe(true);
   expect(result.generatedNatureAwayFromStart).toBe(true);
+  expect(result.generatedSpawnNature).toBe(true);
+  expect(result.spawnAndRemoteDensitySimilar).toBe(true);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {

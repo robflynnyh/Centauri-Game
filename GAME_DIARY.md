@@ -57,3 +57,5 @@ Made the cube-top stalk plants react to nearby movement with a smooth 12-metre p
 Turned the local field into a walkable spherical planet: player movement, camera up, terrain, water, rocks, flora, footsteps, collisions, and the PR demo now use planet-surface coordinates with a 25-minute target equatorial circumnavigation.
 
 Extended the spherical planet with deterministic generated nature chunks so trees, sprouts, rocks, and occasional pools appear around the active globe location instead of only near the original starting field.
+
+Unified the starting biome with the generated spherical nature layer so spawn and off-origin regions are populated by the same deterministic chunk system, including reactive stalks, trees, rocks, pools, and short streams.

@@ -17,6 +17,7 @@ export type NatureState = {
   chunkCount: number;
   generatedObjects: number;
   generatedObstacles: number;
+  generatedReactiveFlora: number;
 };
 
 type ReactiveStalk = {
@@ -36,6 +37,12 @@ const floraReactionRadius = 12;
 const floraReactionFullRadius = 5.5;
 const generatedNatureChunkSize = 96;
 const generatedNatureChunkRadius = 3;
+const baseTreesPerChunk = 3;
+const baseReactiveFloraPerChunk = 9;
+const baseSproutsPerChunk = 6;
+const baseRocksPerChunk = 3;
+const basePoolChance = 0.22;
+const baseStreamChance = 0.12;
 
 export function populateNature(
   scene: THREE.Scene,
@@ -77,17 +84,14 @@ export function populateNature(
   let generatedCenterChunkZ = Number.NaN;
   let generatedObjectCount = 0;
   let generatedObstacleCount = 0;
+  let generatedReactiveFloraCount = 0;
 
-  const addFlora = (seed: number): void => {
-    const angle = seed * 2.399963;
-    const radius = 8 + ((seed * 17) % 43);
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
+  const addReactiveFloraAt = (x: number, z: number, seed: number, angle: number, targetGroup = generatedNatureGroup): void => {
     const y = heightAt(x, z);
 
     const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.18, 2.6 + (seed % 5) * 0.35, 5), stalkMaterial);
     placeObjectOnPlanet(stalk, x, z, y + 1.2, new THREE.Euler(0, 0, Math.sin(seed) * 0.18));
-    floraGroup.add(stalk);
+    targetGroup.add(stalk);
 
     const capGeometry = new THREE.OctahedronGeometry(0.5 + (seed % 4) * 0.12, 0);
     const capMaterial = new THREE.MeshBasicMaterial({ color: capRestColour });
@@ -95,7 +99,7 @@ export function populateNature(
     const capAltitude = y + 2.8 + (seed % 3) * 0.18;
     const capRotation = new THREE.Euler(seed * 0.12, seed * 0.2, seed * 0.07);
     placeObjectOnPlanet(cap, x, z, capAltitude, capRotation);
-    floraGroup.add(cap);
+    targetGroup.add(cap);
 
     const glow = new THREE.Mesh(
       capGeometry.clone(),
@@ -109,7 +113,7 @@ export function populateNature(
     );
     placeObjectOnPlanet(glow, x, z, capAltitude, capRotation);
     glow.scale.setScalar(1.22);
-    floraGroup.add(glow);
+    targetGroup.add(glow);
     reactiveStalks.push({ x, z, cap, glow, capAltitude, capRotation, reaction: 0 });
   };
 
@@ -192,14 +196,6 @@ export function populateNature(
     targetGroup.add(sprout);
   };
 
-  const addGroundSprout = (seed: number): void => {
-    const angle = seed * 2.13;
-    const radius = 5 + ((seed * 29) % 49);
-    const x = Math.cos(angle) * radius + Math.sin(seed * 0.7) * 2.4;
-    const z = Math.sin(angle) * radius + Math.cos(seed * 0.41) * 2.4;
-    addSproutAt(x, z, seed, angle);
-  };
-
   const addGeneratedRock = (x: number, z: number, size: number, rotation: THREE.Euler, dynamicObstacles: CollisionObstacle[]): void => {
     const y = heightAt(x, z);
     const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stoneMaterial);
@@ -219,6 +215,8 @@ export function populateNature(
     generatedCenterChunkX = nextChunkX;
     generatedCenterChunkZ = nextChunkZ;
     generatedObjectCount = 0;
+    generatedReactiveFloraCount = 0;
+    reactiveStalks.length = 0;
     const dynamicObstacles: CollisionObstacle[] = [];
 
     for (let zChunk = generatedCenterChunkZ - generatedNatureChunkRadius; zChunk <= generatedCenterChunkZ + generatedNatureChunkRadius; zChunk += 1) {
@@ -226,27 +224,33 @@ export function populateNature(
         const random = createChunkRandom(xChunk, zChunk);
         const xMin = xChunk * generatedNatureChunkSize;
         const zMin = zChunk * generatedNatureChunkSize;
+        const density = chunkNatureDensity(xChunk, zChunk);
 
-        for (let i = 0; i < 2; i += 1) {
+        for (let i = 0; i < Math.max(1, Math.round(baseTreesPerChunk * density)); i += 1) {
           const x = xMin + random() * generatedNatureChunkSize;
           const z = zMin + random() * generatedNatureChunkSize;
-          if (Math.hypot(x, z) < 72) continue;
           addAlienTree(x, z, 0.68 + random() * 0.48, random() * Math.PI * 2 - Math.PI, generatedNatureGroup, dynamicObstacles);
           generatedObjectCount += 1;
         }
 
-        for (let i = 0; i < 5; i += 1) {
+        for (let i = 0; i < Math.max(3, Math.round(baseReactiveFloraPerChunk * density)); i += 1) {
           const x = xMin + random() * generatedNatureChunkSize;
           const z = zMin + random() * generatedNatureChunkSize;
-          if (Math.hypot(x, z) < 58) continue;
+          addReactiveFloraAt(x, z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+          generatedObjectCount += 1;
+          generatedReactiveFloraCount += 1;
+        }
+
+        for (let i = 0; i < Math.max(2, Math.round(baseSproutsPerChunk * density)); i += 1) {
+          const x = xMin + random() * generatedNatureChunkSize;
+          const z = zMin + random() * generatedNatureChunkSize;
           addSproutAt(x, z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
           generatedObjectCount += 1;
         }
 
-        for (let i = 0; i < 2; i += 1) {
+        for (let i = 0; i < Math.max(1, Math.round(baseRocksPerChunk * density)); i += 1) {
           const x = xMin + random() * generatedNatureChunkSize;
           const z = zMin + random() * generatedNatureChunkSize;
-          if (Math.hypot(x, z) < 64) continue;
           addGeneratedRock(
             x,
             z,
@@ -257,13 +261,18 @@ export function populateNature(
           generatedObjectCount += 1;
         }
 
-        if (random() < 0.1) {
+        if (random() < basePoolChance * density) {
           const x = xMin + random() * generatedNatureChunkSize;
           const z = zMin + random() * generatedNatureChunkSize;
-          if (Math.hypot(x, z) >= 80) {
-            addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, x, z, 1.8 + random() * 1.4, random() * Math.PI);
-            generatedObjectCount += 1;
-          }
+          addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, x, z, 1.8 + random() * 1.4, random() * Math.PI);
+          generatedObjectCount += 1;
+        }
+
+        if (random() < baseStreamChance * density) {
+          const x = xMin + random() * generatedNatureChunkSize;
+          const z = zMin + random() * generatedNatureChunkSize;
+          addGeneratedStream(generatedNatureGroup, heightAt, waterMaterial, x, z, 8 + random() * 12, random() * Math.PI * 2, random() * Math.PI * 2);
+          generatedObjectCount += 1;
         }
       }
     }
@@ -272,21 +281,6 @@ export function populateNature(
     setDynamicCollisionObstacles(dynamicObstacles);
   };
 
-  for (let i = 1; i <= 74; i += 1) {
-    addFlora(i);
-  }
-
-  treePlacements.forEach(({ x, z, scale, lean }) => addAlienTree(x, z, scale, lean));
-
-  for (let i = 1; i <= 120; i += 1) {
-    addGroundSprout(i);
-  }
-
-  addPool(natureGroup, heightAt, waterMaterial, stoneMaterial, 5.5, 7.5, 3.4, 0.1);
-  addPool(natureGroup, heightAt, waterMaterial, stoneMaterial, -18, -3, 2.5, 0.45);
-  addPool(natureGroup, heightAt, waterMaterial, stoneMaterial, 21, -15, 2.2, 0.8);
-  addStream(natureGroup, heightAt, waterMaterial);
-  addRocks(scene, heightAt, stoneMaterial, addCollisionObstacle);
   rebuildGeneratedNature(0, 0);
 
   return {
@@ -294,7 +288,8 @@ export function populateNature(
     natureGroup,
     updateFloraReactivity: createFloraReactivityUpdater(reactiveStalks),
     updateNatureChunks: rebuildGeneratedNature,
-    getNatureState: () => getGeneratedNatureState(generatedCenterChunkX, generatedCenterChunkZ, generatedObjectCount, generatedObstacleCount),
+    getNatureState: () =>
+      getGeneratedNatureState(generatedCenterChunkX, generatedCenterChunkZ, generatedObjectCount, generatedObstacleCount, generatedReactiveFloraCount),
   };
 }
 
@@ -331,6 +326,12 @@ function createChunkRandom(chunkX: number, chunkZ: number): () => number {
   };
 }
 
+function chunkNatureDensity(chunkX: number, chunkZ: number): number {
+  const broadWave = (Math.sin(chunkX * 0.91 + chunkZ * 0.37) + Math.cos(chunkZ * 0.73 - chunkX * 0.28) + 2) * 0.25;
+  const pocket = createChunkRandom(chunkX + 101, chunkZ - 211)();
+  return THREE.MathUtils.clamp(0.72 + broadWave * 0.42 + pocket * 0.28, 0.62, 1.34);
+}
+
 function disposeGeneratedNature(group: THREE.Group): void {
   group.traverse((child) => {
     const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
@@ -342,7 +343,8 @@ function getGeneratedNatureState(
   centerChunkX: number,
   centerChunkZ: number,
   generatedObjects: number,
-  generatedObstacles: number
+  generatedObstacles: number,
+  generatedReactiveFlora: number
 ): NatureState {
   const minChunkX = centerChunkX - generatedNatureChunkRadius;
   const maxChunkX = centerChunkX + generatedNatureChunkRadius + 1;
@@ -359,20 +361,9 @@ function getGeneratedNatureState(
     chunkCount: Math.pow(generatedNatureChunkRadius * 2 + 1, 2),
     generatedObjects,
     generatedObstacles,
+    generatedReactiveFlora,
   };
 }
-
-const treePlacements = [
-  { x: -7, z: 11, scale: 0.86, lean: -0.8 },
-  { x: 9, z: 7, scale: 1.05, lean: 0.45 },
-  { x: 15, z: -5, scale: 0.92, lean: 0.9 },
-  { x: -17, z: -10, scale: 1.16, lean: -0.35 },
-  { x: 23, z: 15, scale: 0.82, lean: 0.2 },
-  { x: -25, z: 16, scale: 0.94, lean: -1.0 },
-  { x: 2, z: -21, scale: 1.08, lean: 0.72 },
-  { x: 32, z: -18, scale: 0.78, lean: -0.62 },
-  { x: -33, z: -2, scale: 0.88, lean: 0.58 },
-];
 
 function makePoolGeometry(
   heightAt: HeightSampler,
@@ -446,23 +437,31 @@ function addPool(
   natureGroup.add(pool);
 }
 
-function addStream(natureGroup: THREE.Group, heightAt: HeightSampler, waterMaterial: THREE.MeshBasicMaterial): void {
-  const streamPoints = [
-    new THREE.Vector3(-12, 0, 7),
-    new THREE.Vector3(-6, 0, 8),
-    new THREE.Vector3(0, 0, 6),
-    new THREE.Vector3(5.5, 0, 7.5),
-    new THREE.Vector3(11, 0, 4),
-  ];
-  const stream = new THREE.Mesh(makeStreamGeometry(heightAt, streamPoints), waterMaterial);
+function addGeneratedStream(
+  natureGroup: THREE.Group,
+  heightAt: HeightSampler,
+  waterMaterial: THREE.MeshBasicMaterial,
+  x: number,
+  z: number,
+  length: number,
+  rotation: number,
+  bend: number
+): void {
+  const points = Array.from({ length: 5 }, (_, index) => {
+    const t = index / 4;
+    const along = (t - 0.5) * length;
+    const side = Math.sin(t * Math.PI * 2 + bend) * length * 0.12;
+    return new THREE.Vector3(x + Math.cos(rotation) * along - Math.sin(rotation) * side, 0, z + Math.sin(rotation) * along + Math.cos(rotation) * side);
+  });
+  const stream = new THREE.Mesh(makeStreamGeometry(heightAt, points), waterMaterial);
   stream.renderOrder = 1;
   natureGroup.add(stream);
 }
 
 function makeStreamGeometry(heightAt: HeightSampler, points: THREE.Vector3[]): THREE.BufferGeometry {
   const curve = new THREE.CatmullRomCurve3(points);
-  const samples = 72;
-  const halfWidth = 0.34;
+  const samples = 36;
+  const halfWidth = 0.28;
   const positions: number[] = [];
   const indices: number[] = [];
 
@@ -491,30 +490,4 @@ function makeStreamGeometry(heightAt: HeightSampler, points: THREE.Vector3[]): T
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
-}
-
-function addRocks(
-  scene: THREE.Scene,
-  heightAt: HeightSampler,
-  stoneMaterial: THREE.MeshBasicMaterial,
-  addCollisionObstacle: AddCollisionObstacle
-): void {
-  const rockPlacements = Array.from({ length: 34 }, (_, i) => {
-    const angle = i * 1.71;
-    const radius = 10 + ((i * 23) % 50);
-    return {
-      x: Math.cos(angle) * radius,
-      z: Math.sin(angle) * radius,
-      size: 0.9 + (i % 5) * 0.28,
-      rotation: new THREE.Euler(i * 0.2, i * 0.4, i * 0.1),
-    };
-  });
-
-  rockPlacements.forEach(({ x, z, size, rotation }) => {
-    const y = heightAt(x, z);
-    const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(size, 0), stoneMaterial);
-    placeObjectOnPlanet(stone, x, z, y + 0.7, rotation);
-    scene.add(stone);
-    addCollisionObstacle({ kind: "rock", x, z, radius: size * 0.72 });
-  });
 }
