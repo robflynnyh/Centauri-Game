@@ -33,11 +33,11 @@ app.innerHTML = `
 `;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x7b8fd6);
-scene.fog = new THREE.FogExp2(0x8b79a6, 0.018);
+scene.background = new THREE.Color(0x536de0);
+scene.fog = new THREE.FogExp2(0x6b58bb, 0.016);
 
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 0.82));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 app.appendChild(renderer.domElement);
@@ -106,9 +106,10 @@ function makeSkyDome(): THREE.Mesh {
     side: THREE.BackSide,
     depthWrite: false,
     uniforms: {
-      horizonColour: { value: new THREE.Color(0xe0a6c5) },
-      middleColour: { value: new THREE.Color(0x98a9da) },
-      zenithColour: { value: new THREE.Color(0x59619f) },
+      horizonColour: { value: new THREE.Color(0xff8fc8) },
+      middleColour: { value: new THREE.Color(0x58b9f6) },
+      upperColour: { value: new THREE.Color(0x536de0) },
+      zenithColour: { value: new THREE.Color(0x5137ad) },
     },
     vertexShader: `
       varying vec3 vWorldPosition;
@@ -123,13 +124,15 @@ function makeSkyDome(): THREE.Mesh {
       varying vec3 vWorldPosition;
       uniform vec3 horizonColour;
       uniform vec3 middleColour;
+      uniform vec3 upperColour;
       uniform vec3 zenithColour;
 
       void main() {
         float height = clamp(normalize(vWorldPosition).y * 0.5 + 0.5, 0.0, 1.0);
         vec3 sky = horizonColour;
-        if (height > 0.36) sky = middleColour;
-        if (height > 0.68) sky = zenithColour;
+        if (height > 0.32) sky = middleColour;
+        if (height > 0.56) sky = upperColour;
+        if (height > 0.78) sky = zenithColour;
         gl_FragColor = vec4(sky, 1.0);
       }
     `,
@@ -157,11 +160,12 @@ function makeTerrain(): THREE.Mesh {
   const positions = geometry.getAttribute("position") as THREE.BufferAttribute;
   const colours: number[] = [];
   const terrainPalette = [
-    new THREE.Color(0x8d6f98),
-    new THREE.Color(0x9479a0),
-    new THREE.Color(0x8a87aa),
-    new THREE.Color(0x86a0aa),
-    new THREE.Color(0xa2a588),
+    new THREE.Color(0x9b63c4),
+    new THREE.Color(0x6e78df),
+    new THREE.Color(0x52b8bb),
+    new THREE.Color(0xb6c95b),
+    new THREE.Color(0xec7fb2),
+    new THREE.Color(0xffb15e),
   ];
 
   for (let i = 0; i < positions.count; i += 1) {
@@ -191,20 +195,20 @@ scene.add(floraGroup);
 const natureGroup = new THREE.Group();
 scene.add(natureGroup);
 
-const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xd9719d });
-const stalkMaterial = new THREE.MeshBasicMaterial({ color: 0x74aaa1 });
-const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x4a4388 });
-const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x98d68f });
-const canopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xd89a63 });
-const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xa9c960 });
-const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xd765c9 });
+const markerMaterial = new THREE.MeshBasicMaterial({ color: 0xff5c9e });
+const stalkMaterial = new THREE.MeshBasicMaterial({ color: 0x55c7ba });
+const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x3f2b92 });
+const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x8dff86 });
+const canopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xffb84f });
+const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xc5ff4f });
+const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xff58df });
 const waterMaterial = new THREE.MeshBasicMaterial({
-  color: 0x85c9c8,
+  color: 0x66edf0,
   transparent: true,
-  opacity: 0.62,
+  opacity: 0.68,
   side: THREE.DoubleSide,
 });
-const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x7167aa });
+const stoneMaterial = new THREE.MeshBasicMaterial({ color: 0x6b55d8 });
 
 function addFlora(seed: number): void {
   const angle = seed * 2.399963;

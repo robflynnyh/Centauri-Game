@@ -18,4 +18,6 @@ Changed pools and the stream into terrain-following water meshes so the demo wat
 
 Added lightweight first-person collision against alien trees and larger rocks using explicit circular blockers while keeping water, sprouts, and small glowing flora passable.
 
-Flattened the planet's visual language toward broad Proteus-like graphic masses: unlit world materials, muted flora and stone colors, banded terrain/sky color, lower-resolution pixel edges, and a closer PR demo path for reading silhouettes.
+Flattened the planet's visual language toward broad Proteus-like graphic masses: unlit world materials, banded terrain/sky color, pixel-edged rendering, and a closer PR demo path for reading silhouettes.
+
+Rebalanced the flat art pass after review feedback by restoring whimsical alien color contrast: brighter pink flora, acid green canopies, cyan water, violet rocks, and more playful sky/terrain bands while keeping the unlit graphic silhouette read.
