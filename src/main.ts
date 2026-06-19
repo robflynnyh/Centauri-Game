@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
+import { createAlienWaterCreatures } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
 import { populateNature } from "./nature";
@@ -79,6 +80,7 @@ scene.add(makeTerrain());
 scene.add(makeHorizonLandforms());
 
 const { floraGroup } = populateNature(scene, heightAt, collisionWorld.addObstacle);
+const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   footsteps.walk(position, delta);
@@ -234,6 +236,7 @@ function animate(): void {
   else updateExploration(delta);
 
   footsteps.update(delta);
+  waterCreatures.update(elapsed);
   sky.update(elapsed);
   floraGroup.children.forEach((child, index) => {
     child.position.y += Math.sin(elapsed * 1.6 + index) * 0.0018;
