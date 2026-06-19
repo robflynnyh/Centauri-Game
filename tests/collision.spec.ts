@@ -123,7 +123,7 @@ test("wraps straight walks around the spherical planet", async ({ page }) => {
   expect(result.playerIsAbovePlanet).toBe(true);
 });
 
-test("keeps detailed terrain under the player beyond the starting field", async ({ page }) => {
+test("keeps chunked spherical terrain under the player beyond the starting field", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
@@ -145,25 +145,31 @@ test("keeps detailed terrain under the player beyond the starting field", async 
     };
 
     return {
-      detailPatchContainsPlayer: Math.abs(player.x - terrain.centerX) < terrain.halfSize - 12 && Math.abs(player.z - terrain.centerZ) < terrain.halfSize - 12,
+      terrainWindowContainsPlayer: player.x > terrain.minX + terrain.chunkSize && player.x < terrain.maxX - terrain.chunkSize && player.z > terrain.minZ + terrain.chunkSize && player.z < terrain.maxZ - terrain.chunkSize,
       playerAltitudeMatchesTerrain: Math.abs(player.y - (sampledHeight + standingHeight)) < 0.001,
       outsideOldPlane: Math.hypot(player.x, player.z) > 220,
       terrainGridAligned:
         isAlignedToCellGrid(terrain.minX, terrain.cellSize) &&
         isAlignedToCellGrid(terrain.minZ, terrain.cellSize) &&
+        isAlignedToCellGrid(terrain.maxX, terrain.cellSize) &&
+        isAlignedToCellGrid(terrain.maxZ, terrain.cellSize) &&
         isAlignedToCellGrid(movedTerrain.minX, movedTerrain.cellSize) &&
-        isAlignedToCellGrid(movedTerrain.minZ, movedTerrain.cellSize),
+        isAlignedToCellGrid(movedTerrain.minZ, movedTerrain.cellSize) &&
+        isAlignedToCellGrid(movedTerrain.maxX, movedTerrain.cellSize) &&
+        isAlignedToCellGrid(movedTerrain.maxZ, movedTerrain.cellSize),
       terrainMovedByWholeCells:
         isAlignedToCellGrid(movedTerrain.minX - terrain.minX, terrain.cellSize) &&
         isAlignedToCellGrid(movedTerrain.minZ - terrain.minZ, terrain.cellSize),
+      hasChunkedSurface: terrain.chunkCount > 1,
     };
   });
 
-  expect(result.detailPatchContainsPlayer).toBe(true);
+  expect(result.terrainWindowContainsPlayer).toBe(true);
   expect(result.playerAltitudeMatchesTerrain).toBe(true);
   expect(result.outsideOldPlane).toBe(true);
   expect(result.terrainGridAligned).toBe(true);
   expect(result.terrainMovedByWholeCells).toBe(true);
+  expect(result.hasChunkedSurface).toBe(true);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {

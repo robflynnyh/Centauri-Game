@@ -1,10 +1,20 @@
 import * as THREE from "three";
-import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, PLANET_CIRCUMFERENCE } from "./planet";
+import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, PLANET_RADIUS } from "./planet";
 
 export type TerrainSystem = {
   group: THREE.Group;
   update: (centerX: number, centerZ: number) => void;
-  getDetailPatchState: () => { centerX: number; centerZ: number; minX: number; minZ: number; halfSize: number; cellSize: number };
+  getTerrainState: () => {
+    centerX: number;
+    centerZ: number;
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    cellSize: number;
+    chunkSize: number;
+    chunkCount: number;
+  };
 };
 
 const terrainPalette = [
@@ -26,7 +36,18 @@ export function heightAt(x: number, z: number): number {
   const alienPulse = Math.sin((tileX + tileZ) * 0.07) * 0.85 + Math.sin(Math.hypot(tileX, tileZ) * 0.28) * 0.7;
   const northShoulder = Math.max(0, 1 - Math.abs(tileZ + 55) / 24) * (1 - Math.min(Math.abs(tileX) / 106, 1)) * 3.1;
   const westShelf = Math.max(0, 1 - Math.abs(tileX + 64) / 26) * (1 - Math.min(Math.abs(tileZ) / 96, 1)) * 1.8;
-  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(tileX, tileZ);
+  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(tileX, tileZ) + globeUndulationAt(x, z);
+}
+
+function globeUndulationAt(x: number, z: number): number {
+  const normalized = normalizePlanetCoords(x, z);
+  const longitude = normalized.x / PLANET_RADIUS;
+  const latitude = normalized.z / PLANET_RADIUS;
+  const wrappedTile = detailCoordinatesAt(x, z);
+  const seamFade = THREE.MathUtils.smoothstep(Math.hypot(wrappedTile.x, wrappedTile.z), 82, 118);
+  const waveA = Math.sin(Math.sin(longitude) * 7.1 + Math.cos(latitude * 1.7) * 3.6);
+  const waveB = Math.sin(Math.cos(longitude * 2.3) * 4.2 + Math.sin(latitude * 2.1) * 5.4);
+  return seamFade * (waveA * 1.15 + waveB * 0.85);
 }
 
 function mountainHeightAt(x: number, z: number): number {
@@ -49,70 +70,79 @@ function mound(x: number, z: number, centerX: number, centerZ: number, radiusX: 
   return Math.max(0, 1 - dx * dx - dz * dz) * height;
 }
 
-const detailPatchSize = 260;
-const detailPatchHalfSize = detailPatchSize * 0.5;
-const detailPatchSegments = 96;
-const detailPatchLift = 0.045;
-const detailPatchCellSize = detailPatchSize / detailPatchSegments;
+const terrainChunkSize = 96;
+const terrainChunkSegments = 24;
+const terrainChunkRadius = 5;
+const terrainChunkCellSize = terrainChunkSize / terrainChunkSegments;
 
 export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
   group.name = "spherical-planet-terrain";
-  group.add(makeTerrainMesh(-PLANET_CIRCUMFERENCE * 0.5, PLANET_CIRCUMFERENCE * 0.5, -PLANET_CIRCUMFERENCE * 0.25, PLANET_CIRCUMFERENCE * 0.25, 192, 72, 0));
+  const terrainMaterial = makeTerrainMaterial();
 
-  const detailMaterial = makeTerrainMaterial(true);
-  const detailPatch = new THREE.Mesh(makeTerrainGeometry(-detailPatchHalfSize, detailPatchHalfSize, -detailPatchHalfSize, detailPatchHalfSize, detailPatchSegments, detailPatchSegments, detailPatchLift), detailMaterial);
-  detailPatch.name = "player-centered-detail-terrain";
-  group.add(detailPatch);
-
-  let detailMinX = -detailPatchHalfSize;
-  let detailMinZ = -detailPatchHalfSize;
+  let centerChunkX = Number.NaN;
+  let centerChunkZ = Number.NaN;
 
   const update = (centerX: number, centerZ: number): void => {
     const normalized = normalizePlanetCoords(centerX, centerZ);
-    const nextMinX = Math.floor((normalized.x - detailPatchHalfSize) / detailPatchCellSize) * detailPatchCellSize;
-    const nextMinZ = Math.floor((normalized.z - detailPatchHalfSize) / detailPatchCellSize) * detailPatchCellSize;
-    if (nextMinX === detailMinX && nextMinZ === detailMinZ) return;
+    const nextChunkX = Math.floor(normalized.x / terrainChunkSize);
+    const nextChunkZ = Math.floor(normalized.z / terrainChunkSize);
+    if (nextChunkX === centerChunkX && nextChunkZ === centerChunkZ) return;
 
-    detailMinX = nextMinX;
-    detailMinZ = nextMinZ;
-    detailPatch.geometry.dispose();
-    detailPatch.geometry = makeTerrainGeometry(
-      detailMinX,
-      detailMinX + detailPatchSize,
-      detailMinZ,
-      detailMinZ + detailPatchSize,
-      detailPatchSegments,
-      detailPatchSegments,
-      detailPatchLift
-    );
+    centerChunkX = nextChunkX;
+    centerChunkZ = nextChunkZ;
+    rebuildTerrainChunks(group, terrainMaterial, centerChunkX, centerChunkZ);
   };
+
+  update(0, 0);
 
   return {
     group,
     update,
-    getDetailPatchState: () => ({
-      centerX: detailMinX + detailPatchHalfSize,
-      centerZ: detailMinZ + detailPatchHalfSize,
-      minX: detailMinX,
-      minZ: detailMinZ,
-      halfSize: detailPatchHalfSize,
-      cellSize: detailPatchCellSize,
-    }),
+    getTerrainState: () => getTerrainState(centerChunkX, centerChunkZ),
   };
 }
 
-function makeTerrainMesh(
-  xMin: number,
-  xMax: number,
-  zMin: number,
-  zMax: number,
-  xSegments: number,
-  zSegments: number,
-  lift: number,
-  polygonOffset = false
-): THREE.Mesh {
-  return new THREE.Mesh(makeTerrainGeometry(xMin, xMax, zMin, zMax, xSegments, zSegments, lift), makeTerrainMaterial(polygonOffset));
+function rebuildTerrainChunks(group: THREE.Group, terrainMaterial: THREE.MeshBasicMaterial, centerChunkX: number, centerChunkZ: number): void {
+  group.children.forEach((child) => {
+    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+    mesh.geometry.dispose();
+  });
+  group.clear();
+
+  for (let zChunk = centerChunkZ - terrainChunkRadius; zChunk <= centerChunkZ + terrainChunkRadius; zChunk += 1) {
+    for (let xChunk = centerChunkX - terrainChunkRadius; xChunk <= centerChunkX + terrainChunkRadius; xChunk += 1) {
+      const xMin = xChunk * terrainChunkSize;
+      const zMin = zChunk * terrainChunkSize;
+      const chunk = new THREE.Mesh(
+        makeTerrainGeometry(xMin, xMin + terrainChunkSize, zMin, zMin + terrainChunkSize, terrainChunkSegments, terrainChunkSegments),
+        terrainMaterial
+      );
+      chunk.name = `spherical-terrain-chunk-${xChunk}-${zChunk}`;
+      group.add(chunk);
+    }
+  }
+}
+
+function getTerrainState(
+  centerChunkX: number,
+  centerChunkZ: number
+): ReturnType<TerrainSystem["getTerrainState"]> {
+  const minChunkX = centerChunkX - terrainChunkRadius;
+  const maxChunkX = centerChunkX + terrainChunkRadius + 1;
+  const minChunkZ = centerChunkZ - terrainChunkRadius;
+  const maxChunkZ = centerChunkZ + terrainChunkRadius + 1;
+  return {
+    centerX: (minChunkX + maxChunkX) * 0.5 * terrainChunkSize,
+    centerZ: (minChunkZ + maxChunkZ) * 0.5 * terrainChunkSize,
+    minX: minChunkX * terrainChunkSize,
+    maxX: maxChunkX * terrainChunkSize,
+    minZ: minChunkZ * terrainChunkSize,
+    maxZ: maxChunkZ * terrainChunkSize,
+    cellSize: terrainChunkCellSize,
+    chunkSize: terrainChunkSize,
+    chunkCount: Math.pow(terrainChunkRadius * 2 + 1, 2),
+  };
 }
 
 function makeTerrainGeometry(
@@ -122,7 +152,7 @@ function makeTerrainGeometry(
   zMax: number,
   xSegments: number,
   zSegments: number,
-  lift: number
+  lift = 0
 ): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
@@ -175,13 +205,10 @@ function makeTerrainGeometry(
   return geometry;
 }
 
-function makeTerrainMaterial(polygonOffset: boolean): THREE.MeshBasicMaterial {
+function makeTerrainMaterial(): THREE.MeshBasicMaterial {
   return new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,
-    polygonOffset,
-    polygonOffsetFactor: polygonOffset ? -2 : 0,
-    polygonOffsetUnits: polygonOffset ? -2 : 0,
   });
 }
 

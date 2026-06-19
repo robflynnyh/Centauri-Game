@@ -32,7 +32,17 @@ declare global {
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
-      getTerrainState: () => { centerX: number; centerZ: number; minX: number; minZ: number; halfSize: number; cellSize: number };
+      getTerrainState: () => {
+        centerX: number;
+        centerZ: number;
+        minX: number;
+        maxX: number;
+        minZ: number;
+        maxZ: number;
+        cellSize: number;
+        chunkSize: number;
+        chunkCount: number;
+      };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -141,7 +151,7 @@ if (enableCollisionDebug) {
       crouching: isCrouchPressed(),
       cameraHeight: player.cameraHeight,
     }),
-    getTerrainState: terrain.getDetailPatchState,
+    getTerrainState: terrain.getTerrainState,
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
