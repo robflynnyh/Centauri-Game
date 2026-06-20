@@ -138,42 +138,47 @@ function makeTemple(): THREE.Group {
   upperBase.scale.z = 0.64;
   group.add(upperBase);
 
-  const backShadow = new THREE.Mesh(new THREE.BoxGeometry(5.7, 4.55, 0.5), shadowStoneMaterial);
-  backShadow.position.set(0.45, 4.28, -1.36);
-  backShadow.rotation.z = -0.08;
-  group.add(backShadow);
+  addPrism(group, [
+    [-3.95, 1.72],
+    [-2.38, 1.92],
+    [-2.66, 6.25],
+    [-3.58, 6.78],
+  ], 1.08, baseMaterial, -1.08);
+  addPrism(group, [
+    [2.32, 1.9],
+    [3.88, 1.68],
+    [3.54, 5.74],
+    [2.72, 6.34],
+  ], 1.08, baseMaterial, -1.08);
+  addPrism(group, [
+    [-2.82, 6.08],
+    [0.95, 6.24],
+    [2.26, 7.06],
+    [-1.88, 7.34],
+  ], 1, wornStoneMaterial, -1.08);
+  addPrism(group, [
+    [1.28, 5.9],
+    [2.92, 5.58],
+    [2.46, 6.5],
+    [1.02, 6.86],
+  ], 1.06, shadowStoneMaterial, -1.04);
 
-  addGateSegment(group, 3.05, 0.72, -0.1, 0.08, Math.PI * 1.38, baseMaterial);
-  addGateSegment(group, 3.95, 0.32, -0.02, 0.08, Math.PI * 1.18, wornStoneMaterial);
+  addGateSegment(group, 2.62, 0.58, -0.12, 0.06, Math.PI * 1.36, baseMaterial);
+  addGateSegment(group, 3.24, 0.24, -0.03, 0.06, Math.PI * 1.18, wornStoneMaterial);
 
-  const leftFoot = new THREE.Mesh(new THREE.BoxGeometry(1.24, 2.55, 1.15), baseMaterial);
-  leftFoot.position.set(-2.92, 2.78, -1.04);
-  leftFoot.rotation.z = 0.08;
-  group.add(leftFoot);
-
-  const rightFoot = new THREE.Mesh(new THREE.BoxGeometry(1.02, 1.68, 1.1), shadowStoneMaterial);
-  rightFoot.position.set(3.05, 2.34, -1.02);
-  rightFoot.rotation.z = -0.2;
-  group.add(rightFoot);
-
-  const brokenCrown = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.82, 1.02), wornStoneMaterial);
-  brokenCrown.position.set(1.85, 6.82, -1.02);
-  brokenCrown.rotation.set(0.04, 0, -0.42);
-  group.add(brokenCrown);
-
-  const gateGlow = new THREE.Mesh(new THREE.TorusGeometry(2.42, 0.07, 5, 26, Math.PI * 1.22), glowMaterial.clone());
-  gateGlow.position.set(0, 4.48, -1.42);
-  gateGlow.rotation.z = -0.02;
+  const gateGlow = new THREE.Mesh(new THREE.TorusGeometry(1.92, 0.08, 5, 28, Math.PI * 1.42), glowMaterial.clone());
+  gateGlow.position.set(0, 4.34, -1.52);
+  gateGlow.rotation.z = -0.18;
   group.add(gateGlow);
 
-  const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(1.72, 12), glowMaterial);
-  innerGlow.position.set(0, 4.44, -1.48);
-  innerGlow.scale.set(1, 1.28, 1);
+  const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(1.16, 10), glowMaterial);
+  innerGlow.position.set(0, 4.22, -1.56);
+  innerGlow.scale.set(1, 1.32, 1);
   group.add(innerGlow);
 
-  addGlyphPanel(group, -1.75, 2.34, 0.72, 1.24, 0.18, faceMaterial);
-  addGlyphPanel(group, 1.58, 2.34, 0.72, 1.24, -0.14, faceMaterial);
-  addGlyphPanel(group, 0.0, 2.48, 1.5, 0.38, 0, faceMaterial);
+  addGlyphPanel(group, -3.15, 3.02, 0.5, 1.55, 0.08, faceMaterial, -0.47);
+  addGlyphPanel(group, 3.04, 2.82, 0.5, 1.32, -0.08, faceMaterial, -0.47);
+  addGlyphPanel(group, 0.0, 2.48, 1.64, 0.42, 0, faceMaterial, 3.18);
 
   addRuinedColumn(group, -4.15, -1.95, 2.7, -0.18, stepMaterial, faceMaterial);
   addRuinedColumn(group, 4.25, -1.68, 2.08, 0.24, wornStoneMaterial, faceMaterial);
@@ -203,6 +208,31 @@ function addGateSegment(
   segment.position.set(0, 4.52, -1.0);
   segment.rotation.set(lean, 0, rotation);
   group.add(segment);
+}
+
+function addPrism(group: THREE.Group, points: Array<[number, number]>, depth: number, material: THREE.Material, z = 0): void {
+  const halfDepth = depth * 0.5;
+  const positions: number[] = [];
+  points.forEach(([x, y]) => positions.push(x, y, z + halfDepth));
+  points.forEach(([x, y]) => positions.push(x, y, z - halfDepth));
+
+  const indices: number[] = [];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    indices.push(0, i, i + 1);
+    indices.push(points.length, points.length + i + 1, points.length + i);
+  }
+
+  for (let i = 0; i < points.length; i += 1) {
+    const next = (i + 1) % points.length;
+    indices.push(i, next, points.length + next);
+    indices.push(i, points.length + next, points.length + i);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  group.add(new THREE.Mesh(geometry, material));
 }
 
 function addRuinedColumn(
@@ -245,9 +275,18 @@ function addSlab(
   group.add(slab);
 }
 
-function addGlyphPanel(group: THREE.Group, x: number, y: number, width: number, height: number, rotation: number, material: THREE.Material): void {
+function addGlyphPanel(
+  group: THREE.Group,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  rotation: number,
+  material: THREE.Material,
+  z: number
+): void {
   const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.2), material);
-  panel.position.set(x, y, 3.18);
+  panel.position.set(x, y, z);
   panel.rotation.y = rotation;
   group.add(panel);
 }
