@@ -21,7 +21,7 @@ test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ pa
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/?demo=pr");
     await expect(page.getByText("PR demo mode")).toBeVisible();
-    await page.addStyleTag({ content: ".hud { display: none !important; }" });
+    await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
     await page.waitForTimeout(2_500);
 
     const first = await getCanvasSignal(page, testInfo.outputPath(`${viewport.name}-planet-demo-a.png`));

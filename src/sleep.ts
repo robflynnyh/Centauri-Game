@@ -4,6 +4,8 @@ export type SleepControllerOptions = {
   refillSeconds?: number;
   blackoutRecoverySeconds?: number;
   blackoutMinimumSeconds?: number;
+  eyelidCloseSeconds?: number;
+  eyelidOpenSeconds?: number;
   initialAmount?: number;
 };
 
@@ -22,6 +24,8 @@ export type SleepDebugState = {
   settling: boolean;
   stillSeconds: number;
   blackoutSeconds: number;
+  eyelidAmount: number;
+  eyelidPhase: "open" | "closing" | "closed" | "opening";
   drainSeconds: number;
   refillSeconds: number;
   message: string;
@@ -32,6 +36,8 @@ const defaultSettleSeconds = 1.25;
 const defaultRefillSeconds = 8;
 const defaultBlackoutRecoverySeconds = 9;
 const defaultBlackoutMinimumSeconds = 3.5;
+const defaultEyelidCloseSeconds = 1.05;
+const defaultEyelidOpenSeconds = 1.05;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 1;
@@ -55,13 +61,30 @@ export function createSleepController(options: SleepControllerOptions = {}): {
     defaultBlackoutRecoverySeconds
   );
   const blackoutMinimumSeconds = positiveOrDefault(options.blackoutMinimumSeconds, defaultBlackoutMinimumSeconds);
+  const eyelidCloseSeconds = positiveOrDefault(options.eyelidCloseSeconds, defaultEyelidCloseSeconds);
+  const eyelidOpenSeconds = positiveOrDefault(options.eyelidOpenSeconds, defaultEyelidOpenSeconds);
 
   let amount = clamp01(options.initialAmount ?? 1);
   let sleeping = false;
   let blackout = amount <= 0;
   let stillSeconds = 0;
   let blackoutSeconds = blackout ? blackoutMinimumSeconds : 0;
+  let eyelidAmount = 0;
   let lastInput: SleepUpdateInput = { wantsSleep: false, moving: false, grounded: true };
+
+  function moveEyelids(delta: number, closed: boolean): void {
+    const duration = closed ? eyelidCloseSeconds : eyelidOpenSeconds;
+    const step = duration > 0 ? delta / duration : 1;
+    const target = closed ? 1 : 0;
+    if (eyelidAmount < target) eyelidAmount = Math.min(target, eyelidAmount + step);
+    else if (eyelidAmount > target) eyelidAmount = Math.max(target, eyelidAmount - step);
+  }
+
+  function getEyelidPhase(): SleepDebugState["eyelidPhase"] {
+    if (eyelidAmount <= 0) return "open";
+    if (eyelidAmount >= 1) return "closed";
+    return sleeping ? "closing" : "opening";
+  }
 
   function getMessage(): string {
     if (blackout) return "resting in the dark";
@@ -85,6 +108,8 @@ export function createSleepController(options: SleepControllerOptions = {}): {
       settling: Boolean(lastInput.wantsSleep && canSleep && !sleeping && amount < 1),
       stillSeconds,
       blackoutSeconds,
+      eyelidAmount,
+      eyelidPhase: getEyelidPhase(),
       drainSeconds,
       refillSeconds,
       message: getMessage(),
@@ -107,6 +132,7 @@ export function createSleepController(options: SleepControllerOptions = {}): {
         blackoutSeconds = 0;
       }
 
+      moveEyelids(step, false);
       return getState();
     }
 
@@ -134,6 +160,7 @@ export function createSleepController(options: SleepControllerOptions = {}): {
       blackoutSeconds = 0;
     }
 
+    moveEyelids(step, sleeping && !blackout);
     return getState();
   }
 
@@ -143,6 +170,7 @@ export function createSleepController(options: SleepControllerOptions = {}): {
     blackout = amount <= 0;
     stillSeconds = 0;
     blackoutSeconds = 0;
+    eyelidAmount = 0;
     return getState();
   }
 

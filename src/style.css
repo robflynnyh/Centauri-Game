@@ -125,10 +125,48 @@ canvas {
   display: none;
 }
 
-.blackout {
+.eyelids {
+  --eyelid-cover: 0%;
   position: fixed;
   inset: 0;
   z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.eyelids--active {
+  opacity: 1;
+}
+
+.eyelid {
+  position: absolute;
+  left: -6vw;
+  width: 112vw;
+  height: var(--eyelid-cover);
+  background: #010104;
+  box-shadow: 0 0 18px rgba(1, 1, 4, 0.78);
+  transition: height 0.12s linear;
+}
+
+.eyelid--top {
+  top: 0;
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 10px), 78% 100%, 52% calc(100% - 5px), 24% 100%, 0 calc(100% - 8px));
+  border-bottom-left-radius: 48% 18px;
+  border-bottom-right-radius: 52% 15px;
+}
+
+.eyelid--bottom {
+  bottom: 0;
+  clip-path: polygon(0 8px, 22% 0, 48% 5px, 76% 0, 100% 10px, 100% 100%, 0 100%);
+  border-top-left-radius: 52% 15px;
+  border-top-right-radius: 48% 18px;
+}
+
+.blackout {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
   display: grid;
   place-items: center;
   pointer-events: none;

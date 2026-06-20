@@ -118,11 +118,13 @@ function readInitialSleepAmount(): number {
 
 const sleep = createSleepController({
   drainSeconds: enableSleepDebug ? 1.6 : isDemo ? 14 : 600,
-  settleSeconds: enableSleepDebug ? 0.08 : 1.25,
-  refillSeconds: enableSleepDebug ? 0.42 : 8,
+  settleSeconds: enableSleepDebug ? 0.08 : isDemo ? 0.05 : 1.25,
+  refillSeconds: enableSleepDebug ? 0.42 : isDemo ? 4 : 8,
   blackoutRecoverySeconds: enableSleepDebug ? 0.9 : 9,
   blackoutMinimumSeconds: enableSleepDebug ? 0.25 : 3.5,
-  initialAmount: readInitialSleepAmount(),
+  eyelidCloseSeconds: enableSleepDebug ? 0.18 : isDemo ? 2 : 1.05,
+  eyelidOpenSeconds: enableSleepDebug ? 0.18 : 1.05,
+  initialAmount: isDemo ? 0.35 : readInitialSleepAmount(),
 });
 
 app.innerHTML = `
@@ -142,6 +144,10 @@ app.innerHTML = `
     </div>
     <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : enableSleepDebug ? "sleep debug" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
+  </div>
+  <div class="eyelids" aria-hidden="true" data-phase="open">
+    <div class="eyelid eyelid--top"></div>
+    <div class="eyelid eyelid--bottom"></div>
   </div>
   <div class="blackout" aria-hidden="true">
     <span class="blackout__message">resting in the dark</span>
@@ -187,6 +193,7 @@ let mouseLookActive = false;
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
+const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
 const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
@@ -332,6 +339,9 @@ updateLookStatus();
 function updateSleepHud(state: SleepDebugState): void {
   if (sleepFill) sleepFill.style.width = `${Math.round(state.normalized * 100)}%`;
   if (sleepStatus) sleepStatus.textContent = state.message;
+  eyelidOverlay?.style.setProperty("--eyelid-cover", `${(state.eyelidAmount * 54).toFixed(2)}%`);
+  eyelidOverlay?.classList.toggle("eyelids--active", state.eyelidAmount > 0);
+  eyelidOverlay?.setAttribute("data-phase", state.eyelidPhase);
   blackoutOverlay?.classList.toggle("blackout--visible", state.blackout);
   blackoutOverlay?.setAttribute("aria-hidden", state.blackout ? "false" : "true");
 }
@@ -472,6 +482,7 @@ function animate(): void {
   const elapsed = clock.elapsedTime;
   const sleepBefore = sleep.getState();
   const movementIntent = hasMovementInput();
+  const wantsSleep = isDemo ? sleepBefore.amount < 1 : isSleepPressed();
   let explorationMotion = { horizontalSpeed: 0 };
 
   if (isDemo) prDemo.update(elapsed, delta);
@@ -480,8 +491,8 @@ function animate(): void {
   else explorationMotion = updateExploration(delta);
 
   const sleepState = sleep.update(delta, {
-    wantsSleep: !isDemo && isSleepPressed(),
-    moving: movementIntent || explorationMotion.horizontalSpeed > 0.15,
+    wantsSleep,
+    moving: isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15,
     grounded: isDemo || player.grounded,
   });
   updateSleepHud(sleepState);
