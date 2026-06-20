@@ -5,6 +5,8 @@ test.use({
   viewport: { width: 1280, height: 720 },
 });
 
+test.describe.configure({ mode: "serial" });
+
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Centauri Field Note 001")).toBeVisible();
@@ -107,6 +109,37 @@ test("isolation debug state rises outside populated biome patches", async ({ pag
   expect(nearState?.nearestBiomePatchDistance).toBeLessThan(24);
   expect(nearState?.isolationAmount).toBeLessThan(0.18);
   expect((farState?.isolationAmount ?? 0) - (nearState?.isolationAmount ?? 0)).toBeGreaterThan(0.45);
+});
+
+test("normal exploration can reach visible isolation in deterministic wilderness", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await expect(page.getByText("exploration mode")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getVisionState));
+
+  const spawnState = await page.evaluate(() => ({
+    player: window.__centauriDebug?.getPlayer(),
+    vision: window.__centauriDebug?.getVisionState(),
+  }));
+  expect(spawnState.player?.x).toBeCloseTo(0, 1);
+  expect(spawnState.player?.z).toBeCloseTo(24, 1);
+  expect(spawnState.vision?.nearestBiomePatchDistance).toBeLessThan(30);
+  expect(spawnState.vision?.targetIsolationAmount).toBe(0);
+
+  await page.evaluate(() => window.__centauriDebug?.setPlayer(360, 360));
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getVisionState();
+    return Boolean(state && state.nearestBiomePatchDistance > 100 && state.targetIsolationAmount > 0.5 && state.isolationAmount > 0.45);
+  });
+
+  const wildernessState = await page.evaluate(() => ({
+    player: window.__centauriDebug?.getPlayer(),
+    vision: window.__centauriDebug?.getVisionState(),
+  }));
+  expect(wildernessState.player?.x).toBeCloseTo(360, 1);
+  expect(wildernessState.player?.z).toBeCloseTo(360, 1);
+  expect(wildernessState.vision?.nearestBiomePatchDistance).toBeGreaterThan(100);
+  expect(wildernessState.vision?.targetIsolationAmount).toBeGreaterThan(0.5);
+  expect(wildernessState.vision?.isolationAmount).toBeGreaterThan(0.45);
 });
 
 test("isolation postprocess visibly changes the rendered frame", async ({ page }, testInfo) => {

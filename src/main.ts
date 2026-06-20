@@ -356,7 +356,7 @@ function moveToward(current: number, target: number, maxDelta: number): number {
 
 function isolationTargetForDistance(distance: number): number {
   if (!Number.isFinite(distance)) return 1;
-  return THREE.MathUtils.smoothstep(distance, 96, 176);
+  return THREE.MathUtils.smoothstep(distance, 70, 132);
 }
 
 function updateVisionState(delta: number): void {
