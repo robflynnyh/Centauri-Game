@@ -175,11 +175,15 @@ function makeTemple(): THREE.Group {
   addGlyphPanel(group, 1.58, 2.34, 0.72, 1.24, -0.14, faceMaterial);
   addGlyphPanel(group, 0.0, 2.48, 1.5, 0.38, 0, faceMaterial);
 
+  addRuinedColumn(group, -4.15, -1.95, 2.7, -0.18, stepMaterial, faceMaterial);
+  addRuinedColumn(group, 4.25, -1.68, 2.08, 0.24, wornStoneMaterial, faceMaterial);
+
   addBroadVine(group, -2.88, -0.52, 2.32, 4.9, 0.32, vineMaterial);
   addBroadVine(group, 1.9, -0.5, 2.18, 3.9, -0.28, vineMaterial);
 
   addSlab(group, -4.8, 2.1, 2.8, 0.44, 0.18, shadowStoneMaterial);
   addSlab(group, 4.85, 1.25, 2.1, -0.36, -0.16, wornStoneMaterial);
+  addSlab(group, -0.2, 3.35, 2.4, 0.04, 0.08, baseMaterial);
 
   group.userData = { innerGlow, gateGlow };
 
@@ -199,6 +203,31 @@ function addGateSegment(
   segment.position.set(0, 4.52, -1.0);
   segment.rotation.set(lean, 0, rotation);
   group.add(segment);
+}
+
+function addRuinedColumn(
+  group: THREE.Group,
+  x: number,
+  z: number,
+  height: number,
+  lean: number,
+  material: THREE.Material,
+  glyphMaterial: THREE.Material
+): void {
+  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.44, 0.62, height, 5), material);
+  column.position.set(x, 1.2 + height * 0.5, z);
+  column.rotation.set(lean * 0.2, 0.14, lean);
+  group.add(column);
+
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.46, 0.92), material);
+  cap.position.set(x + Math.sin(lean) * 0.32, 1.44 + height, z);
+  cap.rotation.set(lean * 0.14, 0.24, lean * 0.45);
+  group.add(cap);
+
+  const glyph = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.7, 0.5), glyphMaterial);
+  glyph.position.set(x, 1.65 + height * 0.38, z + 0.54);
+  glyph.rotation.y = 0.08;
+  group.add(glyph);
 }
 
 function addSlab(
