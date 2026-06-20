@@ -37,6 +37,7 @@ const dayMistColour = new THREE.Color(0xffc4ea);
 const dayMistAccentColour = new THREE.Color(0xbfeaff);
 const nightMistColour = new THREE.Color(0xa8c8ff);
 const nightMistAccentColour = new THREE.Color(0xd79cff);
+const mistCellGeometry = new THREE.BoxGeometry(1, 1, 1);
 
 export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, isDemo: boolean): MistSystem {
   const group = new THREE.Group();
@@ -164,17 +165,17 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
 }
 
 function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: number, isDemo: boolean): MistCell[] {
-  const cellCount = isDemo ? 10 : 7 + Math.floor(random() * 4);
+  const cellCount = isDemo ? 64 : 36 + Math.floor(random() * 20);
   const cells: MistCell[] = [];
 
   for (let i = 0; i < cellCount; i += 1) {
-    const along = cellCount === 1 ? 0 : i / (cellCount - 1) - 0.5;
-    const strand = Math.sin(i * 2.11 + random() * 0.8);
-    const localX = center.x + along * radius * (1.15 + random() * 0.32) + (random() - 0.5) * radius * 0.22;
-    const localZ = center.z + strand * radius * (0.18 + random() * 0.16) + (random() - 0.5) * radius * 0.28;
-    const localY = center.y + Math.sin((along + 0.5) * Math.PI) * radius * 0.16 + (random() - 0.5) * radius * 0.13;
+    const point = pointInMistVolume(random);
+    const localX = center.x + point.x * radius * 1.08;
+    const localZ = center.z + point.z * radius * 0.48;
+    const localY = center.y + point.y * radius * 0.32 + Math.max(0, 1 - Math.abs(point.x)) * radius * 0.08;
+    const cellSize = radius * (0.05 + random() * 0.045);
     const cell = new THREE.Mesh(
-      new THREE.BoxGeometry(1, 1, 1),
+      mistCellGeometry,
       new THREE.MeshBasicMaterial({
         color: dayMistColour,
         transparent: true,
@@ -184,7 +185,7 @@ function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: 
       })
     );
     cell.position.set(localX, localY, localZ);
-    cell.scale.set(radius * (0.24 + random() * 0.24), radius * (0.1 + random() * 0.12), radius * (0.18 + random() * 0.22));
+    cell.scale.set(cellSize * (1.2 + random() * 0.9), cellSize * (0.62 + random() * 0.5), cellSize * (0.95 + random() * 0.85));
     cell.rotation.set(random() * 0.18 - 0.09, random() * Math.PI * 2, random() * 0.14 - 0.07);
     cells.push({
       mesh: cell,
@@ -194,6 +195,18 @@ function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: 
   }
 
   return cells;
+}
+
+function pointInMistVolume(random: () => number): THREE.Vector3 {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const point = new THREE.Vector3(centerBiased(random), centerBiased(random), centerBiased(random));
+    if (point.x * point.x + point.y * point.y * 1.55 + point.z * point.z * 1.25 <= 1) return point;
+  }
+  return new THREE.Vector3(centerBiased(random) * 0.55, centerBiased(random) * 0.42, centerBiased(random) * 0.5);
+}
+
+function centerBiased(random: () => number): number {
+  return ((random() + random() + random()) / 3) * 2 - 1;
 }
 
 function createChunkRandom(chunkX: number, chunkZ: number): () => number {
@@ -221,7 +234,7 @@ function disposeMist(group: THREE.Group): void {
   group.traverse((child) => {
     const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
     if (!mesh.geometry) return;
-    mesh.geometry.dispose();
+    if (mesh.geometry !== mistCellGeometry) mesh.geometry.dispose();
     if (Array.isArray(mesh.material)) {
       mesh.material.forEach((material) => material.dispose());
     } else {
