@@ -4,11 +4,9 @@
 
 Added low drifting mist cloudlets as a bounded deterministic ambient layer, with sparse flat puffs that drift over the spherical terrain and shift between pale day colour and cooler night colour in the PR demo.
 
-Softened the mist after review by replacing overlapping geometric puffs with irregular low-resolution alpha-mask cloudlets and restoring depth testing so terrain and props occlude the effect.
+Reworked the mist after review into sparse semi-transparent voxel cloudlets, keeping natural depth testing so terrain and props occlude the effect while avoiding flat alpha-card construction.
 
 Anchored the softened mist patches in planet space by removing camera-facing billboard rotation and keeping their orientation coherent with local surface placement and drift direction.
-
-Gave the anchored mist a little stable thickness by changing each flat cloudlet into a small crossed-and-offset alpha-mask layer cluster, so it keeps shape from side angles without returning to camera-facing billboards.
 
 ## 2026-06-19
 

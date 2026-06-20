@@ -3,8 +3,14 @@ import { normalizePlanetCoords, placeObjectOnPlanet, surfaceDistanceBetweenLocal
 
 type HeightSampler = (x: number, z: number) => number;
 
+type MistCell = {
+  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
+  opacityWeight: number;
+  lightnessShift: number;
+};
+
 type MistPuff = {
-  layers: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>[];
+  cells: MistCell[];
   opacityWeight: number;
 };
 
@@ -118,11 +124,10 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
           new THREE.Euler(0, patch.driftAngle + Math.sin(elapsed * 0.07 + patch.phase) * 0.08, 0)
         );
 
-        patch.puffs.forEach(({ layers, opacityWeight }) => {
-          layers.forEach((layer) => {
-            const layerOpacity = (layer.userData.opacityWeight as number | undefined) ?? 1;
-            layer.material.color.copy(activeColour);
-            layer.material.opacity = distanceFade * patchPulse * opacityWeight * layerOpacity * THREE.MathUtils.lerp(0.66, 0.82, dayAmount);
+        patch.puffs.forEach(({ cells, opacityWeight }) => {
+          cells.forEach((cell) => {
+            cell.mesh.material.color.copy(activeColour).offsetHSL(0, -0.04, cell.lightnessShift);
+            cell.mesh.material.opacity = distanceFade * patchPulse * opacityWeight * cell.opacityWeight * THREE.MathUtils.lerp(0.5, 0.62, dayAmount);
           });
         });
       });
@@ -140,15 +145,9 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
     const angle = (i / puffCount) * Math.PI * 2 + random() * 0.42;
     const distance = Math.pow(random(), 0.72) * radius * 0.54;
     const center = new THREE.Vector3(Math.cos(angle) * distance, 0.45 + random() * 0.75, Math.sin(angle) * distance * 0.38);
-    const baseWidth = radius * (1.08 + random() * 0.62);
-    const baseHeight = radius * (0.24 + random() * 0.16);
-    const layers = [
-      makeMistLayer(random, center, baseWidth, baseHeight, 0, 0, 0, 1),
-      makeMistLayer(random, center, baseWidth * 0.9, baseHeight * 0.92, radius * 0.18, Math.PI * 0.44, 0.1, 0.78),
-      makeMistLayer(random, center, baseWidth * 0.74, baseHeight * 0.82, -radius * 0.14, -Math.PI * 0.34, -0.08, 0.58),
-    ];
-    layers.forEach((layer) => group.add(layer));
-    puffs.push({ layers, opacityWeight: isDemo ? 0.42 + random() * 0.14 : 0.26 + random() * 0.12 });
+    const cells = makeMistVoxelPuff(random, center, radius, isDemo);
+    cells.forEach((cell) => group.add(cell.mesh));
+    puffs.push({ cells, opacityWeight: isDemo ? 0.34 + random() * 0.1 : 0.22 + random() * 0.09 });
   }
 
   return {
@@ -164,35 +163,37 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
   };
 }
 
-function makeMistLayer(
-  random: () => number,
-  center: THREE.Vector3,
-  width: number,
-  height: number,
-  sideOffset: number,
-  crossAngle: number,
-  lift: number,
-  opacityWeight: number
-): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
-  const layer = new THREE.Mesh(
-    new THREE.PlaneGeometry(1, 1, 1, 1),
-    new THREE.MeshBasicMaterial({
-      color: dayMistColour,
-      map: makeMistTexture(random),
-      transparent: true,
-      opacity: 0,
-      depthTest: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    })
-  );
-  layer.position.set(center.x + Math.sin(crossAngle) * sideOffset, center.y + lift, center.z + Math.cos(crossAngle) * sideOffset);
-  layer.scale.set(width, height, 1);
-  layer.rotation.y = crossAngle + random() * 0.18 - 0.09;
-  layer.rotation.x = random() * 0.12 - 0.06;
-  layer.rotation.z = random() * 0.28 - 0.14;
-  layer.userData.opacityWeight = opacityWeight;
-  return layer;
+function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: number, isDemo: boolean): MistCell[] {
+  const cellCount = isDemo ? 10 : 7 + Math.floor(random() * 4);
+  const cells: MistCell[] = [];
+
+  for (let i = 0; i < cellCount; i += 1) {
+    const along = cellCount === 1 ? 0 : i / (cellCount - 1) - 0.5;
+    const strand = Math.sin(i * 2.11 + random() * 0.8);
+    const localX = center.x + along * radius * (1.15 + random() * 0.32) + (random() - 0.5) * radius * 0.22;
+    const localZ = center.z + strand * radius * (0.18 + random() * 0.16) + (random() - 0.5) * radius * 0.28;
+    const localY = center.y + Math.sin((along + 0.5) * Math.PI) * radius * 0.16 + (random() - 0.5) * radius * 0.13;
+    const cell = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshBasicMaterial({
+        color: dayMistColour,
+        transparent: true,
+        opacity: 0,
+        depthTest: true,
+        depthWrite: false,
+      })
+    );
+    cell.position.set(localX, localY, localZ);
+    cell.scale.set(radius * (0.24 + random() * 0.24), radius * (0.1 + random() * 0.12), radius * (0.18 + random() * 0.22));
+    cell.rotation.set(random() * 0.18 - 0.09, random() * Math.PI * 2, random() * 0.14 - 0.07);
+    cells.push({
+      mesh: cell,
+      opacityWeight: 0.62 + random() * 0.3,
+      lightnessShift: random() * 0.12 - 0.04,
+    });
+  }
+
+  return cells;
 }
 
 function createChunkRandom(chunkX: number, chunkZ: number): () => number {
@@ -214,56 +215,6 @@ function getDayAmount(elapsed: number, isDemo: boolean): number {
   const phase = (elapsed / cycleLength + 0.18) % 1;
   const daylightWave = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5;
   return THREE.MathUtils.smoothstep(daylightWave, 0.2, 0.82);
-}
-
-function makeMistTexture(random: () => number): THREE.CanvasTexture {
-  const width = 48;
-  const height = 18;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Missing mist texture canvas context");
-
-  const image = context.createImageData(width, height);
-  const blobs = Array.from({ length: 8 }, () => ({
-    x: width * (0.14 + random() * 0.72),
-    y: height * (0.32 + random() * 0.34),
-    radiusX: width * (0.12 + random() * 0.18),
-    radiusY: height * (0.2 + random() * 0.22),
-    strength: 0.46 + random() * 0.42,
-  }));
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const index = (y * width + x) * 4;
-      const edgeFadeX = THREE.MathUtils.smoothstep(x, 0, 6) * (1 - THREE.MathUtils.smoothstep(x, width - 7, width - 1));
-      const edgeFadeY = THREE.MathUtils.smoothstep(y, 0, 3) * (1 - THREE.MathUtils.smoothstep(y, height - 4, height - 1));
-      const noise = Math.sin(x * 1.71 + y * 2.37 + random() * 0.08) * 0.045;
-      let density = 0;
-
-      blobs.forEach((blob) => {
-        const dx = (x - blob.x) / blob.radiusX;
-        const dy = (y - blob.y) / blob.radiusY;
-        const falloff = Math.max(0, 1 - dx * dx - dy * dy);
-        density += falloff * falloff * blob.strength;
-      });
-
-      const alpha = THREE.MathUtils.clamp((density + noise - 0.08) * edgeFadeX * edgeFadeY, 0, 1);
-      image.data[index] = 255;
-      image.data[index + 1] = 255;
-      image.data[index + 2] = 255;
-      image.data[index + 3] = Math.round(alpha * 255);
-    }
-  }
-
-  context.putImageData(image, 0, 0);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  texture.generateMipmaps = false;
-  texture.needsUpdate = true;
-  return texture;
 }
 
 function disposeMist(group: THREE.Group): void {
