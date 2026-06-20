@@ -18,7 +18,7 @@ import {
   surfaceDistanceBetweenLocal,
 } from "./planet";
 import { createPixelRenderPipeline } from "./pixel-renderer";
-import { createSkySystem } from "./sky";
+import { createSkySystem, type SkyDebugState } from "./sky";
 import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
 import "./style.css";
 
@@ -74,6 +74,7 @@ declare global {
         fullInfluenceRadius: number;
       };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getSkyState: () => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -219,6 +220,7 @@ if (enableDebugTools) {
       influenceRadius: temple.influenceRadius,
       fullInfluenceRadius: temple.fullInfluenceRadius,
     }),
+    getSkyState: sky.getDebugState,
     getBeetleState: flyingBeetles.getState,
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
@@ -231,6 +233,7 @@ if (enableDebugTools) {
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
+      sky.update(clock.elapsedTime, player.localPosition);
     },
     attemptMove: (x: number, z: number) => {
       collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
@@ -393,7 +396,7 @@ function animate(): void {
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   flyingBeetles.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
-  sky.update(elapsed, temple.getInfluence(templeFocus, elapsed));
+  sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
