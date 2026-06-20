@@ -36,6 +36,27 @@ test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ pa
   }
 });
 
+test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
+  await page.goto("/?debug=beetle&test=collision");
+  await expect(page.getByText("beetle debug")).toBeVisible();
+  await page.waitForTimeout(500);
+
+  const debugState = await page.evaluate(() => {
+    if (!window.__centauriDebug) throw new Error("Missing Centauri debug state");
+    return {
+      player: window.__centauriDebug.getPlayer(),
+      beetles: window.__centauriDebug.getBeetleState(),
+    };
+  });
+
+  expect(debugState.player.x).toBeCloseTo(4.8, 1);
+  expect(debugState.player.z).toBeCloseTo(14.2, 1);
+  expect(debugState.beetles.total).toBe(8);
+  expect(debugState.beetles.visible).toBeGreaterThan(0);
+  expect(Number.isFinite(debugState.beetles.nearestObstacleClearance)).toBe(true);
+  expect(debugState.beetles.nearestObstacleClearance).toBeGreaterThan(0.2);
+});
+
 async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
   width: number;
   height: number;
