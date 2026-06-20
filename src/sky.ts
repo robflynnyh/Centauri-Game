@@ -1,10 +1,28 @@
 import * as THREE from "three";
+import { normalizePlanetCoords, planetFrameAt, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
+
+export type SkyDebugState = {
+  longitude: number;
+  latitude: number;
+  sunDot: number;
+  dayAmount: number;
+  twilightAmount: number;
+  regionA: number;
+  regionB: number;
+  horizonTint: number;
+  celestialYaw: number;
+  ringTilt: number;
+  ringSpinOffset: number;
+  meteorYaw: number;
+  dayHorizonHex: number;
+  nightHorizonHex: number;
+};
 
 export function createSkySystem(
   scene: THREE.Scene,
   camera: THREE.Camera,
   isDemo: boolean
-): { update: (elapsed: number, templeInfluence?: number) => void } {
+): { update: (elapsed: number, location?: LocalPlanetPoint, templeInfluence?: number) => void; getDebugState: () => SkyDebugState } {
   const dayBackgroundColour = new THREE.Color(0x5d91ff);
   const nightBackgroundColour = new THREE.Color(0x171044);
   const dayFogColour = new THREE.Color(0x74e7ff);
@@ -21,6 +39,7 @@ export function createSkySystem(
   const worldFog = new THREE.FogExp2(activeFogColour.getHex(), 0.02);
   scene.background = dayBackgroundColour.clone();
   scene.fog = worldFog;
+  let locationState = getSkyLocationState({ x: 0, z: 24 }, 0, isDemo);
 
   const hemi = new THREE.HemisphereLight(0xf2e9c8, 0x4e4671, 0.35);
   scene.add(hemi);
@@ -66,42 +85,125 @@ export function createSkySystem(
   skyAnchor.add(meteorField.group);
 
   return {
-    update: (elapsed, templeInfluence = 0) => {
+    update: (elapsed, location = { x: 0, z: 24 }, templeInfluence = 0) => {
+      locationState = getSkyLocationState(location, elapsed, isDemo);
       skyAnchor.position.copy(camera.position);
-      const dayAmount = getDayAmount(elapsed, isDemo);
+      const dayAmount = locationState.dayAmount;
       const nightAmount = 1 - THREE.MathUtils.smoothstep(dayAmount, 0.08, 0.36);
       const phaseAmount = THREE.MathUtils.clamp(templeInfluence, 0, 0.72);
       skyUniforms.dayAmount.value = THREE.MathUtils.clamp(dayAmount + phaseAmount * 0.16, 0, 1);
+
+      updateSkyPalette(skyUniforms, locationState);
       lerpSkyUniform(skyUniforms.dayHorizonColour.value, new THREE.Color(0xff9fd0), templeHorizonColour, phaseAmount);
       lerpSkyUniform(skyUniforms.dayMiddleColour.value, new THREE.Color(0x78d2ff), templeMiddleColour, phaseAmount);
       lerpSkyUniform(skyUniforms.dayUpperColour.value, new THREE.Color(0x6393ff), templeUpperColour, phaseAmount);
       lerpSkyUniform(skyUniforms.dayZenithColour.value, new THREE.Color(0x705ed8), templeZenithColour, phaseAmount);
 
-      (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
+      const locationDayBackground = dayBackgroundColour.clone().lerp(new THREE.Color(0x67ffc1), locationState.horizonTint * 0.14);
+      const locationNightBackground = nightBackgroundColour.clone().lerp(new THREE.Color(0x2a2464), locationState.regionB * 0.22);
+      (scene.background as THREE.Color).copy(locationNightBackground).lerp(locationDayBackground, dayAmount);
       (scene.background as THREE.Color).lerp(templeBackgroundColour, phaseAmount * 0.38);
       const fogPulse = Math.sin(elapsed * 0.16) * 0.5 + 0.5;
-      const dayFog = dayFogColour.clone().lerp(dayFogAccentColour, fogPulse * 0.32);
-      const nightFog = nightFogColour.clone().lerp(nightFogAccentColour, fogPulse * 0.42);
+      const dayFog = dayFogColour
+        .clone()
+        .lerp(new THREE.Color(0x9bffd5), locationState.horizonTint * 0.22)
+        .lerp(dayFogAccentColour, fogPulse * 0.32);
+      const nightFog = nightFogColour
+        .clone()
+        .lerp(new THREE.Color(0x5c2b7b), locationState.regionA * 0.2)
+        .lerp(nightFogAccentColour, fogPulse * 0.42);
       worldFog.color.copy(nightFog).lerp(dayFog, dayAmount);
       worldFog.color.lerp(templeFogColour, phaseAmount * 0.46);
-      worldFog.density = THREE.MathUtils.lerp(0.031, 0.022, dayAmount) + fogPulse * 0.0025;
+      worldFog.density =
+        THREE.MathUtils.lerp(0.031, 0.022, dayAmount) +
+        locationState.twilightAmount * 0.003 +
+        fogPulse * 0.0025;
 
       hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
       sun.intensity = THREE.MathUtils.lerp(0.04, 0.22, dayAmount);
       moon.intensity = THREE.MathUtils.lerp(0.18, 0.08, dayAmount);
 
-      skyRing.rotation.z = elapsed * 0.035;
+      skyRing.rotation.x = Math.PI / 2.7 + locationState.ringTilt;
+      skyRing.rotation.y = locationState.latitude * 0.05;
+      skyRing.rotation.z = elapsed * 0.035 + locationState.ringSpinOffset;
+      celestialGroup.rotation.y = locationState.celestialYaw;
+      celestialGroup.position.y = THREE.MathUtils.lerp(-4.5, 4.5, locationState.regionB);
+      meteorField.group.rotation.y = locationState.meteorYaw;
       celestialGroup.children.forEach((child, index) => {
+        const prominence = 0.88 + (Math.sin(locationState.longitude * 1.7 + locationState.latitude * 1.1 + index * 2.13) * 0.5 + 0.5) * 0.26;
+        child.scale.setScalar(prominence);
         child.lookAt(camera.position);
         child.rotation.z += Math.sin(elapsed * 0.12 + index) * 0.0008;
       });
       meteorField.update(elapsed, nightAmount);
     },
+    getDebugState: () => ({ ...locationState }),
   };
 }
 
 function lerpSkyUniform(target: THREE.Color, normal: THREE.Color, phased: THREE.Color, amount: number): void {
   target.copy(normal).lerp(phased, amount);
+}
+
+function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo: boolean): SkyDebugState {
+  const normalized = normalizePlanetCoords(location.x, location.z);
+  const longitude = normalized.x / PLANET_RADIUS;
+  const latitude = normalized.z / PLANET_RADIUS;
+  const sunState = getLocationDayState(normalized, elapsed, isDemo);
+  const regionA = Math.sin(longitude * 1.35 + latitude * 0.9) * 0.5 + 0.5;
+  const regionB = Math.sin(longitude * 0.7 - latitude * 1.6 + Math.cos(longitude * 1.1)) * 0.5 + 0.5;
+  const horizonTint = Math.cos(latitude * 2.2 - longitude * 0.45) * 0.5 + 0.5;
+
+  const dayHorizon = new THREE.Color(0xff9fd0).lerp(new THREE.Color(0xffc67a), horizonTint * 0.34);
+  const nightHorizon = new THREE.Color(0x7d55b4).lerp(new THREE.Color(0x4bc4ce), regionB * 0.26);
+
+  return {
+    longitude,
+    latitude,
+    sunDot: sunState.sunDot,
+    dayAmount: sunState.dayAmount,
+    twilightAmount: sunState.twilightAmount,
+    regionA,
+    regionB,
+    horizonTint,
+    celestialYaw: longitude * 0.07 + THREE.MathUtils.lerp(-0.34, 0.34, regionA),
+    ringTilt: latitude * 0.06 + THREE.MathUtils.lerp(-0.14, 0.14, horizonTint),
+    ringSpinOffset: THREE.MathUtils.lerp(-0.55, 0.55, regionB),
+    meteorYaw: THREE.MathUtils.lerp(-0.24, 0.24, regionA),
+    dayHorizonHex: dayHorizon.getHex(),
+    nightHorizonHex: nightHorizon.getHex(),
+  };
+}
+
+function getLocationDayState(
+  location: LocalPlanetPoint,
+  elapsed: number,
+  isDemo: boolean
+): { sunDot: number; dayAmount: number; twilightAmount: number } {
+  const surfaceUp = planetFrameAt(location.x, location.z).up;
+  const sunDirection = getSunDirection(elapsed, isDemo);
+  const sunDot = THREE.MathUtils.clamp(surfaceUp.dot(sunDirection), -1, 1);
+  const dayAmount = THREE.MathUtils.smoothstep(sunDot, -0.16, 0.28);
+  const twilightAmount = 1 - THREE.MathUtils.smoothstep(Math.abs(sunDot), 0.04, 0.28);
+  return { sunDot, dayAmount, twilightAmount };
+}
+
+function getSunDirection(elapsed: number, isDemo: boolean): THREE.Vector3 {
+  const cycleLength = isDemo ? 18 : 96;
+  const phase = (elapsed / cycleLength + 0.18) % 1;
+  const angle = phase * Math.PI * 2;
+  return new THREE.Vector3(Math.sin(angle), Math.cos(angle), Math.sin(angle * 0.37) * 0.22).normalize();
+}
+
+function updateSkyPalette(skyUniforms: Record<string, { value: number | THREE.Color }>, state: SkyDebugState): void {
+  ((skyUniforms.dayHorizonColour.value as THREE.Color)).set(0xff9fd0).lerp(new THREE.Color(0xffc67a), state.horizonTint * 0.34);
+  ((skyUniforms.dayMiddleColour.value as THREE.Color)).set(0x78d2ff).lerp(new THREE.Color(0x90ffca), state.regionA * 0.2);
+  ((skyUniforms.dayUpperColour.value as THREE.Color)).set(0x6393ff).lerp(new THREE.Color(0x8f75ff), state.regionB * 0.16);
+  ((skyUniforms.dayZenithColour.value as THREE.Color)).set(0x705ed8).lerp(new THREE.Color(0x4fd0ff), state.regionA * 0.14);
+  ((skyUniforms.nightHorizonColour.value as THREE.Color)).set(0x7d55b4).lerp(new THREE.Color(0x4bc4ce), state.regionB * 0.26);
+  ((skyUniforms.nightMiddleColour.value as THREE.Color)).set(0x2d3f9b).lerp(new THREE.Color(0x572e88), state.horizonTint * 0.18);
+  ((skyUniforms.nightUpperColour.value as THREE.Color)).set(0x1d236f).lerp(new THREE.Color(0x203c72), state.regionA * 0.16);
+  ((skyUniforms.nightZenithColour.value as THREE.Color)).set(0x120d35).lerp(new THREE.Color(0x231247), state.regionB * 0.2);
 }
 
 function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color }>): THREE.Mesh {
@@ -147,13 +249,6 @@ function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color }
   });
 
   return new THREE.Mesh(geometry, material);
-}
-
-function getDayAmount(elapsed: number, isDemo: boolean): number {
-  const cycleLength = isDemo ? 18 : 96;
-  const phase = (elapsed / cycleLength + 0.18) % 1;
-  const daylightWave = Math.sin(phase * Math.PI * 2) * 0.5 + 0.5;
-  return THREE.MathUtils.smoothstep(daylightWave, 0.2, 0.82);
 }
 
 type CelestialBody = {

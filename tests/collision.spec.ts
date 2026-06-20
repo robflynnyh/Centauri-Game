@@ -123,6 +123,33 @@ test("wraps straight walks around the spherical planet", async ({ page }) => {
   expect(result.playerIsAbovePlanet).toBe(true);
 });
 
+test("derives reversible sky variation from planet location", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+
+    debug.setPlayer(0, 24);
+    const start = debug.getSkyState();
+    debug.setPlayer(1600, 1400);
+    const distant = debug.getSkyState();
+    debug.setPlayer(0, 24);
+    const returned = debug.getSkyState();
+
+    return { start, distant, returned };
+  });
+
+  expect(Math.abs(result.distant.celestialYaw - result.start.celestialYaw)).toBeGreaterThan(0.08);
+  expect(Math.abs(result.distant.ringSpinOffset - result.start.ringSpinOffset)).toBeGreaterThan(0.08);
+  expect(result.distant.dayHorizonHex).not.toBe(result.start.dayHorizonHex);
+  expect(result.returned.celestialYaw).toBeCloseTo(result.start.celestialYaw, 7);
+  expect(result.returned.ringTilt).toBeCloseTo(result.start.ringTilt, 7);
+  expect(result.returned.dayHorizonHex).toBe(result.start.dayHorizonHex);
+  expect(result.returned.nightHorizonHex).toBe(result.start.nightHorizonHex);
+});
+
 test("keeps chunked spherical terrain under the player beyond the starting field", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
