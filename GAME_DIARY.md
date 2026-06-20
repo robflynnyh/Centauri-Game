@@ -115,3 +115,7 @@ Added a restrained isolation-vision postprocess that fades in when the player is
 Retuned the isolation-vision pass after review so the doubled horizon and colour phase are plainly visible in debug captures and the PR demo, then added a rendered-frame comparison test for the postprocess.
 
 Retuned the isolation trigger for normal exploration density so deterministic wilderness reached from non-demo debug play can fade into the visible effect while the starter biome remains clear.
+
+Added sparse wilderness seaweed patches as flat green reactive blade sprites that only spawn away from dense biome clusters on flatter ground, with nearby player movement freezing their gentle shimmer and a PR-demo close-up for review.
+
+Retuned the wilderness seaweed after review so each flat blade has an organic static bend even when frozen, and suitable sparse areas receive a few more patches and blades without relaxing biome or slope constraints.

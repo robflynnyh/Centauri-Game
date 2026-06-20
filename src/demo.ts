@@ -117,6 +117,40 @@ export function createPrDemoController(
         return;
       }
 
+      if (elapsed < 18.2) {
+        const focus = { x: 25.0, z: -614.0 };
+        const x = 44 + Math.sin(elapsed * 0.5) * 3;
+        const z = -593 + Math.cos(elapsed * 0.45) * 3;
+        onWalk?.(new THREE.Vector3(x, 0, z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 5.6,
+          focus.x,
+          focus.z,
+          heightAt(focus.x, focus.z) + 1.3
+        );
+        return;
+      }
+
+      if (elapsed < 20.0) {
+        const focus = { x: 25.0, z: -614.0 };
+        const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
+        const z = -607 + Math.cos(elapsed * 0.48) * 1.2;
+        onWalk?.(new THREE.Vector3(x, 0, z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 3.6,
+          focus.x,
+          focus.z,
+          heightAt(focus.x, focus.z) + 1.2
+        );
+        return;
+      }
+
       const x = -128 + Math.sin(elapsed * 0.34) * 9;
       const z = -464 + Math.cos(elapsed * 0.29) * 7;
       onWalk?.(new THREE.Vector3(x, 0, z), 0);
