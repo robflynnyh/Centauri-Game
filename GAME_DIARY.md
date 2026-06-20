@@ -6,6 +6,8 @@ Added low drifting mist cloudlets as a bounded deterministic ambient layer, with
 
 Softened the mist after review by replacing overlapping geometric puffs with irregular low-resolution alpha-mask cloudlets and restoring depth testing so terrain and props occlude the effect.
 
+Anchored the softened mist patches in planet space by removing camera-facing billboard rotation and keeping their orientation coherent with local surface placement and drift direction.
+
 ## 2026-06-19
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.

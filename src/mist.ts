@@ -32,7 +32,7 @@ const dayMistAccentColour = new THREE.Color(0xbfeaff);
 const nightMistColour = new THREE.Color(0xa8c8ff);
 const nightMistAccentColour = new THREE.Color(0xd79cff);
 
-export function createMistSystem(scene: THREE.Scene, camera: THREE.Camera, heightAt: HeightSampler, isDemo: boolean): MistSystem {
+export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, isDemo: boolean): MistSystem {
   const group = new THREE.Group();
   group.name = "drifting-low-mist";
   scene.add(group);
@@ -117,7 +117,6 @@ export function createMistSystem(scene: THREE.Scene, camera: THREE.Camera, heigh
           ground + patch.altitude + Math.sin(elapsed * 0.27 + patch.phase) * 0.16,
           new THREE.Euler(0, patch.driftAngle + Math.sin(elapsed * 0.07 + patch.phase) * 0.08, 0)
         );
-        patch.group.lookAt(camera.position);
 
         patch.puffs.forEach(({ mesh, opacityWeight }) => {
           mesh.material.color.copy(activeColour);
@@ -153,6 +152,7 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
     );
     mesh.position.set(Math.cos(angle) * distance, 0.45 + random() * 0.75, Math.sin(angle) * distance * 0.38);
     mesh.scale.set(radius * (1.15 + random() * 0.72), radius * (0.28 + random() * 0.16), 1);
+    mesh.rotation.y = random() * 0.84 - 0.42;
     mesh.rotation.z = random() * 0.38 - 0.19;
     group.add(mesh);
     puffs.push({ mesh, opacityWeight: isDemo ? 0.48 + random() * 0.16 : 0.3 + random() * 0.14 });

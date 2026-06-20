@@ -144,7 +144,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
-const mist = createMistSystem(scene, camera, heightAt, isDemo);
+const mist = createMistSystem(scene, heightAt, isDemo);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
