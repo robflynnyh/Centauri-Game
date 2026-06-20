@@ -94,10 +94,10 @@ export function createSkySystem(
       skyUniforms.dayAmount.value = THREE.MathUtils.clamp(dayAmount + phaseAmount * 0.16, 0, 1);
 
       updateSkyPalette(skyUniforms, locationState);
-      lerpSkyUniform(skyUniforms.dayHorizonColour.value, new THREE.Color(0xff9fd0), templeHorizonColour, phaseAmount);
-      lerpSkyUniform(skyUniforms.dayMiddleColour.value, new THREE.Color(0x78d2ff), templeMiddleColour, phaseAmount);
-      lerpSkyUniform(skyUniforms.dayUpperColour.value, new THREE.Color(0x6393ff), templeUpperColour, phaseAmount);
-      lerpSkyUniform(skyUniforms.dayZenithColour.value, new THREE.Color(0x705ed8), templeZenithColour, phaseAmount);
+      phaseSkyUniform(skyUniforms.dayHorizonColour.value, templeHorizonColour, phaseAmount);
+      phaseSkyUniform(skyUniforms.dayMiddleColour.value, templeMiddleColour, phaseAmount);
+      phaseSkyUniform(skyUniforms.dayUpperColour.value, templeUpperColour, phaseAmount);
+      phaseSkyUniform(skyUniforms.dayZenithColour.value, templeZenithColour, phaseAmount);
 
       const locationDayBackground = dayBackgroundColour.clone().lerp(new THREE.Color(0x67ffc1), locationState.horizonTint * 0.14);
       const locationNightBackground = nightBackgroundColour.clone().lerp(new THREE.Color(0x2a2464), locationState.regionB * 0.22);
@@ -141,8 +141,8 @@ export function createSkySystem(
   };
 }
 
-function lerpSkyUniform(target: THREE.Color, normal: THREE.Color, phased: THREE.Color, amount: number): void {
-  target.copy(normal).lerp(phased, amount);
+function phaseSkyUniform(target: THREE.Color, phased: THREE.Color, amount: number): void {
+  target.lerp(phased, amount);
 }
 
 function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo: boolean): SkyDebugState {
