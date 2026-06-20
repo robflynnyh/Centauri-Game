@@ -65,6 +65,12 @@ declare global {
         generatedObstacles: number;
         generatedReactiveFlora: number;
       };
+      getVisionState: () => {
+        isolationAmount: number;
+        targetIsolationAmount: number;
+        nearestBiomePatchDistance: number;
+      };
+      setIsolationOverride: (amount: number | null) => void;
       getTempleState: () => {
         x: number;
         z: number;
@@ -93,7 +99,8 @@ const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
 const enableCollisionDebug = params.get("test") === "collision";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug;
+const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
+const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || enableIsolationDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -103,6 +110,15 @@ const braking = 24;
 const gravity = 18;
 const jumpImpulse = 7.2;
 const mouseLookSensitivity = 0.0024;
+const hudBadgeText = isDemo
+  ? "PR demo mode"
+  : enableTempleDebug
+    ? "temple debug"
+    : isBeetleDebug
+      ? "beetle debug"
+      : enableIsolationDebug
+        ? "isolation debug"
+        : "exploration mode";
 
 app.innerHTML = `
   <div class="hud">
@@ -110,7 +126,7 @@ app.innerHTML = `
       <h1>Centauri Field Note 001</h1>
       <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
-    <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
+    <div class="hud__badge">${hudBadgeText}</div>
     <div class="hud__look" aria-live="polite"></div>
   </div>
 `;
@@ -133,7 +149,9 @@ const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
-    : new THREE.Vector3(0, 0, 24);
+    : enableIsolationDebug
+      ? new THREE.Vector3(-128, 0, -464)
+      : new THREE.Vector3(0, 0, 24);
 const player = {
   yaw: 0,
   pitch: -0.12,
@@ -173,6 +191,12 @@ const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
+const visionState = {
+  isolationAmount: 0,
+  targetIsolationAmount: 0,
+  nearestBiomePatchDistance: 0,
+};
+let isolationOverrideAmount: number | null = null;
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
@@ -212,6 +236,18 @@ if (enableDebugTools) {
     }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
+    getVisionState: () => ({ ...visionState }),
+    setIsolationOverride: (amount: number | null) => {
+      if (amount === null || !Number.isFinite(amount)) {
+        isolationOverrideAmount = null;
+        return;
+      }
+
+      const clamped = THREE.MathUtils.clamp(amount, 0, 1);
+      isolationOverrideAmount = clamped;
+      visionState.targetIsolationAmount = clamped;
+      visionState.isolationAmount = clamped;
+    },
     getTempleState: () => ({
       x: temple.position.x,
       z: temple.position.z,
@@ -320,6 +356,20 @@ function moveToward(current: number, target: number, maxDelta: number): number {
   return current + Math.sign(target - current) * maxDelta;
 }
 
+function isolationTargetForDistance(distance: number): number {
+  if (!Number.isFinite(distance)) return 1;
+  return THREE.MathUtils.smoothstep(distance, 70, 132);
+}
+
+function updateVisionState(delta: number): void {
+  const natureState = getNatureState();
+  const targetIsolationAmount = isolationOverrideAmount ?? isolationTargetForDistance(natureState.nearestBiomePatchDistance);
+  const fade = 1 - Math.exp(-delta * 0.92);
+  visionState.targetIsolationAmount = targetIsolationAmount;
+  visionState.nearestBiomePatchDistance = natureState.nearestBiomePatchDistance;
+  visionState.isolationAmount = THREE.MathUtils.lerp(visionState.isolationAmount, targetIsolationAmount, fade);
+}
+
 function playerSurfaceAltitude(): number {
   return heightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight + player.verticalOffset;
 }
@@ -400,9 +450,13 @@ function animate(): void {
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
+  updateVisionState(delta);
   mist.update(elapsed, floraFocus);
 
-  pixelRenderer.render(scene, camera);
+  pixelRenderer.render(scene, camera, {
+    elapsed,
+    isolationAmount: visionState.isolationAmount,
+  });
   requestAnimationFrame(animate);
 }
 
