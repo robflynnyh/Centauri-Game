@@ -9,7 +9,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Centauri Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(9_000);
+  await page.waitForTimeout(19_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
@@ -82,6 +82,31 @@ test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
   expect(debugState.beetles.visible).toBeGreaterThan(0);
   expect(Number.isFinite(debugState.beetles.nearestObstacleClearance)).toBe(true);
   expect(debugState.beetles.nearestObstacleClearance).toBeGreaterThan(0.2);
+});
+
+test("isolation debug state rises outside populated biome patches", async ({ page }) => {
+  await page.goto("/?test=isolation");
+  await expect(page.getByText("isolation debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getVisionState));
+
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getVisionState();
+    return Boolean(state && state.nearestBiomePatchDistance > 150 && state.isolationAmount > 0.65);
+  });
+  const farState = await page.evaluate(() => window.__centauriDebug?.getVisionState());
+
+  await page.evaluate(() => window.__centauriDebug?.setPlayer(8, 18));
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getVisionState();
+    return Boolean(state && state.nearestBiomePatchDistance < 24 && state.isolationAmount < 0.18);
+  });
+  const nearState = await page.evaluate(() => window.__centauriDebug?.getVisionState());
+
+  expect(farState?.nearestBiomePatchDistance).toBeGreaterThan(150);
+  expect(farState?.isolationAmount).toBeGreaterThan(0.65);
+  expect(nearState?.nearestBiomePatchDistance).toBeLessThan(24);
+  expect(nearState?.isolationAmount).toBeLessThan(0.18);
+  expect((farState?.isolationAmount ?? 0) - (nearState?.isolationAmount ?? 0)).toBeGreaterThan(0.45);
 });
 
 async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
