@@ -6,6 +6,8 @@ Added rare deterministic flying beetles as small ambient wildlife, with gentle w
 
 Added `?debug=beetle` as a focused spawn route near the starter beetle so the rare wildlife can be inspected without searching the planet.
 
+Added gentle beetle obstacle avoidance that steers and lifts their flight away from solid trees and rocks, plus a debug smoke check for visible beetle clearance.
+
 ## 2026-06-19
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.

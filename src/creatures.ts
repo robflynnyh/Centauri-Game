@@ -2,6 +2,11 @@ import * as THREE from "three";
 import { placeObjectOnPlanet, surfaceDistanceBetweenLocal, type LocalPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
+type SolidObstacle = {
+  x: number;
+  z: number;
+  radius: number;
+};
 
 type Creature = {
   root: THREE.Group;
@@ -23,6 +28,8 @@ type Beetle = {
   speed: number;
   phase: number;
   wobble: number;
+  localPosition: LocalPlanetPoint;
+  nearestObstacleClearance: number;
 };
 
 const creatureSpecs = [
@@ -109,8 +116,13 @@ export function createAlienWaterCreatures(
 
 export function createRareFlyingBeetles(
   scene: THREE.Scene,
-  heightAt: HeightSampler
-): { beetleGroup: THREE.Group; update: (elapsed: number, focus: LocalPlanetPoint) => void } {
+  heightAt: HeightSampler,
+  obstacles: SolidObstacle[] = []
+): {
+  beetleGroup: THREE.Group;
+  update: (elapsed: number, focus: LocalPlanetPoint) => void;
+  getState: () => { total: number; visible: number; nearestObstacleClearance: number };
+} {
   const beetleGroup = new THREE.Group();
   beetleGroup.name = "rare-flying-beetles";
   scene.add(beetleGroup);
@@ -129,6 +141,8 @@ export function createRareFlyingBeetles(
       speed: spec.speed,
       phase: spec.phase,
       wobble: spec.wobble,
+      localPosition: { x: spec.x, z: spec.z },
+      nearestObstacleClearance: Number.POSITIVE_INFINITY,
     } satisfies Beetle;
   });
 
@@ -145,18 +159,20 @@ export function createRareFlyingBeetles(
         beetle.root.visible = true;
         const t = elapsed * beetle.speed + beetle.phase;
         const nextT = t + 0.08;
-        const current = beetlePosition(beetle, t);
-        const next = beetlePosition(beetle, nextT);
+        const current = steerBeetleAroundObstacles(beetlePosition(beetle, t), obstacles, t + beetle.wobble);
+        const next = steerBeetleAroundObstacles(beetlePosition(beetle, nextT), obstacles, nextT + beetle.wobble);
         const heading = Math.atan2(next.x - current.x, next.z - current.z);
         const wingBeat = Math.sin(elapsed * 24 + index * 0.8);
         const roll = Math.sin(t * 1.7 + beetle.wobble) * 0.22;
         const bob = Math.sin(t * 2.4 + beetle.wobble) * 0.28;
+        beetle.localPosition = current;
+        beetle.nearestObstacleClearance = current.nearestObstacleClearance;
 
         placeObjectOnPlanet(
           beetle.root,
           current.x,
           current.z,
-          heightAt(current.x, current.z) + beetle.altitude + bob,
+          heightAt(current.x, current.z) + beetle.altitude + bob + current.altitudeLift,
           new THREE.Euler(Math.sin(t * 1.3) * 0.08, heading, roll)
         );
         beetle.wings.forEach((wing, wingIndex) => {
@@ -164,6 +180,14 @@ export function createRareFlyingBeetles(
         });
       });
     },
+    getState: () => ({
+      total: beetles.length,
+      visible: beetles.filter((beetle) => beetle.root.visible).length,
+      nearestObstacleClearance: beetles.reduce(
+        (nearest, beetle) => (beetle.root.visible ? Math.min(nearest, beetle.nearestObstacleClearance) : nearest),
+        Number.POSITIVE_INFINITY
+      ),
+    }),
   };
 }
 
@@ -241,6 +265,54 @@ function beetlePosition(beetle: Beetle, t: number): LocalPlanetPoint {
   return {
     x: beetle.anchor.x + Math.sin(t) * beetle.radius + Math.sin(t * 2.3 + beetle.wobble) * beetle.radius * 0.28,
     z: beetle.anchor.z + Math.cos(t * 0.86 + beetle.wobble) * beetle.radius * 0.72 + Math.sin(t * 1.7) * beetle.radius * 0.18,
+  };
+}
+
+function steerBeetleAroundObstacles(
+  point: LocalPlanetPoint,
+  obstacles: SolidObstacle[],
+  fallbackAngle: number
+): LocalPlanetPoint & { altitudeLift: number; nearestObstacleClearance: number } {
+  let pushX = 0;
+  let pushZ = 0;
+  let altitudeLift = 0;
+  let nearestObstacleClearance = Number.POSITIVE_INFINITY;
+
+  obstacles.forEach((obstacle) => {
+    const dx = point.x - obstacle.x;
+    const dz = point.z - obstacle.z;
+    const distance = Math.hypot(dx, dz);
+    const clearance = distance - obstacle.radius;
+    nearestObstacleClearance = Math.min(nearestObstacleClearance, clearance);
+    const avoidRadius = obstacle.radius + 2.35;
+    if (distance >= avoidRadius) return;
+
+    const fallbackX = Math.cos(fallbackAngle);
+    const fallbackZ = Math.sin(fallbackAngle);
+    const awayX = distance > 0.001 ? dx / distance : fallbackX;
+    const awayZ = distance > 0.001 ? dz / distance : fallbackZ;
+    const strength = 1 - THREE.MathUtils.smoothstep(distance, obstacle.radius + 0.45, avoidRadius);
+    pushX += awayX * strength * (avoidRadius - distance) * 0.86;
+    pushZ += awayZ * strength * (avoidRadius - distance) * 0.86;
+    altitudeLift = Math.max(altitudeLift, strength * 0.95);
+  });
+
+  const steered = {
+    x: point.x + pushX,
+    z: point.z + pushZ,
+  };
+
+  if (pushX !== 0 || pushZ !== 0) {
+    nearestObstacleClearance = obstacles.reduce((nearest, obstacle) => {
+      const distance = Math.hypot(steered.x - obstacle.x, steered.z - obstacle.z);
+      return Math.min(nearest, distance - obstacle.radius);
+    }, Number.POSITIVE_INFINITY);
+  }
+
+  return {
+    ...steered,
+    altitudeLift,
+    nearestObstacleClearance,
   };
 }
 

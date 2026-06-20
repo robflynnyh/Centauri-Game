@@ -53,6 +53,8 @@ test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
   expect(debugState.player.z).toBeCloseTo(14.2, 1);
   expect(debugState.beetles.total).toBe(8);
   expect(debugState.beetles.visible).toBeGreaterThan(0);
+  expect(Number.isFinite(debugState.beetles.nearestObstacleClearance)).toBe(true);
+  expect(debugState.beetles.nearestObstacleClearance).toBeGreaterThan(0.2);
 });
 
 async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
