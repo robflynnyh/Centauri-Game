@@ -4,6 +4,7 @@ import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures"
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
 import { createTempleLandmark } from "./landmarks";
+import { createMistSystem } from "./mist";
 import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
@@ -154,6 +155,7 @@ const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
 const terrain = createTerrainSystem();
+const mist = createMistSystem(scene, heightAt, isDemo);
 
 scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
@@ -395,6 +397,7 @@ function animate(): void {
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
+  mist.update(elapsed, floraFocus);
 
   pixelRenderer.render(scene, camera);
   requestAnimationFrame(animate);
