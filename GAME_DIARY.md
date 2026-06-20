@@ -8,6 +8,8 @@ Reworked the mist after review into sparse semi-transparent voxel cloudlets, kee
 
 Retuned the voxel mist from a few large cuboids into many smaller cells sampled from a simple seeded density/noise volume, so the cloud reads as granular low-res mist instead of chunky blocks.
 
+Changed the voxel mist cells from translucent glassy cubes to grid-quantized matte pastel chunks, making each patch read as one pixel-cloud mass with small block details.
+
 Anchored the softened mist patches in planet space by removing camera-facing billboard rotation and keeping their orientation coherent with local surface placement and drift direction.
 
 ## 2026-06-19

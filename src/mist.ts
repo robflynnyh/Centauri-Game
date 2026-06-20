@@ -5,13 +5,12 @@ type HeightSampler = (x: number, z: number) => number;
 
 type MistCell = {
   mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
-  opacityWeight: number;
   lightnessShift: number;
 };
 
 type MistPuff = {
   cells: MistCell[];
-  opacityWeight: number;
+  toneWeight: number;
 };
 
 type MistPatch = {
@@ -125,10 +124,10 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
           new THREE.Euler(0, patch.driftAngle + Math.sin(elapsed * 0.07 + patch.phase) * 0.08, 0)
         );
 
-        patch.puffs.forEach(({ cells, opacityWeight }) => {
+        patch.puffs.forEach(({ cells, toneWeight }) => {
           cells.forEach((cell) => {
-            cell.mesh.material.color.copy(activeColour).offsetHSL(0, -0.04, cell.lightnessShift);
-            cell.mesh.material.opacity = distanceFade * patchPulse * opacityWeight * cell.opacityWeight * THREE.MathUtils.lerp(0.5, 0.62, dayAmount);
+            cell.mesh.material.color.copy(activeColour).offsetHSL(0, -0.16, cell.lightnessShift + toneWeight * 0.04);
+            cell.mesh.visible = distanceFade * patchPulse > 0.08;
           });
         });
       });
@@ -148,7 +147,7 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
     const center = new THREE.Vector3(Math.cos(angle) * distance, 0.45 + random() * 0.75, Math.sin(angle) * distance * 0.38);
     const cells = makeMistVoxelPuff(random, center, radius, isDemo);
     cells.forEach((cell) => group.add(cell.mesh));
-    puffs.push({ cells, opacityWeight: isDemo ? 0.34 + random() * 0.1 : 0.22 + random() * 0.09 });
+    puffs.push({ cells, toneWeight: isDemo ? 0.34 + random() * 0.1 : 0.22 + random() * 0.09 });
   }
 
   return {
@@ -165,34 +164,35 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
 }
 
 function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: number, isDemo: boolean): MistCell[] {
-  const cellCount = isDemo ? 64 : 36 + Math.floor(random() * 20);
+  const cellCount = isDemo ? 80 : 48 + Math.floor(random() * 28);
   const noiseSeed = random() * 10_000;
   const cells: MistCell[] = [];
+  const occupied = new Set<string>();
+  const cellSize = radius * (0.095 + random() * 0.025);
 
-  for (let i = 0; i < cellCount; i += 1) {
-    const sample = sampleMistVolume(random, noiseSeed);
+  for (let attempt = 0; cells.length < cellCount && attempt < cellCount * 60; attempt += 1) {
+    const sample = quantizedMistSample(random, noiseSeed);
     const point = sample.point;
+    const key = `${sample.grid.x}:${sample.grid.y}:${sample.grid.z}`;
+    if (occupied.has(key)) continue;
+    occupied.add(key);
     const localX = center.x + point.x * radius * 1.08;
     const localZ = center.z + point.z * radius * 0.48;
     const localY = center.y + point.y * radius * 0.32 + Math.max(0, 1 - Math.abs(point.x)) * radius * 0.08;
-    const cellSize = radius * (0.05 + random() * 0.045);
     const cell = new THREE.Mesh(
       mistCellGeometry,
       new THREE.MeshBasicMaterial({
         color: dayMistColour,
-        transparent: true,
-        opacity: 0,
+        transparent: false,
         depthTest: true,
-        depthWrite: false,
       })
     );
     cell.position.set(localX, localY, localZ);
-    cell.scale.set(cellSize * (1.2 + random() * 0.9), cellSize * (0.62 + random() * 0.5), cellSize * (0.95 + random() * 0.85));
+    cell.scale.set(cellSize * (0.9 + random() * 0.34), cellSize * (0.58 + random() * 0.22), cellSize * (0.78 + random() * 0.28));
     cell.rotation.set(random() * 0.18 - 0.09, random() * Math.PI * 2, random() * 0.14 - 0.07);
     cells.push({
       mesh: cell,
-      opacityWeight: 0.42 + sample.density * 0.45 + random() * 0.1,
-      lightnessShift: random() * 0.12 - 0.04,
+      lightnessShift: sample.density * 0.1 + random() * 0.06 - 0.08,
     });
   }
 
@@ -207,6 +207,21 @@ function sampleMistVolume(random: () => number, seed: number): { point: THREE.Ve
   }
   const point = new THREE.Vector3(centerBiased(random) * 0.52, centerBiased(random) * 0.36, centerBiased(random) * 0.44);
   return { point, density: mistDensityAt(point, seed) };
+}
+
+function quantizedMistSample(
+  random: () => number,
+  seed: number
+): { point: THREE.Vector3; grid: { x: number; y: number; z: number }; density: number } {
+  const sample = sampleMistVolume(random, seed);
+  const grid = {
+    x: Math.round(sample.point.x * 7),
+    y: Math.round(sample.point.y * 5),
+    z: Math.round(sample.point.z * 5),
+  };
+  const point = new THREE.Vector3(grid.x / 7, grid.y / 5, grid.z / 5);
+  const density = mistDensityAt(point, seed);
+  return { point, grid, density };
 }
 
 function centerBiased(random: () => number): number {
