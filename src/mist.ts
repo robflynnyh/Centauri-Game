@@ -4,7 +4,7 @@ import { normalizePlanetCoords, placeObjectOnPlanet, surfaceDistanceBetweenLocal
 type HeightSampler = (x: number, z: number) => number;
 
 type MistPuff = {
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  layers: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>[];
   opacityWeight: number;
 };
 
@@ -118,9 +118,12 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
           new THREE.Euler(0, patch.driftAngle + Math.sin(elapsed * 0.07 + patch.phase) * 0.08, 0)
         );
 
-        patch.puffs.forEach(({ mesh, opacityWeight }) => {
-          mesh.material.color.copy(activeColour);
-          mesh.material.opacity = distanceFade * patchPulse * opacityWeight * THREE.MathUtils.lerp(0.66, 0.82, dayAmount);
+        patch.puffs.forEach(({ layers, opacityWeight }) => {
+          layers.forEach((layer) => {
+            const layerOpacity = (layer.userData.opacityWeight as number | undefined) ?? 1;
+            layer.material.color.copy(activeColour);
+            layer.material.opacity = distanceFade * patchPulse * opacityWeight * layerOpacity * THREE.MathUtils.lerp(0.66, 0.82, dayAmount);
+          });
         });
       });
     },
@@ -131,31 +134,21 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
   const group = new THREE.Group();
   const puffs: MistPuff[] = [];
   const radius = THREE.MathUtils.lerp(5.4, 10.2, random());
-  const puffCount = isDemo ? 3 : 2 + Math.floor(random() * 2);
+  const puffCount = isDemo ? 2 : 1 + Math.floor(random() * 2);
 
   for (let i = 0; i < puffCount; i += 1) {
     const angle = (i / puffCount) * Math.PI * 2 + random() * 0.42;
     const distance = Math.pow(random(), 0.72) * radius * 0.54;
-    const texture = makeMistTexture(random);
-    const geometry = new THREE.PlaneGeometry(1, 1, 1, 1);
-    const mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshBasicMaterial({
-        color: dayMistColour,
-        map: texture,
-        transparent: true,
-        opacity: 0,
-        depthTest: true,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      })
-    );
-    mesh.position.set(Math.cos(angle) * distance, 0.45 + random() * 0.75, Math.sin(angle) * distance * 0.38);
-    mesh.scale.set(radius * (1.15 + random() * 0.72), radius * (0.28 + random() * 0.16), 1);
-    mesh.rotation.y = random() * 0.84 - 0.42;
-    mesh.rotation.z = random() * 0.38 - 0.19;
-    group.add(mesh);
-    puffs.push({ mesh, opacityWeight: isDemo ? 0.48 + random() * 0.16 : 0.3 + random() * 0.14 });
+    const center = new THREE.Vector3(Math.cos(angle) * distance, 0.45 + random() * 0.75, Math.sin(angle) * distance * 0.38);
+    const baseWidth = radius * (1.08 + random() * 0.62);
+    const baseHeight = radius * (0.24 + random() * 0.16);
+    const layers = [
+      makeMistLayer(random, center, baseWidth, baseHeight, 0, 0, 0, 1),
+      makeMistLayer(random, center, baseWidth * 0.9, baseHeight * 0.92, radius * 0.18, Math.PI * 0.44, 0.1, 0.78),
+      makeMistLayer(random, center, baseWidth * 0.74, baseHeight * 0.82, -radius * 0.14, -Math.PI * 0.34, -0.08, 0.58),
+    ];
+    layers.forEach((layer) => group.add(layer));
+    puffs.push({ layers, opacityWeight: isDemo ? 0.42 + random() * 0.14 : 0.26 + random() * 0.12 });
   }
 
   return {
@@ -169,6 +162,37 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
     phase: random() * Math.PI * 2,
     puffs,
   };
+}
+
+function makeMistLayer(
+  random: () => number,
+  center: THREE.Vector3,
+  width: number,
+  height: number,
+  sideOffset: number,
+  crossAngle: number,
+  lift: number,
+  opacityWeight: number
+): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+  const layer = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: dayMistColour,
+      map: makeMistTexture(random),
+      transparent: true,
+      opacity: 0,
+      depthTest: true,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    })
+  );
+  layer.position.set(center.x + Math.sin(crossAngle) * sideOffset, center.y + lift, center.z + Math.cos(crossAngle) * sideOffset);
+  layer.scale.set(width, height, 1);
+  layer.rotation.y = crossAngle + random() * 0.18 - 0.09;
+  layer.rotation.x = random() * 0.12 - 0.06;
+  layer.rotation.z = random() * 0.28 - 0.14;
+  layer.userData.opacityWeight = opacityWeight;
+  return layer;
 }
 
 function createChunkRandom(chunkX: number, chunkZ: number): () => number {

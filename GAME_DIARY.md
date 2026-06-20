@@ -8,6 +8,8 @@ Softened the mist after review by replacing overlapping geometric puffs with irr
 
 Anchored the softened mist patches in planet space by removing camera-facing billboard rotation and keeping their orientation coherent with local surface placement and drift direction.
 
+Gave the anchored mist a little stable thickness by changing each flat cloudlet into a small crossed-and-offset alpha-mask layer cluster, so it keeps shape from side angles without returning to camera-facing billboards.
+
 ## 2026-06-19
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
