@@ -75,6 +75,7 @@ declare global {
           bladeCount: number;
           nearestBiomeEdgeDistance: number;
           flatness: number;
+          staticBend: number;
         }[];
       };
       getVisionState: () => {

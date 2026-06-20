@@ -278,18 +278,20 @@ test("generates reactive seaweed only in sparse flat wilderness", async ({ page 
   await page.evaluate(() => window.__centauriDebug?.setPlayer(-128, -464));
   await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getNatureState();
-    return Boolean(state && state.nearestBiomePatchDistance > 150 && state.generatedSeaweedPatches > 8 && state.seaweedSamples.length > 0);
+    return Boolean(state && state.nearestBiomePatchDistance > 150 && state.generatedSeaweedPatches > 12 && state.seaweedSamples.length > 0);
   });
 
   const wildernessState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
-  expect(wildernessState?.generatedSeaweedPatches).toBeGreaterThan(8);
-  expect(wildernessState?.generatedSeaweedBlades).toBeGreaterThan(50);
+  expect(wildernessState?.generatedSeaweedPatches).toBeGreaterThan(12);
+  expect(wildernessState?.generatedSeaweedBlades).toBeGreaterThan(90);
   expect(wildernessState?.seaweedSamples.every((sample) => sample.nearestBiomeEdgeDistance >= 38)).toBe(true);
   expect(wildernessState?.seaweedSamples.every((sample) => sample.flatness <= 0.72)).toBe(true);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.staticBend >= 0.08)).toBe(true);
 
   const seaweed = wildernessState?.seaweedSamples.find((sample) => sample.x > 20 && sample.x < 30 && sample.z > -620 && sample.z < -608);
   expect(seaweed).toBeTruthy();
-  expect(seaweed?.bladeCount).toBeGreaterThanOrEqual(5);
+  expect(seaweed?.bladeCount).toBeGreaterThanOrEqual(6);
+  expect(seaweed?.staticBend).toBeGreaterThan(0.1);
 
   await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), seaweed);
   await page.waitForFunction(() => {

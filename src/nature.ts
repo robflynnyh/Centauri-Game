@@ -42,7 +42,7 @@ type ReactiveStalk = {
 };
 
 type SeaweedBlade = {
-  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   baseLean: number;
   phase: number;
   waveAmount: number;
@@ -63,6 +63,7 @@ type SeaweedSample = {
   bladeCount: number;
   nearestBiomeEdgeDistance: number;
   flatness: number;
+  staticBend: number;
 };
 
 type BiomePatch = {
@@ -272,13 +273,15 @@ export function populateNature(
     const patch = new THREE.Group();
     placeObjectOnPlanet(patch, x, z, y + 0.04, new THREE.Euler(0, angle, 0));
 
-    const bladeCount = 5 + Math.floor(random() * 8);
+    const bladeCount = 6 + Math.floor(random() * 9);
     const blades: SeaweedBlade[] = [];
+    let strongestStaticBend = 0;
     for (let i = 0; i < bladeCount; i += 1) {
       const height = 1.05 + random() * 1.35;
       const width = 0.12 + random() * 0.1;
-      const geometry = new THREE.PlaneGeometry(width, height);
-      geometry.translate(0, height * 0.5, 0);
+      const staticBend = 0.08 + random() * 0.16;
+      const geometry = makeSeaweedBladeGeometry(width, height, staticBend, random() * Math.PI * 2);
+      strongestStaticBend = Math.max(strongestStaticBend, staticBend);
       const restColour = new THREE.Color(0x54d65c);
       restColour.offsetHSL(0.035 + random() * 0.035, 0.02, -0.08 + random() * 0.12);
       const material = new THREE.MeshBasicMaterial({
@@ -290,7 +293,7 @@ export function populateNature(
       const blade = new THREE.Mesh(geometry, material);
       const bladeAngle = random() * Math.PI * 2;
       const distance = Math.pow(random(), 0.55) * (0.4 + random() * 0.55);
-      const baseLean = (random() - 0.5) * 0.28;
+      const baseLean = (random() - 0.5) * 0.42;
       blade.position.set(Math.cos(bladeAngle) * distance, 0, Math.sin(bladeAngle) * distance);
       blade.rotation.set(0, bladeAngle + (i % 2) * Math.PI * 0.5, baseLean);
       blade.scale.y = 0.86 + random() * 0.22;
@@ -308,7 +311,7 @@ export function populateNature(
     reactiveSeaweedPatches.push({ x, z, blades, reaction: 0, flatness });
     generatedSeaweedPatchCount += 1;
     generatedSeaweedBladeCount += bladeCount;
-    seaweedSamples.push({ x, z, bladeCount, nearestBiomeEdgeDistance, flatness });
+    seaweedSamples.push({ x, z, bladeCount, nearestBiomeEdgeDistance, flatness, staticBend: strongestStaticBend });
   };
 
   const rebuildGeneratedNature = (centerX: number, centerZ: number): void => {
@@ -442,7 +445,7 @@ export function populateNature(
     for (let cellZ = minSeaweedCellZ; cellZ <= maxSeaweedCellZ; cellZ += 1) {
       for (let cellX = minSeaweedCellX; cellX <= maxSeaweedCellX; cellX += 1) {
         const random = createChunkRandom(cellX - 431, cellZ + 719);
-        if (random() > 0.36) continue;
+        if (random() > 0.48) continue;
         const x = cellX * seaweedCellSize + (0.18 + random() * 0.64) * seaweedCellSize;
         const z = cellZ * seaweedCellSize + (0.18 + random() * 0.64) * seaweedCellSize;
         const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x, z });
@@ -573,6 +576,38 @@ function nearestBiomeEdgeDistanceAt(x: number, z: number, patches: BiomePatch[])
     const distance = surfaceDistanceBetweenLocal({ x, z }, patch) - patch.radius;
     return Math.min(nearest, distance);
   }, Number.POSITIVE_INFINITY);
+}
+
+function makeSeaweedBladeGeometry(width: number, height: number, bend: number, phase: number): THREE.BufferGeometry {
+  const segments = 5;
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segments; i += 1) {
+    const t = i / segments;
+    const rootFade = THREE.MathUtils.smoothstep(t, 0.06, 0.34);
+    const tipSweep = Math.sin(t * Math.PI * 1.55 + phase) * bend * rootFade;
+    const tipLean = Math.sin(phase * 1.7) * bend * 0.42 * t * t;
+    const centerX = tipSweep + tipLean;
+    const taper = 1 - t * 0.42;
+    const halfWidth = width * taper * 0.5;
+    const y = height * t;
+    positions.push(centerX - halfWidth, y, 0, centerX + halfWidth, y, 0);
+  }
+
+  for (let i = 0; i < segments; i += 1) {
+    const lowerLeft = i * 2;
+    const lowerRight = lowerLeft + 1;
+    const upperLeft = lowerLeft + 2;
+    const upperRight = lowerLeft + 3;
+    indices.push(lowerLeft, upperLeft, lowerRight, lowerRight, upperLeft, upperRight);
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 function terrainFlatnessAt(heightAt: HeightSampler, x: number, z: number): number {
