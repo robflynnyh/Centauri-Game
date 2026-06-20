@@ -81,3 +81,15 @@ Added a trippy color-shifting planet fog and capped generated nature complexity 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
 
 Rebuilt the lo-fi render direction around a low-resolution whole-scene render target upscaled with nearest filtering, disabled WebGL antialiasing, and retuned terrain colour boundaries into broader block-stepped regions without repainting the existing palette.
+
+## 2026-06-20
+
+Added one deterministic strange temple landmark to the spherical planet, with a reserved generation clearance, collision, a `?debug=temple` review spawn, PR-demo visibility, and an intermittent proximity colour phase through the sky and fog system.
+
+Reworked the temple landmark into chunkier ancient alien ruins: layered round bases, a broken stellar-gate silhouette, glyph panels, fallen slabs, ruined columns, and reclaimed alien foliage so it reads less like a plain tower.
+
+Simplified the temple again after visual review feedback so it reads as one composed Proteus-like landmark at screenshot scale: a squat stepped plinth, one chunky broken ring, a few broad glyph panels, large vine ribbons, and minimal supporting slabs.
+
+Balanced the temple between the detailed ruin pass and the abstract simplified pass by keeping the strong plinth-and-ring silhouette while restoring a few large readable ruin elements, including chunky broken columns and clearer glyph blocks.
+
+Rebuilt the temple's central facade with custom trapezoid prism silhouettes instead of a dark backing cube, keeping the broken gate open and bright while using broad pylons, stone planes, and a few large ruin details.

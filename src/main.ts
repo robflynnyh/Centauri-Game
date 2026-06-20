@@ -3,6 +3,7 @@ import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
+import { createTempleLandmark } from "./landmarks";
 import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
@@ -63,6 +64,14 @@ declare global {
         generatedObstacles: number;
         generatedReactiveFlora: number;
       };
+      getTempleState: () => {
+        x: number;
+        z: number;
+        approachX: number;
+        approachZ: number;
+        influenceRadius: number;
+        fullInfluenceRadius: number;
+      };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
@@ -79,8 +88,10 @@ if (!app) {
 
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
+const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
 const enableCollisionDebug = params.get("test") === "collision";
+const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -90,9 +101,6 @@ const braking = 24;
 const gravity = 18;
 const jumpImpulse = 7.2;
 const mouseLookSensitivity = 0.0024;
-const initialPlayerLocalPosition = isBeetleDebug
-  ? new THREE.Vector3(4.8, 0, 14.2)
-  : new THREE.Vector3(0, 0, 24);
 
 app.innerHTML = `
   <div class="hud">
@@ -100,7 +108,7 @@ app.innerHTML = `
       <h1>Centauri Field Note 001</h1>
       <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
-    <div class="hud__badge">${isDemo ? "PR demo mode" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
+    <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
   </div>
 `;
@@ -118,6 +126,12 @@ const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerH
 
 const clock = new THREE.Clock();
 const keys = new Set<string>();
+const temple = createTempleLandmark(scene, heightAt);
+const initialPlayerLocalPosition = enableTempleDebug
+  ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
+  : isBeetleDebug
+    ? new THREE.Vector3(4.8, 0, 14.2)
+    : new THREE.Vector3(0, 0, 24);
 const player = {
   yaw: 0,
   pitch: -0.12,
@@ -143,12 +157,14 @@ const terrain = createTerrainSystem();
 
 scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
+collisionWorld.addObstacle(temple.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNature(
   scene,
   heightAt,
   collisionWorld.addObstacle,
-  collisionWorld.replaceDynamicObstacles
+  collisionWorld.replaceDynamicObstacles,
+  [temple.reservedZone]
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
@@ -157,9 +173,13 @@ const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-});
+}, temple);
 
-if (enableCollisionDebug) {
+terrain.update(player.localPosition.x, player.localPosition.z);
+updateNatureChunks(player.localPosition.x, player.localPosition.z);
+updatePlayerWorldPosition();
+
+if (enableDebugTools) {
   window.__centauriDebug = {
     obstacles: collisionWorld.obstacles,
     getPlayer: () => ({
@@ -189,6 +209,14 @@ if (enableCollisionDebug) {
     }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
+    getTempleState: () => ({
+      x: temple.position.x,
+      z: temple.position.z,
+      approachX: temple.approachPosition.x,
+      approachZ: temple.approachPosition.z,
+      influenceRadius: temple.influenceRadius,
+      fullInfluenceRadius: temple.fullInfluenceRadius,
+    }),
     getBeetleState: flyingBeetles.getState,
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
@@ -359,9 +387,11 @@ function animate(): void {
 
   footsteps.update(delta);
   waterCreatures.update(elapsed);
+  temple.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   flyingBeetles.update(elapsed, floraFocus);
-  sky.update(elapsed);
+  const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
+  sky.update(elapsed, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
