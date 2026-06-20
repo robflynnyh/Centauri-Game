@@ -4,7 +4,7 @@ import { normalizePlanetCoords, placeObjectOnPlanet, surfaceDistanceBetweenLocal
 type HeightSampler = (x: number, z: number) => number;
 
 type MistPuff = {
-  mesh: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
   opacityWeight: number;
 };
 
@@ -132,30 +132,30 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
   const group = new THREE.Group();
   const puffs: MistPuff[] = [];
   const radius = THREE.MathUtils.lerp(5.4, 10.2, random());
-  const puffCount = isDemo ? 6 : 4 + Math.floor(random() * 3);
+  const puffCount = isDemo ? 3 : 2 + Math.floor(random() * 2);
 
   for (let i = 0; i < puffCount; i += 1) {
-    const angle = (i / puffCount) * Math.PI * 2 + random() * 0.55;
-    const distance = Math.pow(random(), 0.65) * radius * 0.7;
-    const size = radius * (0.38 + random() * 0.34);
-    const geometry = new THREE.CircleGeometry(size, 8);
+    const angle = (i / puffCount) * Math.PI * 2 + random() * 0.42;
+    const distance = Math.pow(random(), 0.72) * radius * 0.54;
+    const texture = makeMistTexture(random);
+    const geometry = new THREE.PlaneGeometry(1, 1, 1, 1);
     const mesh = new THREE.Mesh(
       geometry,
       new THREE.MeshBasicMaterial({
         color: dayMistColour,
+        map: texture,
         transparent: true,
         opacity: 0,
-        depthTest: false,
+        depthTest: true,
         depthWrite: false,
         side: THREE.DoubleSide,
       })
     );
-    mesh.position.set(Math.cos(angle) * distance, 0.3 + random() * 0.85, Math.sin(angle) * distance * 0.46);
-    mesh.scale.set(1.45 + random() * 0.9, 0.34 + random() * 0.22, 1);
-    mesh.rotation.y = random() * Math.PI;
-    mesh.renderOrder = 2;
+    mesh.position.set(Math.cos(angle) * distance, 0.45 + random() * 0.75, Math.sin(angle) * distance * 0.38);
+    mesh.scale.set(radius * (1.15 + random() * 0.72), radius * (0.28 + random() * 0.16), 1);
+    mesh.rotation.z = random() * 0.38 - 0.19;
     group.add(mesh);
-    puffs.push({ mesh, opacityWeight: isDemo ? 0.46 + random() * 0.22 : 0.28 + random() * 0.18 });
+    puffs.push({ mesh, opacityWeight: isDemo ? 0.48 + random() * 0.16 : 0.3 + random() * 0.14 });
   }
 
   return {
@@ -192,12 +192,66 @@ function getDayAmount(elapsed: number, isDemo: boolean): number {
   return THREE.MathUtils.smoothstep(daylightWave, 0.2, 0.82);
 }
 
+function makeMistTexture(random: () => number): THREE.CanvasTexture {
+  const width = 48;
+  const height = 18;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Missing mist texture canvas context");
+
+  const image = context.createImageData(width, height);
+  const blobs = Array.from({ length: 8 }, () => ({
+    x: width * (0.14 + random() * 0.72),
+    y: height * (0.32 + random() * 0.34),
+    radiusX: width * (0.12 + random() * 0.18),
+    radiusY: height * (0.2 + random() * 0.22),
+    strength: 0.46 + random() * 0.42,
+  }));
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4;
+      const edgeFadeX = THREE.MathUtils.smoothstep(x, 0, 6) * (1 - THREE.MathUtils.smoothstep(x, width - 7, width - 1));
+      const edgeFadeY = THREE.MathUtils.smoothstep(y, 0, 3) * (1 - THREE.MathUtils.smoothstep(y, height - 4, height - 1));
+      const noise = Math.sin(x * 1.71 + y * 2.37 + random() * 0.08) * 0.045;
+      let density = 0;
+
+      blobs.forEach((blob) => {
+        const dx = (x - blob.x) / blob.radiusX;
+        const dy = (y - blob.y) / blob.radiusY;
+        const falloff = Math.max(0, 1 - dx * dx - dy * dy);
+        density += falloff * falloff * blob.strength;
+      });
+
+      const alpha = THREE.MathUtils.clamp((density + noise - 0.08) * edgeFadeX * edgeFadeY, 0, 1);
+      image.data[index] = 255;
+      image.data[index + 1] = 255;
+      image.data[index + 2] = 255;
+      image.data[index + 3] = Math.round(alpha * 255);
+    }
+  }
+
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
 function disposeMist(group: THREE.Group): void {
   group.traverse((child) => {
     const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
     if (!mesh.geometry) return;
     mesh.geometry.dispose();
-    if (Array.isArray(mesh.material)) mesh.material.forEach((material) => material.dispose());
-    else mesh.material.dispose();
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((material) => material.dispose());
+    } else {
+      mesh.material.map?.dispose();
+      mesh.material.dispose();
+    }
   });
 }

@@ -4,6 +4,8 @@
 
 Added low drifting mist cloudlets as a bounded deterministic ambient layer, with sparse flat puffs that drift over the spherical terrain and shift between pale day colour and cooler night colour in the PR demo.
 
+Softened the mist after review by replacing overlapping geometric puffs with irregular low-resolution alpha-mask cloudlets and restoring depth testing so terrain and props occlude the effect.
+
 ## 2026-06-19
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
