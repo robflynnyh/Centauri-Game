@@ -5,7 +5,7 @@ import { createPrDemoController } from "./demo";
 import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import { createTempleLandmark } from "./landmarks";
-import { createMistSystem } from "./mist";
+import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
@@ -98,6 +98,7 @@ declare global {
       };
       getFieldNotesState: () => FieldNotesSnapshot;
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getMistState: () => MistDebugState;
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
@@ -336,6 +337,10 @@ if (enableDebugTools) {
       return sky.getDebugState();
     },
     getBeetleState: flyingBeetles.getState,
+    getMistState: () => {
+      mist.update(clock.elapsedTime, player.localPosition);
+      return mist.getDebugState();
+    },
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
       const state = sleep.setAmount(amount);

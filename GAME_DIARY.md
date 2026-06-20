@@ -14,6 +14,8 @@ Added a calm eyelid close/open overlay for voluntary sleep, keeping it distinct 
 
 Retuned ground mist distance falloff so nearby low wisps remain spooky while mid/far patches fade harder, especially on rough high terrain and cliff silhouettes.
 
+Tightened the mist review follow-up with a shorter hard distance cutoff, zeroed hidden-patch alpha, and a debug assertion that far mist patches are fully culled from normal walking views.
+
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
 Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.

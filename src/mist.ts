@@ -6,6 +6,16 @@ type HeightSampler = (x: number, z: number) => number;
 export type MistSystem = {
   group: THREE.Group;
   update: (elapsed: number, focus: LocalPlanetPoint) => void;
+  getDebugState: () => MistDebugState;
+};
+
+export type MistDebugState = {
+  patches: number;
+  visiblePatches: number;
+  farVisiblePatches: number;
+  farMaxAlpha: number;
+  farDistance: number;
+  hardCullDistance: number;
 };
 
 type MistRibbon = {
@@ -39,6 +49,9 @@ type MistPatch = {
   positionAttribute: THREE.BufferAttribute;
   alphaAttribute: THREE.BufferAttribute;
   toneAttribute: THREE.BufferAttribute;
+  distanceToFocus: number;
+  focusFade: number;
+  maxAlpha: number;
   initialized: boolean;
 };
 
@@ -57,10 +70,16 @@ const normalPatchLimit = 40;
 const demoPatchLimit = 60;
 const normalCandidatesPerChunk = 3;
 const demoCandidatesPerChunk = 3;
-const normalMistFadeStart = 72;
-const normalMistFadeEnd = 178;
-const demoMistFadeStart = 92;
-const demoMistFadeEnd = 220;
+const normalMistFadeStart = 52;
+const normalMistFadeEnd = 138;
+const demoMistFadeStart = 66;
+const demoMistFadeEnd = 174;
+const normalMistHardCullDistance = 148;
+const demoMistHardCullDistance = 192;
+const normalMistVisibilityCutoff = 0.06;
+const demoMistVisibilityCutoff = 0.05;
+const normalMistDebugFarDistance = 150;
+const demoMistDebugFarDistance = 195;
 
 export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, isDemo: boolean): MistSystem {
   const group = new THREE.Group();
@@ -84,11 +103,11 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
     }
 
     material.uniforms.dayAmount.value = getDayAmount(elapsed, isDemo);
-    material.uniforms.globalOpacity.value = isDemo ? 1.2 : 0.96;
+    material.uniforms.globalOpacity.value = isDemo ? 1.12 : 0.92;
     patches.forEach((patch) => updatePatchGeometry(patch, heightAt, elapsed, normalizedFocus, isDemo));
   };
 
-  return { group, update };
+  return { group, update, getDebugState: () => getMistDebugState(patches, isDemo) };
 }
 
 function rebuildMistPatches(
@@ -219,6 +238,9 @@ function createMistPatch(
     positionAttribute: geometry.getAttribute("position") as THREE.BufferAttribute,
     alphaAttribute: geometry.getAttribute("mistAlpha") as THREE.BufferAttribute,
     toneAttribute: geometry.getAttribute("mistTone") as THREE.BufferAttribute,
+    distanceToFocus: Number.POSITIVE_INFINITY,
+    focusFade: 0,
+    maxAlpha: 0,
     initialized: false,
   };
 
@@ -282,12 +304,20 @@ function updatePatchGeometry(
   const fadeStart = isDemo ? demoMistFadeStart : normalMistFadeStart;
   const fadeEnd = isDemo ? demoMistFadeEnd : normalMistFadeEnd;
   const rawFocusFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, fadeStart, fadeEnd);
-  const distanceFade = Math.pow(rawFocusFade, isDemo ? 2.2 : 2.65);
+  const distanceFade = Math.pow(rawFocusFade, isDemo ? 3.0 : 3.45);
   const terrainFade = mistTerrainDistanceFade(center.x, center.z, distanceToFocus, heightAt, isDemo);
-  const focusFade = distanceFade * terrainFade;
+  const hardCullDistance = isDemo ? demoMistHardCullDistance : normalMistHardCullDistance;
+  const focusFade = distanceToFocus >= hardCullDistance ? 0 : distanceFade * terrainFade;
 
-  patch.mesh.visible = focusFade > 0.025;
-  if (!patch.mesh.visible) return;
+  patch.distanceToFocus = distanceToFocus;
+  patch.focusFade = focusFade;
+  patch.maxAlpha = 0;
+
+  patch.mesh.visible = focusFade > (isDemo ? demoMistVisibilityCutoff : normalMistVisibilityCutoff);
+  if (!patch.mesh.visible) {
+    clearPatchAlpha(patch);
+    return;
+  }
 
   patch.mesh.position.copy(centerWorld);
 
@@ -313,6 +343,7 @@ function updatePatchGeometry(
       const raggedSide = ribbon.sideNoise[i] * ribbon.halfWidth * 0.58;
       const centerSide = ribbon.offset + raggedSide + ribbonDrift * Math.sin(u * Math.PI * 2 + ribbon.phase);
       const alpha = patch.baseAlpha * ribbon.alpha * edgeFade * ribbon.alphaNoise[i] * breath * focusFade;
+      patch.maxAlpha = Math.max(patch.maxAlpha, alpha);
 
       for (const sideSign of [-1, 1]) {
         const sideOffset = centerSide + sideSign * width;
@@ -379,12 +410,43 @@ function mistTerrainDistanceFade(x: number, z: number, distanceToFocus: number, 
     heightAt(x, z - sampleDistance),
   ];
   const roughness = samples.reduce((highest, height) => Math.max(highest, Math.abs(height - centerHeight)), 0);
-  const distancePressure = THREE.MathUtils.smoothstep(distanceToFocus, isDemo ? 56 : 44, isDemo ? 150 : 118);
-  const quietSlopeFade = 1 - THREE.MathUtils.smoothstep(roughness, 1.35, isDemo ? 4.6 : 3.7);
-  const lowlandFade = 1 - THREE.MathUtils.smoothstep(centerHeight, isDemo ? 8.2 : 6.4, isDemo ? 15.2 : 12.4);
+  const distancePressure = THREE.MathUtils.smoothstep(distanceToFocus, isDemo ? 42 : 34, isDemo ? 118 : 92);
+  const quietSlopeFade = 1 - THREE.MathUtils.smoothstep(roughness, 1.15, isDemo ? 3.9 : 3.1);
+  const lowlandFade = 1 - THREE.MathUtils.smoothstep(centerHeight, isDemo ? 7.2 : 5.6, isDemo ? 13.4 : 10.8);
   const distantTerrainFade = THREE.MathUtils.clamp(quietSlopeFade * 0.72 + lowlandFade * 0.28, 0, 1);
 
   return THREE.MathUtils.lerp(1, distantTerrainFade, distancePressure);
+}
+
+function clearPatchAlpha(patch: MistPatch): void {
+  const alphas = patch.alphaAttribute.array as Float32Array;
+  alphas.fill(0);
+  patch.alphaAttribute.needsUpdate = true;
+}
+
+function getMistDebugState(patches: MistPatch[], isDemo: boolean): MistDebugState {
+  const farDistance = isDemo ? demoMistDebugFarDistance : normalMistDebugFarDistance;
+  let visiblePatches = 0;
+  let farVisiblePatches = 0;
+  let farMaxAlpha = 0;
+
+  patches.forEach((patch) => {
+    if (!patch.mesh.visible) return;
+    visiblePatches += 1;
+    if (patch.distanceToFocus < farDistance) return;
+
+    farVisiblePatches += 1;
+    farMaxAlpha = Math.max(farMaxAlpha, patch.maxAlpha);
+  });
+
+  return {
+    patches: patches.length,
+    visiblePatches,
+    farVisiblePatches,
+    farMaxAlpha,
+    farDistance,
+    hardCullDistance: isDemo ? demoMistHardCullDistance : normalMistHardCullDistance,
+  };
 }
 
 function makeMistMaterial(): MistMaterial {

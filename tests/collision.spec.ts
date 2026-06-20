@@ -357,6 +357,32 @@ test("generates reactive seaweed only in sparse flat wilderness", async ({ page 
   expect(nearSeaweedState?.nearestSeaweedFreezeAmount).toBeGreaterThan(0.72);
 });
 
+test("culls far mist patches in normal debug walking views", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMistState));
+
+  const states = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mist debug hook");
+
+    const samples = [
+      { x: 0, z: 24 },
+      { x: 0, z: -74 },
+      { x: 420, z: -360 },
+    ];
+
+    return samples.map((sample) => {
+      debug.setPlayer(sample.x, sample.z);
+      return debug.getMistState();
+    });
+  });
+
+  expect(states.every((state) => state.visiblePatches > 0)).toBe(true);
+  expect(states.every((state) => state.farDistance >= state.hardCullDistance)).toBe(true);
+  expect(states.every((state) => state.farVisiblePatches === 0)).toBe(true);
+  expect(states.every((state) => state.farMaxAlpha === 0)).toBe(true);
+});
+
 test("starts temple debug route near the single temple landmark", async ({ page }) => {
   await page.goto("/?debug=temple");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
