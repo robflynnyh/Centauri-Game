@@ -134,7 +134,7 @@ test("derives reversible sky and day-night variation from planet location", asyn
     const planet = debug.getPlanetState();
     debug.setPlayer(0, 24);
     const start = debug.getSkyState();
-    debug.setPlayer(1600, 1400);
+    debug.setPlayer(4400, -1600);
     const distant = debug.getSkyState();
     debug.setPlayer(0, 24);
     const returned = debug.getSkyState();
@@ -155,15 +155,23 @@ test("derives reversible sky and day-night variation from planet location", asyn
     return { start, distant, returned, strongestOppositePair };
   });
 
-  expect(Math.abs(result.distant.celestialYaw - result.start.celestialYaw)).toBeGreaterThan(0.08);
+  expect(Math.abs(result.distant.celestialYaw - result.start.celestialYaw)).toBeGreaterThan(0.04);
+  expect(Math.abs(result.distant.celestialAltitude - result.start.celestialAltitude)).toBeGreaterThan(0.08);
+  expect(Math.abs(result.distant.ringAltitude - result.start.ringAltitude)).toBeGreaterThan(0.08);
+  expect(Math.hypot(result.distant.localUpX - result.start.localUpX, result.distant.localUpY - result.start.localUpY, result.distant.localUpZ - result.start.localUpZ)).toBeGreaterThan(0.6);
   expect(Math.abs(result.distant.ringSpinOffset - result.start.ringSpinOffset)).toBeGreaterThan(0.08);
   expect(result.distant.dayHorizonHex).not.toBe(result.start.dayHorizonHex);
   expect(result.strongestOppositePair.dayDifference).toBeGreaterThan(0.6);
   expect(result.strongestOppositePair.sunDotSum).toBeLessThan(0.001);
   expect(result.returned.celestialYaw).toBeCloseTo(result.start.celestialYaw, 7);
+  expect(result.returned.celestialAltitude).toBeCloseTo(result.start.celestialAltitude, 7);
   expect(result.returned.ringTilt).toBeCloseTo(result.start.ringTilt, 7);
+  expect(result.returned.ringAltitude).toBeCloseTo(result.start.ringAltitude, 7);
   expect(result.returned.dayAmount).toBeCloseTo(result.start.dayAmount, 7);
   expect(result.returned.sunDot).toBeCloseTo(result.start.sunDot, 7);
+  expect(result.returned.localUpX).toBeCloseTo(result.start.localUpX, 7);
+  expect(result.returned.localUpY).toBeCloseTo(result.start.localUpY, 7);
+  expect(result.returned.localUpZ).toBeCloseTo(result.start.localUpZ, 7);
   expect(result.returned.dayHorizonHex).toBe(result.start.dayHorizonHex);
   expect(result.returned.nightHorizonHex).toBe(result.start.nightHorizonHex);
 });

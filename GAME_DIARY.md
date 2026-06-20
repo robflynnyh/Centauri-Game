@@ -99,3 +99,5 @@ Made the camera-anchored sky respond to spherical planet location with determini
 Reworked the location sky so day and night come from the current planet surface normal against a slowly rotating sun direction, producing a moving terminator instead of a global day/night fade.
 
 Updated the PR flythrough to visit sun-facing, twilight, and night-side planet regions so the location-based day/night model is visible in review footage.
+
+Rebuilt the sky model around smooth planet-relative gradients and stable celestial directions so planets, rings, and meteors sit in a coherent sky sphere instead of camera-local colour bands.
