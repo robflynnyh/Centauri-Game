@@ -3,6 +3,7 @@ import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
+import { createMistSystem } from "./mist";
 import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
@@ -143,6 +144,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
+const mist = createMistSystem(scene, camera, heightAt, isDemo);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
@@ -353,6 +355,7 @@ function animate(): void {
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
+  mist.update(elapsed, floraFocus);
 
   pixelRenderer.render(scene, camera);
   requestAnimationFrame(animate);
