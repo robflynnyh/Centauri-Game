@@ -110,6 +110,12 @@ Updated the PR flythrough to visit sun-facing, twilight, and night-side planet r
 
 Rebuilt the sky model around smooth planet-relative gradients and stable celestial directions so planets, rings, and meteors sit in a coherent sky sphere instead of camera-local colour bands.
 
+Added a lightweight field-notes system with a compact HUD panel, a small discoverable temple glyph marker, debug state for note discovery, and deterministic temple-debug coverage for recovering the first sparse temple note.
+
+Integrated recovered field-note status back into the original top-left HUD surface so the temple fragment reads as part of one coherent field-note card instead of a separate overlay.
+
+Reframed the HUD as the current field-note page itself: the initial expedition text is Field Note 001, and discovering the temple glyph advances the same card to Field Note 002 instead of showing recovered-note inventory status.
+
 Added a restrained isolation-vision postprocess that fades in when the player is far from generated biome patches, with a deterministic debug route and PR-demo beat for review.
 
 Retuned the isolation-vision pass after review so the doubled horizon and colour phase are plainly visible in debug captures and the PR demo, then added a rendered-frame comparison test for the postprocess.

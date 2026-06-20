@@ -1,0 +1,90 @@
+export type FieldNoteId = "temple-gate";
+export type FieldNotePageId = FieldNoteId | "arrival";
+
+export type FieldNoteDefinition = {
+  id: FieldNotePageId;
+  index: number;
+  body: string;
+};
+
+export type DiscoverableFieldNoteDefinition = FieldNoteDefinition & {
+  id: FieldNoteId;
+};
+
+export type FieldNoteEntry = DiscoverableFieldNoteDefinition & {
+  discoveredAt: number;
+};
+
+export type FieldNotesSnapshot = {
+  total: number;
+  discoveredCount: number;
+  discovered: FieldNoteEntry[];
+  latest: FieldNoteEntry | null;
+  current: FieldNoteDefinition | FieldNoteEntry;
+};
+
+export const INITIAL_FIELD_NOTE: FieldNoteDefinition = {
+  id: "arrival",
+  index: 1,
+  body:
+    "Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, hold R while still to sleep. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add ?demo=pr for the deterministic PR flythrough.",
+};
+
+export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
+  {
+    id: "temple-gate",
+    index: 2,
+    body: "Gate in the violet stone. The ring is broken, but the air inside it keeps a second colour. The planet leans toward it.",
+  },
+];
+
+export type FieldNotesState = {
+  discover: (id: FieldNoteId, elapsed: number) => boolean;
+  hasDiscovered: (id: FieldNoteId) => boolean;
+  getSnapshot: () => FieldNotesSnapshot;
+};
+
+export type FieldNotesHud = {
+  refresh: () => void;
+};
+
+export function createFieldNotesState(definitions = FIELD_NOTE_DEFINITIONS): FieldNotesState {
+  const byId = new Map(definitions.map((definition) => [definition.id, definition]));
+  const discovered = new Map<FieldNoteId, FieldNoteEntry>();
+
+  return {
+    discover: (id, elapsed) => {
+      const definition = byId.get(id);
+      if (!definition || discovered.has(id)) return false;
+      discovered.set(id, { ...definition, discoveredAt: elapsed });
+      return true;
+    },
+    hasDiscovered: (id) => discovered.has(id),
+    getSnapshot: () => {
+      const entries = Array.from(discovered.values()).sort((a, b) => a.index - b.index);
+      const latest = entries.reduce<FieldNoteEntry | null>((newest, entry) => {
+        if (!newest || entry.discoveredAt > newest.discoveredAt) return entry;
+        return newest;
+      }, null);
+
+      return {
+        total: definitions.length + 1,
+        discoveredCount: entries.length,
+        discovered: entries,
+        latest,
+        current: latest ?? INITIAL_FIELD_NOTE,
+      };
+    },
+  };
+}
+
+export function createFieldNotesHud(heading: HTMLElement, body: HTMLElement, state: FieldNotesState): FieldNotesHud {
+  const refresh = (): void => {
+    const snapshot = state.getSnapshot();
+    heading.textContent = `Field Note ${snapshot.current.index.toString().padStart(3, "0")}`;
+    body.textContent = snapshot.current.body;
+  };
+
+  refresh();
+  return { refresh };
+}

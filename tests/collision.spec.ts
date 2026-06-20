@@ -331,6 +331,8 @@ test("starts temple debug route near the single temple landmark", async ({ page 
     return {
       templeObstacleCount,
       approachDistance,
+      noteDistance: Math.hypot(player.x - temple.noteX, player.z - temple.noteZ),
+      noteRadius: temple.noteRadius,
       influenceRadius: temple.influenceRadius,
       fullInfluenceRadius: temple.fullInfluenceRadius,
       playerStartsClear: !debug.isBlockedAt(player.x, player.z),
@@ -342,9 +344,69 @@ test("starts temple debug route near the single temple landmark", async ({ page 
   expect(result.templeObstacleCount).toBe(1);
   expect(result.approachDistance).toBeLessThan(result.influenceRadius);
   expect(result.approachDistance).toBeGreaterThan(result.fullInfluenceRadius);
+  expect(result.noteDistance).toBeGreaterThan(result.noteRadius);
   expect(result.playerStartsClear).toBe(true);
   expect(result.templeIsBlocked).toBe(true);
   expect(result.templeIsOnLand).toBe(true);
+});
+
+test("discovers the temple field note once from the temple glyph source", async ({ page }) => {
+  await page.goto("/?debug=temple");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+  await expect(page.getByText(/Unknown planet/)).toBeVisible();
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
+
+  const source = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    const temple = debug.getTempleState();
+    const notes = debug.getFieldNotesState();
+    return {
+      noteX: temple.noteX,
+      noteZ: temple.noteZ,
+      discoveredCount: notes.discoveredCount,
+      currentIndex: notes.current.index,
+    };
+  });
+
+  expect(source.discoveredCount).toBe(0);
+  expect(source.currentIndex).toBe(1);
+
+  await page.evaluate(({ noteX, noteZ }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    debug.setPlayer(noteX, noteZ);
+  }, source);
+
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
+  await expect(page.getByText("Field Note 002")).toBeVisible();
+  await expect(page.getByText(/Gate in the violet stone/)).toBeVisible();
+  await expect(page.getByText(/Unknown planet/)).toHaveCount(0);
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
+
+  const discovered = await page.evaluate(({ noteX, noteZ }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    const first = debug.getFieldNotesState();
+    debug.setPlayer(noteX, noteZ);
+    const second = debug.getFieldNotesState();
+    return {
+      firstCount: first.discoveredCount,
+      firstId: first.discovered[0]?.id,
+      firstDiscoveredAt: first.discovered[0]?.discoveredAt,
+      firstCurrentIndex: first.current.index,
+      secondCount: second.discoveredCount,
+      secondDiscoveredAt: second.discovered[0]?.discoveredAt,
+    };
+  }, source);
+
+  expect(discovered.firstCount).toBe(1);
+  expect(discovered.firstId).toBe("temple-gate");
+  expect(Number.isFinite(discovered.firstDiscoveredAt)).toBe(true);
+  expect(discovered.firstCurrentIndex).toBe(2);
+  expect(discovered.secondCount).toBe(1);
+  expect(discovered.secondDiscoveredAt).toBe(discovered.firstDiscoveredAt);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {

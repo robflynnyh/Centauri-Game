@@ -9,7 +9,7 @@ test("records a deterministic Centauri flythrough", async ({ browser }, testInfo
   });
   const page = await context.newPage();
   await page.goto("/?demo=pr");
-  await expect(page.getByText("Centauri Field Note 001")).toBeVisible();
+  await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForTimeout(20_000);
   const video = page.video();
