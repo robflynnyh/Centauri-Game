@@ -9,7 +9,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Centauri Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(7_000);
+  await page.waitForTimeout(9_000);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
@@ -34,6 +34,33 @@ test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ pa
     expect(first.variance).toBeGreaterThan(80);
     expect(Math.abs(second.signature - first.signature)).toBeGreaterThan(0.5);
   }
+});
+
+test("PR demo traverses day, twilight, and night sky regions", async ({ page }) => {
+  await page.goto("/?demo=pr&test=collision");
+  await expect(page.getByText("PR demo mode")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getSkyState();
+    return Boolean(state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1);
+  });
+  const daySide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getSkyState();
+    return Boolean(state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04);
+  });
+  const twilightEdge = await page.evaluate(() => window.__centauriDebug?.getSkyState());
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getSkyState();
+    return Boolean(state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1);
+  });
+  const nightSide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
+
+  expect(daySide?.dayAmount).toBeGreaterThan(0.75);
+  expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
+  expect(nightSide?.dayAmount).toBeLessThan(0.25);
+  expect((daySide?.dayAmount ?? 0) - (nightSide?.dayAmount ?? 0)).toBeGreaterThan(0.6);
 });
 
 test("starts near a visible beetle in beetle debug mode", async ({ page }) => {

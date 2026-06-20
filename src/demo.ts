@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { lookAtPlanetPoint, type LocalPlanetPoint } from "./planet";
+import { lookAtPlanetPoint, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -9,6 +9,38 @@ function intervalPulse(value: number, start: number, peak: number, end: number):
   if (value < start || value > end) return 0;
   if (value < peak) return THREE.MathUtils.smoothstep(value, start, peak);
   return 1 - THREE.MathUtils.smoothstep(value, peak, end);
+}
+
+function sunFacingLongitude(elapsed: number): number {
+  const phase = (elapsed / 18 + 0.18) % 1;
+  return phase * Math.PI * 2;
+}
+
+function showSkyRegion(
+  camera: THREE.Camera,
+  heightAt: HeightSampler,
+  onWalk: WalkObserver | undefined,
+  elapsed: number,
+  longitudeOffset: number,
+  latitude: number,
+  targetLongitudeOffset: number
+): void {
+  const sunLongitude = sunFacingLongitude(elapsed);
+  const x = (sunLongitude + longitudeOffset) * PLANET_RADIUS;
+  const z = latitude * PLANET_RADIUS;
+  const targetX = (sunLongitude + longitudeOffset + targetLongitudeOffset) * PLANET_RADIUS;
+  const targetZ = (latitude * 0.72 + 0.08) * PLANET_RADIUS;
+  const position = new THREE.Vector3(x, 0, z);
+  onWalk?.(position, 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + 36,
+    targetX,
+    targetZ,
+    heightAt(targetX, targetZ) + 16
+  );
 }
 
 export function createPrDemoController(
@@ -54,7 +86,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 10.8) {
+      if (elapsed < 8.2) {
         const templePosition = temple?.position ?? { x: 260, z: -240 };
         const approach = temple?.approachPosition ?? { x: 278, z: -248 };
         onWalk?.(new THREE.Vector3(templePosition.x, 0, templePosition.z), 0);
@@ -67,6 +99,21 @@ export function createPrDemoController(
           templePosition.z,
           heightAt(templePosition.x, templePosition.z) + 5.7
         );
+        return;
+      }
+
+      if (elapsed < 10.6) {
+        showSkyRegion(camera, heightAt, onWalk, elapsed, 0, -0.15, 0.18);
+        return;
+      }
+
+      if (elapsed < 12.6) {
+        showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI * 0.5, 0.05, -0.22);
+        return;
+      }
+
+      if (elapsed < 16.0) {
+        showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI, 0.16, -0.18);
         return;
       }
 
