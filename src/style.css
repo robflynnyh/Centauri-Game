@@ -68,14 +68,9 @@ canvas {
 }
 
 .hud__notes {
-  position: fixed;
-  right: 18px;
-  top: 18px;
-  width: min(330px, calc(100vw - 36px));
-  padding: 10px 12px;
-  border: 1px solid rgba(73, 215, 197, 0.28);
-  background: rgba(7, 9, 20, 0.46);
-  box-shadow: 0 0 22px rgba(255, 123, 212, 0.14);
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(73, 215, 197, 0.28);
   color: rgba(244, 239, 227, 0.82);
 }
 
@@ -84,18 +79,11 @@ canvas {
 }
 
 .hud__notes[data-state="discovered"] {
-  border-color: rgba(255, 123, 212, 0.42);
-}
-
-.hud__notes-title {
-  margin-bottom: 5px;
-  font-size: 11px;
-  line-height: 1.2;
-  text-transform: uppercase;
+  border-top-color: rgba(255, 123, 212, 0.42);
 }
 
 .hud__notes-status {
-  margin-bottom: 6px;
+  margin-bottom: 5px;
   font-size: 10px;
   line-height: 1.2;
   color: rgba(73, 215, 197, 0.8);

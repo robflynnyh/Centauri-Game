@@ -107,3 +107,5 @@ Updated the PR flythrough to visit sun-facing, twilight, and night-side planet r
 Rebuilt the sky model around smooth planet-relative gradients and stable celestial directions so planets, rings, and meteors sit in a coherent sky sphere instead of camera-local colour bands.
 
 Added a lightweight field-notes system with a compact HUD panel, a small discoverable temple glyph marker, debug state for note discovery, and deterministic temple-debug coverage for recovering the first sparse temple note.
+
+Integrated recovered field-note status back into the original top-left HUD surface so the temple fragment reads as part of one coherent field-note card instead of a separate overlay.

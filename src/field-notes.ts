@@ -67,20 +67,16 @@ export function createFieldNotesState(definitions = FIELD_NOTE_DEFINITIONS): Fie
 }
 
 export function createFieldNotesHud(container: HTMLElement, state: FieldNotesState): FieldNotesHud {
-  const title = document.createElement("div");
-  title.className = "hud__notes-title";
-
   const status = document.createElement("div");
   status.className = "hud__notes-status";
 
   const body = document.createElement("p");
   body.className = "hud__notes-body";
 
-  container.replaceChildren(title, status, body);
+  container.replaceChildren(status, body);
 
   const refresh = (): void => {
     const snapshot = state.getSnapshot();
-    title.textContent = "Field notes";
     status.textContent = `${snapshot.discoveredCount.toString().padStart(3, "0")} / ${snapshot.total
       .toString()
       .padStart(3, "0")} recovered`;

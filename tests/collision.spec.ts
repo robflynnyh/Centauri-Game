@@ -300,6 +300,8 @@ test("starts temple debug route near the single temple landmark", async ({ page 
 test("discovers the temple field note once from the temple glyph source", async ({ page }) => {
   await page.goto("/?debug=temple");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.locator(".hud__title .hud__notes")).toBeVisible();
+  await expect(page.locator(".hud > .hud__notes")).toHaveCount(0);
   await expect(page.getByText("000 / 001 recovered")).toBeVisible();
 
   const source = await page.evaluate(() => {

@@ -114,8 +114,8 @@ app.innerHTML = `
     <section class="hud__title">
       <h1>Centauri Field Notes</h1>
       <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
+      <div class="hud__notes" aria-live="polite"></div>
     </section>
-    <section class="hud__notes" aria-live="polite"></section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
   </div>
