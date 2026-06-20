@@ -19,6 +19,7 @@ import {
   surfaceDistanceBetweenLocal,
 } from "./planet";
 import { createPixelRenderPipeline } from "./pixel-renderer";
+import { createSleepController, type SleepDebugState, type SleepUpdateInput } from "./sleep";
 import { createSkySystem, type SkyDebugState } from "./sky";
 import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
 import "./style.css";
@@ -65,7 +66,25 @@ declare global {
         generatedObjects: number;
         generatedObstacles: number;
         generatedReactiveFlora: number;
+        generatedSeaweedPatches: number;
+        generatedSeaweedBlades: number;
+        nearestSeaweedDistance: number;
+        nearestSeaweedFreezeAmount: number;
+        seaweedSamples: {
+          x: number;
+          z: number;
+          bladeCount: number;
+          nearestBiomeEdgeDistance: number;
+          flatness: number;
+          staticBend: number;
+        }[];
       };
+      getVisionState: () => {
+        isolationAmount: number;
+        targetIsolationAmount: number;
+        nearestBiomePatchDistance: number;
+      };
+      setIsolationOverride: (amount: number | null) => void;
       getTempleState: () => {
         x: number;
         z: number;
@@ -79,6 +98,9 @@ declare global {
       };
       getFieldNotesState: () => FieldNotesSnapshot;
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getSleepState: () => SleepDebugState;
+      setSleepAmount: (amount: number) => SleepDebugState;
+      advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
       getSkyState: () => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
@@ -98,7 +120,9 @@ const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
 const enableCollisionDebug = params.get("test") === "collision";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug;
+const enableSleepDebug = params.get("test") === "sleep";
+const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
+const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || enableSleepDebug || enableIsolationDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -108,6 +132,35 @@ const braking = 24;
 const gravity = 18;
 const jumpImpulse = 7.2;
 const mouseLookSensitivity = 0.0024;
+const hudBadgeText = isDemo
+  ? "PR demo mode"
+  : enableTempleDebug
+    ? "temple debug"
+      : isBeetleDebug
+        ? "beetle debug"
+        : enableSleepDebug
+          ? "sleep debug"
+          : enableIsolationDebug
+            ? "isolation debug"
+            : "exploration mode";
+
+function readInitialSleepAmount(): number {
+  const fromQuery = params.get("sleepAmount");
+  if (!fromQuery) return 1;
+  const value = Number(fromQuery);
+  return Number.isFinite(value) ? THREE.MathUtils.clamp(value, 0, 1) : 1;
+}
+
+const sleep = createSleepController({
+  drainSeconds: enableSleepDebug ? 1.6 : isDemo ? 14 : 600,
+  settleSeconds: enableSleepDebug ? 0.08 : isDemo ? 0.05 : 1.25,
+  refillSeconds: enableSleepDebug ? 0.42 : isDemo ? 4 : 8,
+  blackoutRecoverySeconds: enableSleepDebug ? 0.9 : 9,
+  blackoutMinimumSeconds: enableSleepDebug ? 0.25 : 3.5,
+  eyelidCloseSeconds: enableSleepDebug ? 0.18 : isDemo ? 2 : 1.05,
+  eyelidOpenSeconds: enableSleepDebug ? 0.18 : 1.05,
+  initialAmount: isDemo ? 0.35 : readInitialSleepAmount(),
+});
 
 app.innerHTML = `
   <div class="hud">
@@ -115,8 +168,24 @@ app.innerHTML = `
       <h1 class="hud__note-heading"></h1>
       <p class="hud__note-body" aria-live="polite"></p>
     </section>
-    <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
+    <div class="hud__sleep" aria-label="Sleep meter">
+      <div class="hud__sleep-row">
+        <span>Sleep</span>
+        <span class="hud__sleep-status">rested</span>
+      </div>
+      <div class="hud__sleep-track" aria-hidden="true">
+        <div class="hud__sleep-fill"></div>
+      </div>
+    </div>
+    <div class="hud__badge">${hudBadgeText}</div>
     <div class="hud__look" aria-live="polite"></div>
+  </div>
+  <div class="eyelids" aria-hidden="true" data-phase="open">
+    <div class="eyelid eyelid--top"></div>
+    <div class="eyelid eyelid--bottom"></div>
+  </div>
+  <div class="blackout" aria-hidden="true">
+    <span class="blackout__message">resting in the dark</span>
   </div>
 `;
 
@@ -145,7 +214,9 @@ const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
-    : new THREE.Vector3(0, 0, 24);
+    : enableIsolationDebug
+      ? new THREE.Vector3(-128, 0, -464)
+      : new THREE.Vector3(0, 0, 24);
 const player = {
   yaw: 0,
   pitch: -0.12,
@@ -164,6 +235,10 @@ const player = {
 };
 let mouseLookActive = false;
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
+const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
+const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
+const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
+const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
@@ -185,6 +260,12 @@ const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
+const visionState = {
+  isolationAmount: 0,
+  targetIsolationAmount: 0,
+  nearestBiomePatchDistance: 0,
+};
+let isolationOverrideAmount: number | null = null;
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
@@ -224,6 +305,18 @@ if (enableDebugTools) {
     }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
+    getVisionState: () => ({ ...visionState }),
+    setIsolationOverride: (amount: number | null) => {
+      if (amount === null || !Number.isFinite(amount)) {
+        isolationOverrideAmount = null;
+        return;
+      }
+
+      const clamped = THREE.MathUtils.clamp(amount, 0, 1);
+      isolationOverrideAmount = clamped;
+      visionState.targetIsolationAmount = clamped;
+      visionState.isolationAmount = clamped;
+    },
     getTempleState: () => ({
       x: temple.position.x,
       z: temple.position.z,
@@ -238,6 +331,21 @@ if (enableDebugTools) {
     getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
     getBeetleState: flyingBeetles.getState,
+    getSleepState: sleep.getState,
+    setSleepAmount: (amount: number) => {
+      const state = sleep.setAmount(amount);
+      updateSleepHud(state);
+      return state;
+    },
+    advanceSleep: (delta: number, input: Partial<SleepUpdateInput> = {}) => {
+      const state = sleep.update(delta, {
+        wantsSleep: input.wantsSleep ?? isSleepPressed(),
+        moving: input.moving ?? hasMovementInput(),
+        grounded: input.grounded ?? player.grounded,
+      });
+      updateSleepHud(state);
+      return state;
+    },
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
@@ -294,8 +402,23 @@ function updateLookStatus(): void {
 
 updateLookStatus();
 
+function updateSleepHud(state: SleepDebugState): void {
+  if (sleepFill) sleepFill.style.width = `${Math.round(state.normalized * 100)}%`;
+  if (sleepStatus) sleepStatus.textContent = state.message;
+  eyelidOverlay?.style.setProperty("--eyelid-cover", `${(state.eyelidAmount * 54).toFixed(2)}%`);
+  eyelidOverlay?.classList.toggle("eyelids--active", state.eyelidAmount > 0);
+  eyelidOverlay?.setAttribute("data-phase", state.eyelidPhase);
+  blackoutOverlay?.classList.toggle("blackout--visible", state.blackout);
+  blackoutOverlay?.setAttribute("aria-hidden", state.blackout ? "false" : "true");
+}
+
+updateSleepHud(sleep.getState());
+
 window.addEventListener("keydown", (event) => {
   keys.add(event.code);
+  if (event.code === "KeyR") {
+    event.preventDefault();
+  }
   if (event.code === "Space") {
     event.preventDefault();
     if (!event.repeat) player.jumpQueued = true;
@@ -331,9 +454,31 @@ function isCrouchPressed(): boolean {
   return keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("ShiftLeft") || keys.has("ShiftRight") || keys.has("KeyC");
 }
 
+function isSleepPressed(): boolean {
+  return keys.has("KeyR");
+}
+
+function hasMovementInput(): boolean {
+  return keys.has("KeyW") || keys.has("KeyS") || keys.has("KeyA") || keys.has("KeyD");
+}
+
 function moveToward(current: number, target: number, maxDelta: number): number {
   if (Math.abs(target - current) <= maxDelta) return target;
   return current + Math.sign(target - current) * maxDelta;
+}
+
+function isolationTargetForDistance(distance: number): number {
+  if (!Number.isFinite(distance)) return 1;
+  return THREE.MathUtils.smoothstep(distance, 70, 132);
+}
+
+function updateVisionState(delta: number): void {
+  const natureState = getNatureState();
+  const targetIsolationAmount = isolationOverrideAmount ?? isolationTargetForDistance(natureState.nearestBiomePatchDistance);
+  const fade = 1 - Math.exp(-delta * 0.92);
+  visionState.targetIsolationAmount = targetIsolationAmount;
+  visionState.nearestBiomePatchDistance = natureState.nearestBiomePatchDistance;
+  visionState.isolationAmount = THREE.MathUtils.lerp(visionState.isolationAmount, targetIsolationAmount, fade);
 }
 
 function playerSurfaceAltitude(): number {
@@ -345,7 +490,18 @@ function updatePlayerWorldPosition(): void {
   player.position.copy(pointOnPlanet(player.localPosition.x, player.localPosition.z, playerSurfaceAltitude()));
 }
 
-function updateExploration(delta: number): void {
+function restPlayerInPlace(delta: number, targetHeight: number): void {
+  player.velocity.set(0, 0, 0);
+  player.verticalVelocity = 0;
+  player.verticalOffset = 0;
+  player.grounded = true;
+  player.jumpQueued = false;
+  player.cameraHeight = THREE.MathUtils.lerp(player.cameraHeight, targetHeight, 1 - Math.exp(-delta * 3.2));
+  updatePlayerWorldPosition();
+  setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
+}
+
+function updateExploration(delta: number): { horizontalSpeed: number } {
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
   const right = new THREE.Vector3(forward.z, 0, -forward.x);
   const wish = new THREE.Vector3();
@@ -397,6 +553,8 @@ function updateExploration(delta: number): void {
 
   updatePlayerWorldPosition();
   setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
+
+  return { horizontalSpeed: actualHorizontalSpeed };
 }
 
 function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: number): void {
@@ -410,9 +568,22 @@ function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: numb
 function animate(): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
+  const sleepBefore = sleep.getState();
+  const movementIntent = hasMovementInput();
+  const wantsSleep = isDemo ? sleepBefore.amount < 1 : isSleepPressed();
+  let explorationMotion = { horizontalSpeed: 0 };
 
   if (isDemo) prDemo.update(elapsed, delta);
-  else updateExploration(delta);
+  else if (sleepBefore.blackout) restPlayerInPlace(delta, 0.52);
+  else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
+  else explorationMotion = updateExploration(delta);
+
+  const sleepState = sleep.update(delta, {
+    wantsSleep,
+    moving: isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15,
+    grounded: isDemo || player.grounded,
+  });
+  updateSleepHud(sleepState);
 
   footsteps.update(delta);
   waterCreatures.update(elapsed);
@@ -425,9 +596,13 @@ function animate(): void {
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
+  updateVisionState(delta);
   mist.update(elapsed, floraFocus);
 
-  pixelRenderer.render(scene, camera);
+  pixelRenderer.render(scene, camera, {
+    elapsed,
+    isolationAmount: visionState.isolationAmount,
+  });
   requestAnimationFrame(animate);
 }
 

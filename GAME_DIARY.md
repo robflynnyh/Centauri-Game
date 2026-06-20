@@ -2,6 +2,10 @@
 
 ## 2026-06-20
 
+Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.
+
+Added a calm eyelid close/open overlay for voluntary sleep, keeping it distinct from the zero-sleep blackout while making rest feel more intentional in the PR demo.
+
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
 Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.
@@ -111,3 +115,13 @@ Added a lightweight field-notes system with a compact HUD panel, a small discove
 Integrated recovered field-note status back into the original top-left HUD surface so the temple fragment reads as part of one coherent field-note card instead of a separate overlay.
 
 Reframed the HUD as the current field-note page itself: the initial expedition text is Field Note 001, and discovering the temple glyph advances the same card to Field Note 002 instead of showing recovered-note inventory status.
+
+Added a restrained isolation-vision postprocess that fades in when the player is far from generated biome patches, with a deterministic debug route and PR-demo beat for review.
+
+Retuned the isolation-vision pass after review so the doubled horizon and colour phase are plainly visible in debug captures and the PR demo, then added a rendered-frame comparison test for the postprocess.
+
+Retuned the isolation trigger for normal exploration density so deterministic wilderness reached from non-demo debug play can fade into the visible effect while the starter biome remains clear.
+
+Added sparse wilderness seaweed patches as flat green reactive blade sprites that only spawn away from dense biome clusters on flatter ground, with nearby player movement freezing their gentle shimmer and a PR-demo close-up for review.
+
+Retuned the wilderness seaweed after review so each flat blade has an organic static bend even when frozen, and suitable sparse areas receive a few more patches and blades without relaxing biome or slope constraints.

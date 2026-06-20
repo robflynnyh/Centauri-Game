@@ -260,6 +260,59 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.spawnAndRemoteDensitySimilar).toBe(true);
 });
 
+test("generates reactive seaweed only in sparse flat wilderness", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const spawnState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri debug hook");
+    debug.setPlayer(0, 24);
+    return debug.getNatureState();
+  });
+
+  expect(spawnState.nearestBiomePatchDistance).toBeLessThan(32);
+  expect(spawnState.nearestSeaweedDistance).toBeGreaterThan(50);
+  expect(spawnState.seaweedSamples.every((sample) => sample.nearestBiomeEdgeDistance >= 38)).toBe(true);
+
+  await page.evaluate(() => window.__centauriDebug?.setPlayer(-128, -464));
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestBiomePatchDistance > 150 && state.generatedSeaweedPatches > 12 && state.seaweedSamples.length > 0);
+  });
+
+  const wildernessState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+  expect(wildernessState?.generatedSeaweedPatches).toBeGreaterThan(12);
+  expect(wildernessState?.generatedSeaweedBlades).toBeGreaterThan(90);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.nearestBiomeEdgeDistance >= 38)).toBe(true);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.flatness <= 0.72)).toBe(true);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.staticBend >= 0.08)).toBe(true);
+
+  const seaweed = wildernessState?.seaweedSamples.find((sample) => sample.x > 20 && sample.x < 30 && sample.z > -620 && sample.z < -608);
+  expect(seaweed).toBeTruthy();
+  expect(seaweed?.bladeCount).toBeGreaterThanOrEqual(6);
+  expect(seaweed?.staticBend).toBeGreaterThan(0.1);
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), seaweed);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestSeaweedDistance > 16 && state.nearestSeaweedFreezeAmount < 0.08);
+  });
+  const farSeaweedState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 1.5, sample.z + 1.5), seaweed);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestSeaweedDistance < 7 && state.nearestSeaweedFreezeAmount > 0.72);
+  });
+  const nearSeaweedState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  expect(farSeaweedState?.nearestSeaweedDistance).toBeGreaterThan(16);
+  expect(farSeaweedState?.nearestSeaweedFreezeAmount).toBeLessThan(0.08);
+  expect(nearSeaweedState?.nearestSeaweedDistance).toBeLessThan(7);
+  expect(nearSeaweedState?.nearestSeaweedFreezeAmount).toBeGreaterThan(0.72);
+});
+
 test("starts temple debug route near the single temple landmark", async ({ page }) => {
   await page.goto("/?debug=temple");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

@@ -117,27 +117,53 @@ export function createPrDemoController(
         return;
       }
 
-      const radius = 68 - Math.sin(elapsed * 0.35) * 8;
-      const angle = elapsed * 0.14 + 0.35;
-      const x = Math.sin(angle) * radius;
-      const z = Math.cos(angle) * radius;
-      onWalk?.(new THREE.Vector3(x, 0, z), 0);
+      if (elapsed < 18.2) {
+        const focus = { x: 25.0, z: -614.0 };
+        const x = 44 + Math.sin(elapsed * 0.5) * 3;
+        const z = -593 + Math.cos(elapsed * 0.45) * 3;
+        onWalk?.(new THREE.Vector3(x, 0, z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 5.6,
+          focus.x,
+          focus.z,
+          heightAt(focus.x, focus.z) + 1.3
+        );
+        return;
+      }
 
-      const horizonBlend = THREE.MathUtils.smoothstep(Math.sin(elapsed * 0.22) * 0.5 + 0.5, 0.28, 0.82);
-      const localTargetX = 5.5 + Math.sin(elapsed * 0.22) * 2.4;
-      const localTargetZ = 6 + Math.cos(elapsed * 0.18) * 2.4;
-      const ridgeTargetX = -8 + Math.sin(elapsed * 0.15) * 18;
-      const ridgeTargetZ = -330 + Math.cos(elapsed * 0.18) * 24;
-      const targetX = THREE.MathUtils.lerp(localTargetX, ridgeTargetX, horizonBlend * 0.72);
-      const targetZ = THREE.MathUtils.lerp(localTargetZ, ridgeTargetZ, horizonBlend * 0.72);
+      if (elapsed < 20.0) {
+        const focus = { x: 25.0, z: -614.0 };
+        const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
+        const z = -607 + Math.cos(elapsed * 0.48) * 1.2;
+        onWalk?.(new THREE.Vector3(x, 0, z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 3.6,
+          focus.x,
+          focus.z,
+          heightAt(focus.x, focus.z) + 1.2
+        );
+        return;
+      }
+
+      const x = -128 + Math.sin(elapsed * 0.34) * 9;
+      const z = -464 + Math.cos(elapsed * 0.29) * 7;
+      onWalk?.(new THREE.Vector3(x, 0, z), 0);
+      const targetX = -210 + Math.sin(elapsed * 0.17) * 20;
+      const targetZ = -630 + Math.cos(elapsed * 0.15) * 32;
       lookAtPlanetPoint(
         camera,
         x,
         z,
-        heightAt(x, z) + 62 + Math.sin(elapsed * 0.7) * 3,
+        heightAt(x, z) + 28 + Math.sin(elapsed * 0.44) * 1.2,
         targetX,
         targetZ,
-        heightAt(targetX, targetZ) + THREE.MathUtils.lerp(5.9, 10.5, horizonBlend * 0.72)
+        heightAt(targetX, targetZ) + 10
       );
     },
   };
