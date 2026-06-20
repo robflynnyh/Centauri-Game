@@ -6,7 +6,7 @@ Added low drifting mist cloudlets as a bounded deterministic ambient layer, with
 
 Reworked the mist after review into sparse semi-transparent voxel cloudlets, keeping natural depth testing so terrain and props occlude the effect while avoiding flat alpha-card construction.
 
-Retuned the voxel mist from a few large cuboids into many smaller seeded cells distributed through a center-weighted cloud volume, so the cloud reads as granular low-res mist instead of chunky blocks.
+Retuned the voxel mist from a few large cuboids into many smaller cells sampled from a simple seeded density/noise volume, so the cloud reads as granular low-res mist instead of chunky blocks.
 
 Anchored the softened mist patches in planet space by removing camera-facing billboard rotation and keeping their orientation coherent with local surface placement and drift direction.
 

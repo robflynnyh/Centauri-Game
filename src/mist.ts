@@ -166,10 +166,12 @@ function makeMistPatch(baseX: number, baseZ: number, random: () => number, valle
 
 function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: number, isDemo: boolean): MistCell[] {
   const cellCount = isDemo ? 64 : 36 + Math.floor(random() * 20);
+  const noiseSeed = random() * 10_000;
   const cells: MistCell[] = [];
 
   for (let i = 0; i < cellCount; i += 1) {
-    const point = pointInMistVolume(random);
+    const sample = sampleMistVolume(random, noiseSeed);
+    const point = sample.point;
     const localX = center.x + point.x * radius * 1.08;
     const localZ = center.z + point.z * radius * 0.48;
     const localY = center.y + point.y * radius * 0.32 + Math.max(0, 1 - Math.abs(point.x)) * radius * 0.08;
@@ -189,7 +191,7 @@ function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: 
     cell.rotation.set(random() * 0.18 - 0.09, random() * Math.PI * 2, random() * 0.14 - 0.07);
     cells.push({
       mesh: cell,
-      opacityWeight: 0.62 + random() * 0.3,
+      opacityWeight: 0.42 + sample.density * 0.45 + random() * 0.1,
       lightnessShift: random() * 0.12 - 0.04,
     });
   }
@@ -197,16 +199,32 @@ function makeMistVoxelPuff(random: () => number, center: THREE.Vector3, radius: 
   return cells;
 }
 
-function pointInMistVolume(random: () => number): THREE.Vector3 {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
+function sampleMistVolume(random: () => number, seed: number): { point: THREE.Vector3; density: number } {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
     const point = new THREE.Vector3(centerBiased(random), centerBiased(random), centerBiased(random));
-    if (point.x * point.x + point.y * point.y * 1.55 + point.z * point.z * 1.25 <= 1) return point;
+    const density = mistDensityAt(point, seed);
+    if (density > 0.36 + random() * 0.34) return { point, density };
   }
-  return new THREE.Vector3(centerBiased(random) * 0.55, centerBiased(random) * 0.42, centerBiased(random) * 0.5);
+  const point = new THREE.Vector3(centerBiased(random) * 0.52, centerBiased(random) * 0.36, centerBiased(random) * 0.44);
+  return { point, density: mistDensityAt(point, seed) };
 }
 
 function centerBiased(random: () => number): number {
   return ((random() + random() + random()) / 3) * 2 - 1;
+}
+
+function mistDensityAt(point: THREE.Vector3, seed: number): number {
+  const ellipsoid = point.x * point.x + point.y * point.y * 1.55 + point.z * point.z * 1.25;
+  if (ellipsoid > 1) return 0;
+  const centerDensity = 1 - THREE.MathUtils.smoothstep(ellipsoid, 0.05, 1);
+  const coarse = valueNoise3(point.x * 2.7, point.y * 3.8, point.z * 3.1, seed);
+  const fine = valueNoise3(point.x * 6.3 + 3.1, point.y * 7.4 - 1.7, point.z * 5.9 + 2.4, seed + 19.37);
+  return THREE.MathUtils.clamp(centerDensity * 0.74 + coarse * 0.22 + fine * 0.14, 0, 1);
+}
+
+function valueNoise3(x: number, y: number, z: number, seed: number): number {
+  const value = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed * 0.017) * 43758.5453;
+  return value - Math.floor(value);
 }
 
 function createChunkRandom(chunkX: number, chunkZ: number): () => number {
