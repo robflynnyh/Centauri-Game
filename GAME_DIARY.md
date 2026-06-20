@@ -1,5 +1,21 @@
 # Game Diary
 
+## 2026-06-20
+
+Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.
+
+Added a calm eyelid close/open overlay for voluntary sleep, keeping it distinct from the zero-sleep blackout while making rest feel more intentional in the PR demo.
+
+Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
+
+Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.
+
+Added rare deterministic flying beetles as small ambient wildlife, with gentle wandering paths near natural patches and a short update radius so distant beetles stay inactive.
+
+Added `?debug=beetle` as a focused spawn route near the starter beetle so the rare wildlife can be inspected without searching the planet.
+
+Added gentle beetle obstacle avoidance that steers and lifts their flight away from solid trees and rocks, plus a debug smoke check for visible beetle clearance.
+
 ## 2026-06-19
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
@@ -72,8 +88,36 @@ Added a trippy color-shifting planet fog and capped generated nature complexity 
 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
 
-Gave the small water-creatures a scared hop response: within an 8.5 metre player radius they flee away with roughly double hop height and speed, then settle back toward their water patrols after the player moves on.
+Rebuilt the lo-fi render direction around a low-resolution whole-scene render target upscaled with nearest filtering, disabled WebGL antialiasing, and retuned terrain colour boundaries into broader block-stepped regions without repainting the existing palette.
 
-Retuned the scared water-creature response so frightened hops cover more ground away from the player instead of mostly popping in place, with a looser water leash while scared.
+## 2026-06-20
 
-Reworked the scared water-creature motion again after review: frogs now choose a stable short flee burst with preselected landings, anticipation, spring, and landing wobble so the behavior reads as playful panic rather than jitter.
+Added one deterministic strange temple landmark to the spherical planet, with a reserved generation clearance, collision, a `?debug=temple` review spawn, PR-demo visibility, and an intermittent proximity colour phase through the sky and fog system.
+
+Reworked the temple landmark into chunkier ancient alien ruins: layered round bases, a broken stellar-gate silhouette, glyph panels, fallen slabs, ruined columns, and reclaimed alien foliage so it reads less like a plain tower.
+
+Simplified the temple again after visual review feedback so it reads as one composed Proteus-like landmark at screenshot scale: a squat stepped plinth, one chunky broken ring, a few broad glyph panels, large vine ribbons, and minimal supporting slabs.
+
+Balanced the temple between the detailed ruin pass and the abstract simplified pass by keeping the strong plinth-and-ring silhouette while restoring a few large readable ruin elements, including chunky broken columns and clearer glyph blocks.
+
+Rebuilt the temple's central facade with custom trapezoid prism silhouettes instead of a dark backing cube, keeping the broken gate open and bright while using broad pylons, stone planes, and a few large ruin details.
+
+Made the camera-anchored sky respond to spherical planet location with deterministic regional palette tints, celestial offsets, ring tilt, meteor-field rotation, and reversible debug coverage.
+
+Reworked the location sky so day and night come from the current planet surface normal against a slowly rotating sun direction, producing a moving terminator instead of a global day/night fade.
+
+Updated the PR flythrough to visit sun-facing, twilight, and night-side planet regions so the location-based day/night model is visible in review footage.
+
+Rebuilt the sky model around smooth planet-relative gradients and stable celestial directions so planets, rings, and meteors sit in a coherent sky sphere instead of camera-local colour bands.
+
+Added a restrained isolation-vision postprocess that fades in when the player is far from generated biome patches, with a deterministic debug route and PR-demo beat for review.
+
+Retuned the isolation-vision pass after review so the doubled horizon and colour phase are plainly visible in debug captures and the PR demo, then added a rendered-frame comparison test for the postprocess.
+
+Retuned the isolation trigger for normal exploration density so deterministic wilderness reached from non-demo debug play can fade into the visible effect while the starter biome remains clear.
+
+Added sparse wilderness seaweed patches as flat green reactive blade sprites that only spawn away from dense biome clusters on flatter ground, with nearby player movement freezing their gentle shimmer and a PR-demo close-up for review.
+
+Retuned the wilderness seaweed after review so each flat blade has an organic static bend even when frozen, and suitable sparse areas receive a few more patches and blades without relaxing biome or slope constraints.
+
+Reworked scared water-creature hops as per-creature committed state machines on latest main: each scared hop now starts from anticipation at phase zero, drives horizontal travel and vertical arc from the same local progress, and only retargets after landing.
