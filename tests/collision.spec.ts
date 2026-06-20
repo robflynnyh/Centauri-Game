@@ -300,9 +300,9 @@ test("starts temple debug route near the single temple landmark", async ({ page 
 test("discovers the temple field note once from the temple glyph source", async ({ page }) => {
   await page.goto("/?debug=temple");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
-  await expect(page.locator(".hud__title .hud__notes")).toBeVisible();
-  await expect(page.locator(".hud > .hud__notes")).toHaveCount(0);
-  await expect(page.getByText("000 / 001 recovered")).toBeVisible();
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+  await expect(page.getByText(/Unknown planet/)).toBeVisible();
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
 
   const source = await page.evaluate(() => {
     const debug = window.__centauriDebug;
@@ -313,10 +313,12 @@ test("discovers the temple field note once from the temple glyph source", async 
       noteX: temple.noteX,
       noteZ: temple.noteZ,
       discoveredCount: notes.discoveredCount,
+      currentIndex: notes.current.index,
     };
   });
 
   expect(source.discoveredCount).toBe(0);
+  expect(source.currentIndex).toBe(1);
 
   await page.evaluate(({ noteX, noteZ }) => {
     const debug = window.__centauriDebug;
@@ -325,8 +327,10 @@ test("discovers the temple field note once from the temple glyph source", async 
   }, source);
 
   await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
-  await expect(page.getByText("001 / 001 recovered")).toBeVisible();
+  await expect(page.getByText("Field Note 002")).toBeVisible();
   await expect(page.getByText(/Gate in the violet stone/)).toBeVisible();
+  await expect(page.getByText(/Unknown planet/)).toHaveCount(0);
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
 
   const discovered = await page.evaluate(({ noteX, noteZ }) => {
     const debug = window.__centauriDebug;
@@ -338,6 +342,7 @@ test("discovers the temple field note once from the temple glyph source", async 
       firstCount: first.discoveredCount,
       firstId: first.discovered[0]?.id,
       firstDiscoveredAt: first.discovered[0]?.discoveredAt,
+      firstCurrentIndex: first.current.index,
       secondCount: second.discoveredCount,
       secondDiscoveredAt: second.discovered[0]?.discoveredAt,
     };
@@ -346,6 +351,7 @@ test("discovers the temple field note once from the temple glyph source", async 
   expect(discovered.firstCount).toBe(1);
   expect(discovered.firstId).toBe("temple-gate");
   expect(Number.isFinite(discovered.firstDiscoveredAt)).toBe(true);
+  expect(discovered.firstCurrentIndex).toBe(2);
   expect(discovered.secondCount).toBe(1);
   expect(discovered.secondDiscoveredAt).toBe(discovered.firstDiscoveredAt);
 });

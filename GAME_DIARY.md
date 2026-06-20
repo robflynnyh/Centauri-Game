@@ -109,3 +109,5 @@ Rebuilt the sky model around smooth planet-relative gradients and stable celesti
 Added a lightweight field-notes system with a compact HUD panel, a small discoverable temple glyph marker, debug state for note discovery, and deterministic temple-debug coverage for recovering the first sparse temple note.
 
 Integrated recovered field-note status back into the original top-left HUD surface so the temple fragment reads as part of one coherent field-note card instead of a separate overlay.
+
+Reframed the HUD as the current field-note page itself: the initial expedition text is Field Note 001, and discovering the temple glyph advances the same card to Field Note 002 instead of showing recovered-note inventory status.

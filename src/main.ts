@@ -112,9 +112,8 @@ const mouseLookSensitivity = 0.0024;
 app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
-      <h1>Centauri Field Notes</h1>
-      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
-      <div class="hud__notes" aria-live="polite"></div>
+      <h1 class="hud__note-heading"></h1>
+      <p class="hud__note-body" aria-live="polite"></p>
     </section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
@@ -136,11 +135,12 @@ const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
 const fieldNotes = createFieldNotesState();
-const fieldNotesHudElement = document.querySelector<HTMLElement>(".hud__notes");
-if (!fieldNotesHudElement) {
-  throw new Error("Missing field notes HUD");
+const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
+const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
+if (!fieldNotesHeading || !fieldNotesBody) {
+  throw new Error("Missing field note HUD");
 }
-const fieldNotesHud = createFieldNotesHud(fieldNotesHudElement, fieldNotes);
+const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fieldNotes);
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug

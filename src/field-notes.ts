@@ -1,13 +1,17 @@
 export type FieldNoteId = "temple-gate";
+export type FieldNotePageId = FieldNoteId | "arrival";
 
 export type FieldNoteDefinition = {
-  id: FieldNoteId;
+  id: FieldNotePageId;
   index: number;
-  title: string;
   body: string;
 };
 
-export type FieldNoteEntry = FieldNoteDefinition & {
+export type DiscoverableFieldNoteDefinition = FieldNoteDefinition & {
+  id: FieldNoteId;
+};
+
+export type FieldNoteEntry = DiscoverableFieldNoteDefinition & {
   discoveredAt: number;
 };
 
@@ -16,14 +20,21 @@ export type FieldNotesSnapshot = {
   discoveredCount: number;
   discovered: FieldNoteEntry[];
   latest: FieldNoteEntry | null;
+  current: FieldNoteDefinition | FieldNoteEntry;
 };
 
-export const FIELD_NOTE_DEFINITIONS: FieldNoteDefinition[] = [
+export const INITIAL_FIELD_NOTE: FieldNoteDefinition = {
+  id: "arrival",
+  index: 1,
+  body:
+    "Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add ?demo=pr for the deterministic PR flythrough.",
+};
+
+export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   {
     id: "temple-gate",
-    index: 1,
-    title: "Gate in the violet stone",
-    body: "The ring is broken, but the air inside it keeps a second colour. The planet leans toward it.",
+    index: 2,
+    body: "Gate in the violet stone. The ring is broken, but the air inside it keeps a second colour. The planet leans toward it.",
   },
 ];
 
@@ -57,37 +68,21 @@ export function createFieldNotesState(definitions = FIELD_NOTE_DEFINITIONS): Fie
       }, null);
 
       return {
-        total: definitions.length,
+        total: definitions.length + 1,
         discoveredCount: entries.length,
         discovered: entries,
         latest,
+        current: latest ?? INITIAL_FIELD_NOTE,
       };
     },
   };
 }
 
-export function createFieldNotesHud(container: HTMLElement, state: FieldNotesState): FieldNotesHud {
-  const status = document.createElement("div");
-  status.className = "hud__notes-status";
-
-  const body = document.createElement("p");
-  body.className = "hud__notes-body";
-
-  container.replaceChildren(status, body);
-
+export function createFieldNotesHud(heading: HTMLElement, body: HTMLElement, state: FieldNotesState): FieldNotesHud {
   const refresh = (): void => {
     const snapshot = state.getSnapshot();
-    status.textContent = `${snapshot.discoveredCount.toString().padStart(3, "0")} / ${snapshot.total
-      .toString()
-      .padStart(3, "0")} recovered`;
-    container.dataset.state = snapshot.latest ? "discovered" : "empty";
-
-    if (!snapshot.latest) {
-      body.textContent = "No fragments recovered.";
-      return;
-    }
-
-    body.textContent = `${snapshot.latest.index.toString().padStart(3, "0")} ${snapshot.latest.title}: ${snapshot.latest.body}`;
+    heading.textContent = `Field Note ${snapshot.current.index.toString().padStart(3, "0")}`;
+    body.textContent = snapshot.current.body;
   };
 
   refresh();
