@@ -95,3 +95,5 @@ Balanced the temple between the detailed ruin pass and the abstract simplified p
 Rebuilt the temple's central facade with custom trapezoid prism silhouettes instead of a dark backing cube, keeping the broken gate open and bright while using broad pylons, stone planes, and a few large ruin details.
 
 Made the camera-anchored sky respond to spherical planet location with deterministic regional palette tints, celestial offsets, ring tilt, meteor-field rotation, and reversible debug coverage.
+
+Reworked the location sky so day and night come from the current planet surface normal against a slowly rotating sun direction, producing a moving terminator instead of a global day/night fade.

@@ -123,7 +123,7 @@ test("wraps straight walks around the spherical planet", async ({ page }) => {
   expect(result.playerIsAbovePlanet).toBe(true);
 });
 
-test("derives reversible sky variation from planet location", async ({ page }) => {
+test("derives reversible sky and day-night variation from planet location", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
@@ -131,21 +131,39 @@ test("derives reversible sky variation from planet location", async ({ page }) =
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri collision debug hook");
 
+    const planet = debug.getPlanetState();
     debug.setPlayer(0, 24);
     const start = debug.getSkyState();
     debug.setPlayer(1600, 1400);
     const distant = debug.getSkyState();
     debug.setPlayer(0, 24);
     const returned = debug.getSkyState();
+    const oppositePairs = [0, planet.circumference / 4].map((x) => {
+      debug.setPlayer(x, 0);
+      const near = debug.getSkyState();
+      debug.setPlayer(x + planet.circumference / 2, 0);
+      const far = debug.getSkyState();
+      return {
+        near,
+        far,
+        dayDifference: Math.abs(near.dayAmount - far.dayAmount),
+        sunDotSum: Math.abs(near.sunDot + far.sunDot),
+      };
+    });
+    const strongestOppositePair = oppositePairs.reduce((best, pair) => (pair.dayDifference > best.dayDifference ? pair : best));
 
-    return { start, distant, returned };
+    return { start, distant, returned, strongestOppositePair };
   });
 
   expect(Math.abs(result.distant.celestialYaw - result.start.celestialYaw)).toBeGreaterThan(0.08);
   expect(Math.abs(result.distant.ringSpinOffset - result.start.ringSpinOffset)).toBeGreaterThan(0.08);
   expect(result.distant.dayHorizonHex).not.toBe(result.start.dayHorizonHex);
+  expect(result.strongestOppositePair.dayDifference).toBeGreaterThan(0.6);
+  expect(result.strongestOppositePair.sunDotSum).toBeLessThan(0.001);
   expect(result.returned.celestialYaw).toBeCloseTo(result.start.celestialYaw, 7);
   expect(result.returned.ringTilt).toBeCloseTo(result.start.ringTilt, 7);
+  expect(result.returned.dayAmount).toBeCloseTo(result.start.dayAmount, 7);
+  expect(result.returned.sunDot).toBeCloseTo(result.start.sunDot, 7);
   expect(result.returned.dayHorizonHex).toBe(result.start.dayHorizonHex);
   expect(result.returned.nightHorizonHex).toBe(result.start.nightHorizonHex);
 });
