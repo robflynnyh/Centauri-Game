@@ -69,6 +69,7 @@ declare global {
         targetIsolationAmount: number;
         nearestBiomePatchDistance: number;
       };
+      setIsolationOverride: (amount: number | null) => void;
       getTempleState: () => {
         x: number;
         z: number;
@@ -193,6 +194,7 @@ const visionState = {
   targetIsolationAmount: 0,
   nearestBiomePatchDistance: 0,
 };
+let isolationOverrideAmount: number | null = null;
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
@@ -233,6 +235,17 @@ if (enableDebugTools) {
     getTerrainState: terrain.getTerrainState,
     getNatureState,
     getVisionState: () => ({ ...visionState }),
+    setIsolationOverride: (amount: number | null) => {
+      if (amount === null || !Number.isFinite(amount)) {
+        isolationOverrideAmount = null;
+        return;
+      }
+
+      const clamped = THREE.MathUtils.clamp(amount, 0, 1);
+      isolationOverrideAmount = clamped;
+      visionState.targetIsolationAmount = clamped;
+      visionState.isolationAmount = clamped;
+    },
     getTempleState: () => ({
       x: temple.position.x,
       z: temple.position.z,
@@ -348,7 +361,7 @@ function isolationTargetForDistance(distance: number): number {
 
 function updateVisionState(delta: number): void {
   const natureState = getNatureState();
-  const targetIsolationAmount = isolationTargetForDistance(natureState.nearestBiomePatchDistance);
+  const targetIsolationAmount = isolationOverrideAmount ?? isolationTargetForDistance(natureState.nearestBiomePatchDistance);
   const fade = 1 - Math.exp(-delta * 0.92);
   visionState.targetIsolationAmount = targetIsolationAmount;
   visionState.nearestBiomePatchDistance = natureState.nearestBiomePatchDistance;

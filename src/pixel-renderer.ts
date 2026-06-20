@@ -73,11 +73,20 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
         ));
         float breath = 0.5 + 0.5 * sin(elapsed * 1.05);
         vec2 texel = 1.0 / max(lowResolution, vec2(1.0));
-        vec2 offset = direction * texel * amount * (1.05 + breath * 1.55);
+        vec2 offset = direction * texel * amount * (3.0 + breath * 2.7);
 
         vec3 ghostA = texture2D(sceneTexture, vUv + offset).rgb;
         vec3 ghostB = texture2D(sceneTexture, vUv - offset * 0.72).rgb;
         vec3 doubled = mix(ghostA, ghostB, 0.44);
+        vec3 horizontalEdge = abs(
+          texture2D(sceneTexture, vUv + vec2(texel.x, 0.0)).rgb -
+          texture2D(sceneTexture, vUv - vec2(texel.x, 0.0)).rgb
+        );
+        vec3 verticalEdge = abs(
+          texture2D(sceneTexture, vUv + vec2(0.0, texel.y)).rgb -
+          texture2D(sceneTexture, vUv - vec2(0.0, texel.y)).rgb
+        );
+        float edgeSignal = smoothstep(0.05, 0.32, length(horizontalEdge + verticalEdge));
 
         vec3 chroma = vec3(
           texture2D(sceneTexture, vUv + offset * 0.55).r,
@@ -85,18 +94,25 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
           texture2D(sceneTexture, vUv - offset * 0.45).b
         );
 
-        float ghostStrength = amount * (0.16 + breath * 0.1);
-        float chromaStrength = amount * 0.28;
+        float ghostStrength = amount * (0.2 + breath * 0.14 + edgeSignal * 0.12);
+        float chromaStrength = amount * (0.34 + edgeSignal * 0.16);
         vec3 colour = mix(base.rgb, chroma, chromaStrength);
         colour = mix(colour, doubled, ghostStrength);
         vec3 echoDifference = abs(doubled - base.rgb);
-        colour += echoDifference * amount * (0.16 + breath * 0.1);
-        colour += echoDifference * vec3(0.22, 0.07, 0.3) * amount * (0.42 + breath * 0.32);
+        colour += echoDifference * amount * (0.26 + breath * 0.18 + edgeSignal * 0.18);
+        colour += echoDifference * vec3(0.38, 0.12, 0.52) * amount * (0.56 + breath * 0.34);
+
+        vec3 phase = vec3(
+          0.5 + 0.5 * sin(elapsed * 0.43 + 0.3),
+          0.5 + 0.5 * sin(elapsed * 0.37 + 2.0),
+          0.5 + 0.5 * sin(elapsed * 0.41 + 4.1)
+        );
+        colour = mix(colour, colour * (0.92 + phase * 0.18) + vec3(0.025, 0.0, 0.04), amount * 0.18);
 
         float edge = smoothstep(0.58, 1.34, length(centered));
         float edgePulse = 0.5 + 0.5 * sin(elapsed * 0.68 + length(centered) * 7.0);
-        vec3 edgeTint = vec3(0.01, 0.045, 0.055) * edge * amount * (0.35 + edgePulse * 0.65);
-        colour = colour * (1.0 - edge * amount * 0.065) + edgeTint;
+        vec3 edgeTint = vec3(0.025, 0.075, 0.09) * edge * amount * (0.35 + edgePulse * 0.65);
+        colour = colour * (1.0 - edge * amount * 0.08) + edgeTint;
 
         gl_FragColor = vec4(clamp(colour, 0.0, 1.0), base.a);
       }
