@@ -64,6 +64,17 @@ declare global {
         generatedObjects: number;
         generatedObstacles: number;
         generatedReactiveFlora: number;
+        generatedSeaweedPatches: number;
+        generatedSeaweedBlades: number;
+        nearestSeaweedDistance: number;
+        nearestSeaweedFreezeAmount: number;
+        seaweedSamples: {
+          x: number;
+          z: number;
+          bladeCount: number;
+          nearestBiomeEdgeDistance: number;
+          flatness: number;
+        }[];
       };
       getVisionState: () => {
         isolationAmount: number;
