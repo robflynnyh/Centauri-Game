@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { placeObjectOnPlanet } from "./planet";
+import { placeObjectOnPlanet, surfaceDistanceBetweenLocal, type LocalPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 
@@ -14,12 +14,34 @@ type Creature = {
   interval: number;
 };
 
+type Beetle = {
+  root: THREE.Group;
+  wings: THREE.Mesh[];
+  anchor: LocalPlanetPoint;
+  radius: number;
+  altitude: number;
+  speed: number;
+  phase: number;
+  wobble: number;
+};
+
 const creatureSpecs = [
   { x: 6.6, z: 11.2, angle: -1.05, phase: 0.2, interval: 2.35, hopDistance: 1.05, scale: 1.12 },
   { x: 2.1, z: 5.9, angle: 0.74, phase: 1.25, interval: 2.8, hopDistance: 0.82 },
   { x: -15.3, z: -4.5, angle: 2.48, phase: 0.92, interval: 3.05, hopDistance: 0.78 },
   { x: 20.5, z: -12.6, angle: -2.2, phase: 1.68, interval: 2.55, hopDistance: 0.92 },
   { x: -5.2, z: 8.7, angle: -0.2, phase: 0.55, interval: 2.15, hopDistance: 0.68 },
+];
+
+const beetleSpecs = [
+  { x: 4.8, z: 8.4, radius: 2.1, altitude: 2.9, speed: 0.42, phase: 0.1, wobble: 0.78, scale: 0.92 },
+  { x: -18, z: 13, radius: 2.8, altitude: 3.4, speed: 0.34, phase: 2.6, wobble: 1.2 },
+  { x: 29, z: -15, radius: 2.3, altitude: 2.7, speed: 0.38, phase: 4.1, wobble: 0.64 },
+  { x: 263, z: -237, radius: 3.4, altitude: 4.2, speed: 0.26, phase: 1.4, wobble: 1.45, scale: 1.08 },
+  { x: 315, z: -266, radius: 2.5, altitude: 3.2, speed: 0.32, phase: 3.8, wobble: 0.96 },
+  { x: -174, z: 126, radius: 3.2, altitude: 3.8, speed: 0.3, phase: 5.2, wobble: 1.08 },
+  { x: 438, z: 92, radius: 2.9, altitude: 3.6, speed: 0.28, phase: 2.1, wobble: 1.32 },
+  { x: -396, z: -312, radius: 3.6, altitude: 4.1, speed: 0.24, phase: 0.7, wobble: 0.86 },
 ];
 
 export function createAlienWaterCreatures(
@@ -79,6 +101,66 @@ export function createAlienWaterCreatures(
         creature.feet.forEach((foot, footIndex) => {
           foot.position.z = (footIndex === 0 ? -0.28 : 0.28) - hopArc * 0.12;
           foot.rotation.x = hopActive ? -0.42 + hopArc * 0.25 : -0.42;
+        });
+      });
+    },
+  };
+}
+
+export function createRareFlyingBeetles(
+  scene: THREE.Scene,
+  heightAt: HeightSampler
+): { beetleGroup: THREE.Group; update: (elapsed: number, focus: LocalPlanetPoint) => void } {
+  const beetleGroup = new THREE.Group();
+  beetleGroup.name = "rare-flying-beetles";
+  scene.add(beetleGroup);
+
+  const beetles = beetleSpecs.map((spec, index) => {
+    const root = makeBeetle(index);
+    root.scale.multiplyScalar(spec.scale ?? 1);
+    beetleGroup.add(root);
+
+    return {
+      root,
+      wings: root.userData.wings as THREE.Mesh[],
+      anchor: { x: spec.x, z: spec.z },
+      radius: spec.radius,
+      altitude: spec.altitude,
+      speed: spec.speed,
+      phase: spec.phase,
+      wobble: spec.wobble,
+    } satisfies Beetle;
+  });
+
+  return {
+    beetleGroup,
+    update: (elapsed, focus) => {
+      beetles.forEach((beetle, index) => {
+        const distanceToFocus = surfaceDistanceBetweenLocal(focus, beetle.anchor);
+        if (distanceToFocus > 240) {
+          beetle.root.visible = false;
+          return;
+        }
+
+        beetle.root.visible = true;
+        const t = elapsed * beetle.speed + beetle.phase;
+        const nextT = t + 0.08;
+        const current = beetlePosition(beetle, t);
+        const next = beetlePosition(beetle, nextT);
+        const heading = Math.atan2(next.x - current.x, next.z - current.z);
+        const wingBeat = Math.sin(elapsed * 24 + index * 0.8);
+        const roll = Math.sin(t * 1.7 + beetle.wobble) * 0.22;
+        const bob = Math.sin(t * 2.4 + beetle.wobble) * 0.28;
+
+        placeObjectOnPlanet(
+          beetle.root,
+          current.x,
+          current.z,
+          heightAt(current.x, current.z) + beetle.altitude + bob,
+          new THREE.Euler(Math.sin(t * 1.3) * 0.08, heading, roll)
+        );
+        beetle.wings.forEach((wing, wingIndex) => {
+          wing.rotation.z = (wingIndex === 0 ? 0.82 : -0.82) + wingBeat * (wingIndex === 0 ? 0.42 : -0.42);
         });
       });
     },
@@ -152,5 +234,64 @@ function makeCreature(seed: number): THREE.Group {
 
   root.userData = { body, eyes, feet };
   root.scale.setScalar(0.78);
+  return root;
+}
+
+function beetlePosition(beetle: Beetle, t: number): LocalPlanetPoint {
+  return {
+    x: beetle.anchor.x + Math.sin(t) * beetle.radius + Math.sin(t * 2.3 + beetle.wobble) * beetle.radius * 0.28,
+    z: beetle.anchor.z + Math.cos(t * 0.86 + beetle.wobble) * beetle.radius * 0.72 + Math.sin(t * 1.7) * beetle.radius * 0.18,
+  };
+}
+
+function makeBeetle(seed: number): THREE.Group {
+  const root = new THREE.Group();
+  const shellMaterial = new THREE.MeshBasicMaterial({ color: seed % 2 === 0 ? 0x142a66 : 0x40216f });
+  const bellyMaterial = new THREE.MeshBasicMaterial({ color: seed % 2 === 0 ? 0xffd15e : 0x64ffd4 });
+  const wingMaterial = new THREE.MeshBasicMaterial({
+    color: seed % 2 === 0 ? 0x98fff1 : 0xff9fe7,
+    transparent: true,
+    opacity: 0.48,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffff9c });
+
+  const abdomen = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18, 0), shellMaterial);
+  abdomen.scale.set(0.84, 0.56, 1.26);
+  abdomen.position.z = -0.06;
+  root.add(abdomen);
+
+  const head = new THREE.Mesh(new THREE.OctahedronGeometry(0.12, 0), bellyMaterial);
+  head.position.set(0, 0.02, 0.18);
+  head.scale.set(0.95, 0.72, 0.82);
+  root.add(head);
+
+  const wings = [-1, 1].map((side) => {
+    const wing = new THREE.Mesh(new THREE.CircleGeometry(0.18, 5), wingMaterial);
+    wing.position.set(side * 0.12, 0.03, -0.02);
+    wing.rotation.set(Math.PI * 0.5, 0, side * 0.82);
+    wing.scale.set(0.7, 1.32, 1);
+    root.add(wing);
+    return wing;
+  });
+
+  [-0.055, 0.055].forEach((x) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.025, 5, 4), eyeMaterial);
+    eye.position.set(x, 0.07, 0.275);
+    root.add(eye);
+  });
+
+  for (let i = 0; i < 3; i += 1) {
+    [-1, 1].forEach((side) => {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.16), bellyMaterial);
+      leg.position.set(side * 0.15, -0.07, -0.12 + i * 0.11);
+      leg.rotation.set(0.15, side * 0.38, side * 0.46);
+      root.add(leg);
+    });
+  }
+
+  root.userData = { wings };
+  root.scale.setScalar(0.86);
   return root;
 }

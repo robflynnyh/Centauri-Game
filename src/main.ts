@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
-import { createAlienWaterCreatures } from "./creatures";
+import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
 import { populateNature } from "./nature";
@@ -63,6 +63,7 @@ declare global {
         generatedObstacles: number;
         generatedReactiveFlora: number;
       };
+      getBeetleState: () => { total: number; visible: number };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -142,6 +143,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
   collisionWorld.replaceDynamicObstacles
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt);
+const flyingBeetles = createRareFlyingBeetles(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
@@ -179,6 +181,10 @@ if (enableCollisionDebug) {
     }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
+    getBeetleState: () => ({
+      total: flyingBeetles.beetleGroup.children.length,
+      visible: flyingBeetles.beetleGroup.children.filter((child) => child.visible).length,
+    }),
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
@@ -348,8 +354,9 @@ function animate(): void {
 
   footsteps.update(delta);
   waterCreatures.update(elapsed);
-  sky.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  flyingBeetles.update(elapsed, floraFocus);
+  sky.update(elapsed);
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);

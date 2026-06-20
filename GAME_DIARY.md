@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-20
+
+Added rare deterministic flying beetles as small ambient wildlife, with gentle wandering paths near natural patches and a short update radius so distant beetles stay inactive.
+
 ## 2026-06-19
 
 Initial Centauri scaffold: Vite, TypeScript, Three.js, Playwright demo artifact workflow, Symphony instructions, and a first deterministic alien-planet flythrough.
