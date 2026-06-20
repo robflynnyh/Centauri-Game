@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures";
 import { createPrDemoController } from "./demo";
+import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import { createTempleLandmark } from "./landmarks";
 import { createMistSystem } from "./mist";
@@ -89,9 +90,13 @@ declare global {
         z: number;
         approachX: number;
         approachZ: number;
+        noteX: number;
+        noteZ: number;
+        noteRadius: number;
         influenceRadius: number;
         fullInfluenceRadius: number;
       };
+      getFieldNotesState: () => FieldNotesSnapshot;
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
@@ -160,8 +165,8 @@ const sleep = createSleepController({
 app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
-      <h1>Centauri Field Note 001</h1>
-      <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, hold R while still to sleep. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
+      <h1 class="hud__note-heading"></h1>
+      <p class="hud__note-body" aria-live="polite"></p>
     </section>
     <div class="hud__sleep" aria-label="Sleep meter">
       <div class="hud__sleep-row">
@@ -198,6 +203,13 @@ const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
+const fieldNotes = createFieldNotesState();
+const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
+const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
+if (!fieldNotesHeading || !fieldNotesBody) {
+  throw new Error("Missing field note HUD");
+}
+const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fieldNotes);
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
@@ -310,9 +322,13 @@ if (enableDebugTools) {
       z: temple.position.z,
       approachX: temple.approachPosition.x,
       approachZ: temple.approachPosition.z,
+      noteX: temple.noteSource.position.x,
+      noteZ: temple.noteSource.position.z,
+      noteRadius: temple.noteSource.radius,
       influenceRadius: temple.influenceRadius,
       fullInfluenceRadius: temple.fullInfluenceRadius,
     }),
+    getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
     getBeetleState: flyingBeetles.getState,
     getSleepState: sleep.getState,
@@ -541,6 +557,14 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
   return { horizontalSpeed: actualHorizontalSpeed };
 }
 
+function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: number): void {
+  const source = temple.noteSource;
+  if (surfaceDistanceBetweenLocal(focus, source.position) > source.radius) return;
+  if (fieldNotes.discover(source.noteId, elapsed)) {
+    fieldNotesHud.refresh();
+  }
+}
+
 function animate(): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
@@ -567,6 +591,7 @@ function animate(): void {
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   flyingBeetles.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
+  updateFieldNoteDiscovery(templeFocus, elapsed);
   sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
