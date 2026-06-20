@@ -53,10 +53,10 @@ type MistMaterial = THREE.ShaderMaterial & {
 
 const mistChunkSize = 92;
 const mistChunkRadius = 2;
-const normalPatchLimit = 28;
-const demoPatchLimit = 40;
-const normalCandidatesPerChunk = 2;
-const demoCandidatesPerChunk = 2;
+const normalPatchLimit = 40;
+const demoPatchLimit = 60;
+const normalCandidatesPerChunk = 3;
+const demoCandidatesPerChunk = 3;
 
 export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, isDemo: boolean): MistSystem {
   const group = new THREE.Group();
@@ -76,11 +76,11 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
     if (nextChunkX !== centerChunkX || nextChunkZ !== centerChunkZ) {
       centerChunkX = nextChunkX;
       centerChunkZ = nextChunkZ;
-      rebuildMistPatches(group, patches, material, heightAt, centerChunkX, centerChunkZ, isDemo);
+      rebuildMistPatches(group, patches, material, heightAt, normalizedFocus, centerChunkX, centerChunkZ, isDemo);
     }
 
     material.uniforms.dayAmount.value = getDayAmount(elapsed, isDemo);
-    material.uniforms.globalOpacity.value = isDemo ? 1.02 : 0.8;
+    material.uniforms.globalOpacity.value = isDemo ? 1.56 : 1.18;
     patches.forEach((patch) => updatePatchGeometry(patch, heightAt, elapsed, normalizedFocus, isDemo));
   };
 
@@ -92,6 +92,7 @@ function rebuildMistPatches(
   patches: MistPatch[],
   material: MistMaterial,
   heightAt: HeightSampler,
+  focus: LocalPlanetPoint,
   centerChunkX: number,
   centerChunkZ: number,
   isDemo: boolean
@@ -110,6 +111,7 @@ function rebuildMistPatches(
 
   const patchLimit = isDemo ? demoPatchLimit : normalPatchLimit;
   const candidatesPerChunk = isDemo ? demoCandidatesPerChunk : normalCandidatesPerChunk;
+  addFocusMistPatches(group, patches, material, heightAt, focus, centerChunkX, centerChunkZ, isDemo);
 
   for (const offset of chunkOffsets) {
     const chunkX = centerChunkX + offset.x;
@@ -122,7 +124,7 @@ function rebuildMistPatches(
       const suitability = mistSuitabilityAt(x, z, heightAt);
       const demoAllowance = isDemo ? 0.2 : 0;
       const chunkFalloff = 1 - THREE.MathUtils.smoothstep(offset.distance, 1.2, mistChunkRadius + 0.75);
-      const chance = suitability * (isDemo ? 1 : 0.74) + chunkFalloff * (isDemo ? 0.16 : 0.06);
+      const chance = suitability * (isDemo ? 1.34 : 1.04) + chunkFalloff * (isDemo ? 0.24 : 0.1);
 
       if (suitability + demoAllowance < 0.26 || random() > chance) continue;
 
@@ -130,6 +132,32 @@ function rebuildMistPatches(
       patches.push(patch);
       group.add(patch.mesh);
     }
+  }
+}
+
+function addFocusMistPatches(
+  group: THREE.Group,
+  patches: MistPatch[],
+  material: MistMaterial,
+  heightAt: HeightSampler,
+  focus: LocalPlanetPoint,
+  centerChunkX: number,
+  centerChunkZ: number,
+  isDemo: boolean
+): void {
+  const random = createChunkRandom(centerChunkX + 911, centerChunkZ - 349);
+  const count = isDemo ? 4 : 2;
+
+  for (let i = 0; i < count; i += 1) {
+    const angle = random() * Math.PI * 2 + i * 1.72;
+    const distance = (isDemo ? 14 : 10) + random() * (isDemo ? 34 : 24);
+    const x = focus.x + Math.cos(angle) * distance;
+    const z = focus.z + Math.sin(angle) * distance;
+    const suitability = Math.max(mistSuitabilityAt(x, z, heightAt), isDemo ? 0.74 : 0.58);
+    const patch = createMistPatch(x, z, suitability, random, material, isDemo);
+    patch.baseAlpha *= isDemo ? 1.25 : 1.12;
+    patches.push(patch);
+    group.add(patch.mesh);
   }
 }
 
@@ -141,8 +169,8 @@ function createMistPatch(
   material: MistMaterial,
   isDemo: boolean
 ): MistPatch {
-  const ribbonCount = isDemo ? 3 + Math.floor(random() * 2) : 2 + Math.floor(random() * 2);
-  const radius = THREE.MathUtils.lerp(7, 14.5, suitability) * (0.86 + random() * 0.34);
+  const ribbonCount = isDemo ? 4 + Math.floor(random() * 2) : 3 + Math.floor(random() * 2);
+  const radius = THREE.MathUtils.lerp(8.5, 17.5, suitability) * (0.86 + random() * 0.34);
   const ribbons: MistRibbon[] = [];
 
   for (let i = 0; i < ribbonCount; i += 1) {
@@ -152,11 +180,11 @@ function createMistPatch(
     const alphaNoise = randomSeries(random, segments + 1, 0.68, 1);
     ribbons.push({
       segments,
-      length: radius * (1.05 + random() * 0.72),
-      halfWidth: radius * (0.05 + random() * 0.055),
-      offset: (random() - 0.5) * radius * 0.62,
+      length: radius * (1.18 + random() * 0.92),
+      halfWidth: radius * (0.035 + random() * 0.045),
+      offset: (random() - 0.5) * radius * 0.88,
       angleOffset: (random() - 0.5) * 0.48,
-      altitude: 0.02 + random() * 0.34,
+      altitude: 0.08 + random() * 0.56,
       alpha: 0.52 + random() * 0.34,
       phase: random() * Math.PI * 2,
       wobble: radius * (0.04 + random() * 0.06),
@@ -175,13 +203,13 @@ function createMistPatch(
     baseX: x,
     baseZ: z,
     radius,
-    lift: 0.16 + random() * 0.18,
+    lift: 0.28 + random() * 0.26,
     rotation: random() * Math.PI * 2,
     driftAngle: random() * Math.PI * 2,
     driftRange: radius * (0.24 + random() * 0.18),
     driftSpeed: 0.034 + random() * 0.035,
     phase: random() * Math.PI * 2,
-    baseAlpha: THREE.MathUtils.lerp(0.035, isDemo ? 0.09 : 0.074, suitability),
+    baseAlpha: THREE.MathUtils.lerp(0.06, isDemo ? 0.17 : 0.125, suitability),
     ribbons,
     mesh,
     positionAttribute: geometry.getAttribute("position") as THREE.BufferAttribute,
@@ -247,8 +275,8 @@ function updatePatchGeometry(
   const centerAltitude = heightAt(center.x, center.z) + patch.lift;
   const centerWorld = pointOnPlanet(center.x, center.z, centerAltitude);
   const distanceToFocus = surfaceDistanceBetweenLocal(focus, center);
-  const fadeStart = isDemo ? 168 : 126;
-  const fadeEnd = isDemo ? 268 : 218;
+  const fadeStart = isDemo ? 190 : 150;
+  const fadeEnd = isDemo ? 305 : 250;
   const focusFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, fadeStart, fadeEnd);
 
   patch.mesh.visible = focusFade > 0.025;
@@ -274,8 +302,8 @@ function updatePatchGeometry(
       const u = i / ribbon.segments;
       const along = (u - 0.5) * ribbon.length;
       const edgeFade = Math.pow(Math.sin(u * Math.PI), 0.82);
-      const width = ribbon.halfWidth * ribbon.widthNoise[i] * (0.46 + edgeFade * 0.74);
-      const raggedSide = ribbon.sideNoise[i] * ribbon.halfWidth * 0.38;
+      const width = ribbon.halfWidth * ribbon.widthNoise[i] * (0.35 + edgeFade * 0.85);
+      const raggedSide = ribbon.sideNoise[i] * ribbon.halfWidth * 0.58;
       const centerSide = ribbon.offset + raggedSide + ribbonDrift * Math.sin(u * Math.PI * 2 + ribbon.phase);
       const alpha = patch.baseAlpha * ribbon.alpha * edgeFade * ribbon.alphaNoise[i] * breath * focusFade;
 
@@ -318,8 +346,8 @@ function mistSuitabilityAt(x: number, z: number, heightAt: HeightSampler): numbe
   ];
   const average = samples.reduce((total, height) => total + height, 0) / samples.length;
   const roughness = samples.reduce((highest, height) => Math.max(highest, Math.abs(height - centerHeight)), 0);
-  const lowland = 1 - THREE.MathUtils.smoothstep(centerHeight, 2.2, 9.4);
-  const basin = THREE.MathUtils.smoothstep(average - centerHeight, 0.2, 3.8);
+  const lowland = 1 - THREE.MathUtils.smoothstep(centerHeight, 3.6, 11.5);
+  const basin = THREE.MathUtils.smoothstep(average - centerHeight, 0, 3.8);
   const quietGround = 1 - THREE.MathUtils.smoothstep(roughness, 1.2, 5.8);
 
   const detail = detailCoordinatesAt(x, z);
@@ -329,7 +357,7 @@ function mistSuitabilityAt(x: number, z: number, heightAt: HeightSampler): numbe
       Math.sin((detail.x - detail.z) * 0.055) +
       3) /
     6;
-  const waterVein = THREE.MathUtils.smoothstep(waterLike, 0.48, 0.84);
+  const waterVein = THREE.MathUtils.smoothstep(waterLike, 0.42, 0.78);
 
   return THREE.MathUtils.clamp(lowland * 0.42 + basin * 0.25 + quietGround * 0.12 + waterVein * 0.26, 0, 1);
 }
@@ -344,8 +372,8 @@ function makeMistMaterial(): MistMaterial {
     uniforms: {
       dayAmount: { value: 1 },
       globalOpacity: { value: 1 },
-      dayColour: { value: new THREE.Color(0xd7edff) },
-      nightColour: { value: new THREE.Color(0x6b5aa8) },
+      dayColour: { value: new THREE.Color(0xe7f4ff) },
+      nightColour: { value: new THREE.Color(0xb49df1) },
     },
     vertexShader: `
       attribute float mistAlpha;
@@ -369,7 +397,7 @@ function makeMistMaterial(): MistMaterial {
 
       void main() {
         vec3 colour = mix(nightColour, dayColour, dayAmount);
-        float phaseOpacity = mix(1.16, 0.78, dayAmount);
+        float phaseOpacity = mix(1.28, 0.95, dayAmount);
         gl_FragColor = vec4(colour * vMistTone, vMistAlpha * globalOpacity * phaseOpacity);
       }
     `,
