@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures";
 import { createPrDemoController } from "./demo";
+import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import { createTempleLandmark } from "./landmarks";
 import { createMistSystem } from "./mist";
@@ -70,9 +71,13 @@ declare global {
         z: number;
         approachX: number;
         approachZ: number;
+        noteX: number;
+        noteZ: number;
+        noteRadius: number;
         influenceRadius: number;
         fullInfluenceRadius: number;
       };
+      getFieldNotesState: () => FieldNotesSnapshot;
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getSkyState: () => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
@@ -107,9 +112,10 @@ const mouseLookSensitivity = 0.0024;
 app.innerHTML = `
   <div class="hud">
     <section class="hud__title">
-      <h1>Centauri Field Note 001</h1>
+      <h1>Centauri Field Notes</h1>
       <p>Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add <code>?demo=pr</code> for the deterministic PR flythrough.</p>
     </section>
+    <section class="hud__notes" aria-live="polite"></section>
     <div class="hud__badge">${isDemo ? "PR demo mode" : enableTempleDebug ? "temple debug" : isBeetleDebug ? "beetle debug" : "exploration mode"}</div>
     <div class="hud__look" aria-live="polite"></div>
   </div>
@@ -129,6 +135,12 @@ const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
+const fieldNotes = createFieldNotesState();
+const fieldNotesHudElement = document.querySelector<HTMLElement>(".hud__notes");
+if (!fieldNotesHudElement) {
+  throw new Error("Missing field notes HUD");
+}
+const fieldNotesHud = createFieldNotesHud(fieldNotesHudElement, fieldNotes);
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
@@ -217,9 +229,13 @@ if (enableDebugTools) {
       z: temple.position.z,
       approachX: temple.approachPosition.x,
       approachZ: temple.approachPosition.z,
+      noteX: temple.noteSource.position.x,
+      noteZ: temple.noteSource.position.z,
+      noteRadius: temple.noteSource.radius,
       influenceRadius: temple.influenceRadius,
       fullInfluenceRadius: temple.fullInfluenceRadius,
     }),
+    getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
     getBeetleState: flyingBeetles.getState,
     setPlayer: (x: number, z: number) => {
@@ -383,6 +399,14 @@ function updateExploration(delta: number): void {
   setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
 }
 
+function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: number): void {
+  const source = temple.noteSource;
+  if (surfaceDistanceBetweenLocal(focus, source.position) > source.radius) return;
+  if (fieldNotes.discover(source.noteId, elapsed)) {
+    fieldNotesHud.refresh();
+  }
+}
+
 function animate(): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
@@ -396,6 +420,7 @@ function animate(): void {
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   flyingBeetles.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
+  updateFieldNoteDiscovery(templeFocus, elapsed);
   sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);

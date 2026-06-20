@@ -12,6 +12,11 @@ export type TempleLandmark = {
   group: THREE.Group;
   position: LocalPlanetPoint;
   approachPosition: LocalPlanetPoint;
+  noteSource: {
+    noteId: "temple-gate";
+    position: LocalPlanetPoint;
+    radius: number;
+  };
   collision: CollisionObstacle;
   reservedZone: LandmarkZone;
   influenceRadius: number;
@@ -25,20 +30,31 @@ const templeClearanceRadius = 24;
 const templeCollisionRadius = 5.8;
 const templeInfluenceRadius = 46;
 const templeFullInfluenceRadius = 13;
+const templeNoteRadius = 12.5;
 
 export function createTempleLandmark(scene: THREE.Scene, heightAt: HeightSampler): TempleLandmark {
   const position = chooseTemplePosition(heightAt);
   const approachPosition = normalizePlanetCoords(position.x - 17, position.z + 19);
+  const notePosition = normalizePlanetCoords(position.x - 8.2, position.z + 7.4);
   const group = makeTemple();
   const altitude = heightAt(position.x, position.z);
   const rotation = seededUnit(`${templeSeed}:rotation`) * Math.PI * 2;
   placeObjectOnPlanet(group, position.x, position.z, altitude + 0.04, new THREE.Euler(0, rotation, 0));
   scene.add(group);
 
+  const noteMarker = makeTempleNoteMarker();
+  placeObjectOnPlanet(noteMarker, notePosition.x, notePosition.z, heightAt(notePosition.x, notePosition.z) + 0.02, new THREE.Euler(0, rotation + 0.42, 0));
+  scene.add(noteMarker);
+
   return {
     group,
     position,
     approachPosition,
+    noteSource: {
+      noteId: "temple-gate",
+      position: notePosition,
+      radius: templeNoteRadius,
+    },
     collision: { kind: "temple", x: position.x, z: position.z, radius: templeCollisionRadius },
     reservedZone: { x: position.x, z: position.z, radius: templeClearanceRadius },
     influenceRadius: templeInfluenceRadius,
@@ -191,6 +207,43 @@ function makeTemple(): THREE.Group {
   addSlab(group, -0.2, 3.35, 2.4, 0.04, 0.08, baseMaterial);
 
   group.userData = { innerGlow, gateGlow };
+
+  return group;
+}
+
+function makeTempleNoteMarker(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "temple-field-note-glyph-marker";
+
+  const shardMaterial = new THREE.MeshBasicMaterial({ color: 0x49d7c5 });
+  const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x201749 });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff7bd4,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 1.05, 0.28, 5), darkMaterial);
+  base.position.y = 0.14;
+  base.rotation.y = Math.PI / 5;
+  group.add(base);
+
+  const shard = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.9, 4), shardMaterial);
+  shard.position.y = 1.08;
+  shard.rotation.set(0.16, Math.PI / 4, -0.08);
+  group.add(shard);
+
+  const cross = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.9, 0.12), glowMaterial);
+  cross.position.set(0.02, 1.1, 0.32);
+  cross.rotation.z = 0.72;
+  group.add(cross);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 4, 16), glowMaterial.clone());
+  halo.position.y = 1.55;
+  halo.rotation.x = Math.PI / 2;
+  group.add(halo);
 
   return group;
 }
