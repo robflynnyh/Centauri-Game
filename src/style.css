@@ -27,6 +27,7 @@ canvas {
 .hud {
   position: fixed;
   inset: 0;
+  z-index: 2;
   pointer-events: none;
   padding: 18px;
   background: radial-gradient(circle at center, transparent 45%, rgba(16, 14, 40, 0.22) 100%);
@@ -56,6 +57,46 @@ canvas {
   color: rgba(244, 239, 227, 0.78);
 }
 
+.hud__sleep {
+  width: 188px;
+  margin-top: 10px;
+  padding: 8px 10px 9px;
+  border: 1px solid rgba(244, 239, 227, 0.2);
+  background: rgba(7, 9, 20, 0.38);
+  box-shadow: 0 0 18px rgba(255, 48, 71, 0.1);
+}
+
+.hud__sleep-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: rgba(244, 239, 227, 0.72);
+  text-transform: uppercase;
+}
+
+.hud__sleep-status {
+  color: rgba(255, 190, 194, 0.8);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.hud__sleep-track {
+  width: 100%;
+  height: 8px;
+  border: 1px solid rgba(255, 220, 224, 0.28);
+  background: rgba(38, 3, 10, 0.64);
+}
+
+.hud__sleep-fill {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, #8f001c 0%, #ff334d 68%, #ff7a84 100%);
+  box-shadow: 0 0 10px rgba(255, 58, 76, 0.42);
+  transition: width 0.22s linear;
+}
+
 .hud__badge {
   position: fixed;
   right: 18px;
@@ -82,4 +123,51 @@ canvas {
 
 .hud__look:empty {
   display: none;
+}
+
+.blackout {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: #010104;
+  opacity: 0;
+  transition: opacity 1.35s ease;
+}
+
+.blackout--visible {
+  opacity: 1;
+}
+
+.blackout__message {
+  font-size: 12px;
+  color: rgba(255, 222, 224, 0.72);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 560px) {
+  .hud {
+    padding: 12px;
+  }
+
+  .hud__title {
+    max-width: calc(100vw - 24px);
+  }
+
+  .hud__sleep {
+    width: min(188px, calc(100vw - 24px));
+  }
+
+  .hud__badge {
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .hud__look {
+    left: 12px;
+    bottom: 12px;
+  }
 }

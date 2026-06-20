@@ -2,6 +2,8 @@
 
 ## 2026-06-20
 
+Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.
+
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
 Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.
