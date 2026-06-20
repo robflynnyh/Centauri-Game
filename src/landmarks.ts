@@ -112,7 +112,6 @@ function makeTemple(): THREE.Group {
   const wornStoneMaterial = new THREE.MeshBasicMaterial({ color: 0x8a65df });
   const faceMaterial = new THREE.MeshBasicMaterial({ color: 0x49d7c5 });
   const vineMaterial = new THREE.MeshBasicMaterial({ color: 0x69ff87 });
-  const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xff75c9 });
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0xff7bd4,
     transparent: true,
@@ -121,69 +120,66 @@ function makeTemple(): THREE.Group {
     blending: THREE.AdditiveBlending,
   });
 
-  const lowerBase = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 7.4, 0.72, 10), shadowStoneMaterial);
+  const lowerBase = new THREE.Mesh(new THREE.CylinderGeometry(7.2, 8.2, 0.78, 8), shadowStoneMaterial);
   lowerBase.position.y = 0.36;
-  lowerBase.rotation.y = Math.PI / 10;
-  lowerBase.scale.z = 0.82;
+  lowerBase.rotation.y = Math.PI / 8;
+  lowerBase.scale.z = 0.74;
   group.add(lowerBase);
 
-  const middleBase = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 6.1, 0.7, 10), baseMaterial);
-  middleBase.position.y = 0.98;
-  middleBase.rotation.y = Math.PI / 10;
-  middleBase.scale.z = 0.78;
+  const middleBase = new THREE.Mesh(new THREE.CylinderGeometry(5.9, 6.6, 0.86, 8), baseMaterial);
+  middleBase.position.y = 1.08;
+  middleBase.rotation.y = Math.PI / 8;
+  middleBase.scale.z = 0.68;
   group.add(middleBase);
 
-  const upperBase = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.8, 0.64, 8), stepMaterial);
-  upperBase.position.y = 1.56;
-  upperBase.rotation.y = Math.PI / 8;
-  upperBase.scale.z = 0.74;
+  const upperBase = new THREE.Mesh(new THREE.CylinderGeometry(4.45, 5.0, 0.74, 6), stepMaterial);
+  upperBase.position.y = 1.78;
+  upperBase.rotation.y = Math.PI / 6;
+  upperBase.scale.z = 0.64;
   group.add(upperBase);
 
-  addGateSegment(group, 2.62, 0.42, -0.2, 0.16, 2.18, baseMaterial);
-  addGateSegment(group, 2.62, 0.42, 2.96, 0.16, 1.62, baseMaterial);
-  addGateSegment(group, 3.32, 0.18, 0.0, 0.18, 1.95, wornStoneMaterial);
-  addGateSegment(group, 3.32, 0.18, 3.28, 0.18, 1.35, wornStoneMaterial);
+  const backShadow = new THREE.Mesh(new THREE.BoxGeometry(5.7, 4.55, 0.5), shadowStoneMaterial);
+  backShadow.position.set(0.45, 4.28, -1.36);
+  backShadow.rotation.z = -0.08;
+  group.add(backShadow);
 
-  const gateGlow = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.05, 5, 34, Math.PI * 1.72), glowMaterial.clone());
-  gateGlow.position.set(0, 4.52, -1.02);
-  gateGlow.rotation.z = -0.42;
+  addGateSegment(group, 3.05, 0.72, -0.1, 0.08, Math.PI * 1.38, baseMaterial);
+  addGateSegment(group, 3.95, 0.32, -0.02, 0.08, Math.PI * 1.18, wornStoneMaterial);
+
+  const leftFoot = new THREE.Mesh(new THREE.BoxGeometry(1.24, 2.55, 1.15), baseMaterial);
+  leftFoot.position.set(-2.92, 2.78, -1.04);
+  leftFoot.rotation.z = 0.08;
+  group.add(leftFoot);
+
+  const rightFoot = new THREE.Mesh(new THREE.BoxGeometry(1.02, 1.68, 1.1), shadowStoneMaterial);
+  rightFoot.position.set(3.05, 2.34, -1.02);
+  rightFoot.rotation.z = -0.2;
+  group.add(rightFoot);
+
+  const brokenCrown = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.82, 1.02), wornStoneMaterial);
+  brokenCrown.position.set(1.85, 6.82, -1.02);
+  brokenCrown.rotation.set(0.04, 0, -0.42);
+  group.add(brokenCrown);
+
+  const gateGlow = new THREE.Mesh(new THREE.TorusGeometry(2.42, 0.07, 5, 26, Math.PI * 1.22), glowMaterial.clone());
+  gateGlow.position.set(0, 4.48, -1.42);
+  gateGlow.rotation.z = -0.02;
   group.add(gateGlow);
 
-  const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(1.55, 14), glowMaterial);
-  innerGlow.position.set(0, 4.48, -1.08);
-  innerGlow.scale.set(1, 1.34, 1);
+  const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(1.72, 12), glowMaterial);
+  innerGlow.position.set(0, 4.44, -1.48);
+  innerGlow.scale.set(1, 1.28, 1);
   group.add(innerGlow);
 
-  for (let i = 0; i < 9; i += 1) {
-    const angle = (i / 9) * Math.PI * 2 + 0.18;
-    const radius = i % 3 === 0 ? 3.95 : 3.35;
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.68 + (i % 2) * 0.22, 0.18), i % 2 === 0 ? faceMaterial : bloomMaterial);
-    panel.position.set(Math.cos(angle) * radius, 1.95 + (i % 3) * 0.24, Math.sin(angle) * radius * 0.72);
-    panel.rotation.y = -angle + Math.PI * 0.5;
-    panel.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.08;
-    group.add(panel);
-  }
+  addGlyphPanel(group, -1.75, 2.34, 0.72, 1.24, 0.18, faceMaterial);
+  addGlyphPanel(group, 1.58, 2.34, 0.72, 1.24, -0.14, faceMaterial);
+  addGlyphPanel(group, 0.0, 2.48, 1.5, 0.38, 0, faceMaterial);
 
-  addRuinedColumn(group, -3.95, -2.35, 3.25, -0.18, stepMaterial, faceMaterial);
-  addRuinedColumn(group, 4.32, -1.85, 2.28, 0.26, stepMaterial, faceMaterial);
-  addRuinedColumn(group, -4.82, 1.62, 1.7, -0.42, wornStoneMaterial, faceMaterial);
-  addRuinedColumn(group, 3.7, 2.08, 1.28, 0.52, wornStoneMaterial, faceMaterial);
+  addBroadVine(group, -2.88, -0.52, 2.32, 4.9, 0.32, vineMaterial);
+  addBroadVine(group, 1.9, -0.5, 2.18, 3.9, -0.28, vineMaterial);
 
-  addSlab(group, -2.4, 3.15, 2.4, 0.34, 0.38, shadowStoneMaterial);
-  addSlab(group, 2.95, 2.9, 1.8, -0.56, -0.22, stepMaterial);
-  addSlab(group, -5.4, -0.2, 1.6, 0.9, 0.5, wornStoneMaterial);
-  addSlab(group, 5.2, 0.88, 1.35, -0.68, -0.48, baseMaterial);
-
-  addVine(group, -2.45, -1.28, 3.8, 0.22, vineMaterial);
-  addVine(group, 2.12, -1.18, 3.2, -0.34, vineMaterial);
-  addVine(group, -4.1, 0.72, 1.4, 0.82, vineMaterial);
-
-  for (let i = 0; i < 6; i += 1) {
-    const bloom = new THREE.Mesh(new THREE.OctahedronGeometry(0.14 + (i % 2) * 0.04, 0), bloomMaterial);
-    const angle = i * 1.13 + 0.4;
-    bloom.position.set(Math.cos(angle) * 4.8, 0.95 + (i % 3) * 0.16, Math.sin(angle) * 3.2);
-    group.add(bloom);
-  }
+  addSlab(group, -4.8, 2.1, 2.8, 0.44, 0.18, shadowStoneMaterial);
+  addSlab(group, 4.85, 1.25, 2.1, -0.36, -0.16, wornStoneMaterial);
 
   group.userData = { innerGlow, gateGlow };
 
@@ -205,31 +201,6 @@ function addGateSegment(
   group.add(segment);
 }
 
-function addRuinedColumn(
-  group: THREE.Group,
-  x: number,
-  z: number,
-  height: number,
-  lean: number,
-  material: THREE.Material,
-  glyphMaterial: THREE.Material
-): void {
-  const column = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.52, height, 5), material);
-  column.position.set(x, 1.55 + height * 0.5, z);
-  column.rotation.set(lean * 0.28, 0.2, lean);
-  group.add(column);
-
-  const top = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.42, 0.8), material);
-  top.position.set(x + Math.sin(lean) * 0.38, 1.84 + height, z);
-  top.rotation.set(lean * 0.18, 0.36, lean * 0.5);
-  group.add(top);
-
-  const glyph = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.42), glyphMaterial);
-  glyph.position.set(x, 1.9 + height * 0.38, z + 0.5);
-  glyph.rotation.y = 0.1;
-  group.add(glyph);
-}
-
 function addSlab(
   group: THREE.Group,
   x: number,
@@ -245,15 +216,23 @@ function addSlab(
   group.add(slab);
 }
 
-function addVine(group: THREE.Group, x: number, z: number, height: number, twist: number, material: THREE.Material): void {
-  const segments = 5;
-  for (let i = 0; i < segments; i += 1) {
-    const t = i / (segments - 1);
-    const vine = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.62, 0.12), material);
-    vine.position.set(x + Math.sin(t * Math.PI * 2 + twist) * 0.22, 1.2 + t * height, z + Math.cos(t * Math.PI * 2 + twist) * 0.16);
-    vine.rotation.set(0.24 + t * 0.4, twist + t * 1.7, 0.32);
-    group.add(vine);
-  }
+function addGlyphPanel(group: THREE.Group, x: number, y: number, width: number, height: number, rotation: number, material: THREE.Material): void {
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, 0.2), material);
+  panel.position.set(x, y, 3.18);
+  panel.rotation.y = rotation;
+  group.add(panel);
+}
+
+function addBroadVine(group: THREE.Group, x: number, z: number, y: number, height: number, lean: number, material: THREE.Material): void {
+  const vine = new THREE.Mesh(new THREE.BoxGeometry(0.42, height, 0.24), material);
+  vine.position.set(x, y + height * 0.5, z);
+  vine.rotation.set(0.1, 0, lean);
+  group.add(vine);
+
+  const wrap = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.38, 0.24), material);
+  wrap.position.set(x + Math.sign(lean || 1) * 0.42, y + height * 0.62, z + 0.04);
+  wrap.rotation.set(0.08, 0, -lean * 0.7);
+  group.add(wrap);
 }
 
 function createSeededRandom(seed: string): () => number {
