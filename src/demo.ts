@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { lookAtPlanetPoint } from "./planet";
+import { lookAtPlanetPoint, type LocalPlanetPoint } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -15,7 +15,8 @@ export function createPrDemoController(
   camera: THREE.Camera,
   heightAt: HeightSampler,
   resolveMove: ResolveMove,
-  onWalk?: WalkObserver
+  onWalk?: WalkObserver,
+  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -54,9 +55,18 @@ export function createPrDemoController(
       }
 
       if (elapsed < 10.8) {
-        const generatedBiome = new THREE.Vector3(260, 0, -240);
-        onWalk?.(generatedBiome, 0);
-        lookAtPlanetPoint(camera, 278, -248, heightAt(278, -248) + 8.5, 306, -268, heightAt(306, -268) + 2.8);
+        const templePosition = temple?.position ?? { x: 260, z: -240 };
+        const approach = temple?.approachPosition ?? { x: 278, z: -248 };
+        onWalk?.(new THREE.Vector3(templePosition.x, 0, templePosition.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          approach.x,
+          approach.z,
+          heightAt(approach.x, approach.z) + 7.8,
+          templePosition.x,
+          templePosition.z,
+          heightAt(templePosition.x, templePosition.z) + 5.7
+        );
         return;
       }
 

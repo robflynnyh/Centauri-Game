@@ -207,6 +207,40 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.spawnAndRemoteDensitySimilar).toBe(true);
 });
 
+test("starts temple debug route near the single temple landmark", async ({ page }) => {
+  await page.goto("/?debug=temple");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+
+    const player = debug.getPlayer();
+    const temple = debug.getTempleState();
+    const templeObstacleCount = debug.obstacles.filter((obstacle) => obstacle.kind === "temple").length;
+    const dx = player.x - temple.x;
+    const dz = player.z - temple.z;
+    const approachDistance = Math.hypot(dx, dz);
+
+    return {
+      templeObstacleCount,
+      approachDistance,
+      influenceRadius: temple.influenceRadius,
+      fullInfluenceRadius: temple.fullInfluenceRadius,
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      templeIsBlocked: debug.isBlockedAt(temple.x, temple.z),
+      templeIsOnLand: debug.terrainHeightAt(temple.x, temple.z) > 0.25,
+    };
+  });
+
+  expect(result.templeObstacleCount).toBe(1);
+  expect(result.approachDistance).toBeLessThan(result.influenceRadius);
+  expect(result.approachDistance).toBeGreaterThan(result.fullInfluenceRadius);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.templeIsBlocked).toBe(true);
+  expect(result.templeIsOnLand).toBe(true);
+});
+
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

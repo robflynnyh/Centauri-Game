@@ -4,7 +4,7 @@ export function createSkySystem(
   scene: THREE.Scene,
   camera: THREE.Camera,
   isDemo: boolean
-): { update: (elapsed: number) => void } {
+): { update: (elapsed: number, templeInfluence?: number) => void } {
   const dayBackgroundColour = new THREE.Color(0x5d91ff);
   const nightBackgroundColour = new THREE.Color(0x171044);
   const dayFogColour = new THREE.Color(0x74e7ff);
@@ -12,6 +12,12 @@ export function createSkySystem(
   const nightFogColour = new THREE.Color(0x251652);
   const nightFogAccentColour = new THREE.Color(0x6d4ee8);
   const activeFogColour = dayFogColour.clone();
+  const templeBackgroundColour = new THREE.Color(0x2affd2);
+  const templeFogColour = new THREE.Color(0xff67e7);
+  const templeHorizonColour = new THREE.Color(0xe8ff72);
+  const templeMiddleColour = new THREE.Color(0x5effd2);
+  const templeUpperColour = new THREE.Color(0xba72ff);
+  const templeZenithColour = new THREE.Color(0x321066);
   const worldFog = new THREE.FogExp2(activeFogColour.getHex(), 0.02);
   scene.background = dayBackgroundColour.clone();
   scene.fog = worldFog;
@@ -60,17 +66,24 @@ export function createSkySystem(
   skyAnchor.add(meteorField.group);
 
   return {
-    update: (elapsed) => {
+    update: (elapsed, templeInfluence = 0) => {
       skyAnchor.position.copy(camera.position);
       const dayAmount = getDayAmount(elapsed, isDemo);
       const nightAmount = 1 - THREE.MathUtils.smoothstep(dayAmount, 0.08, 0.36);
-      skyUniforms.dayAmount.value = dayAmount;
+      const phaseAmount = THREE.MathUtils.clamp(templeInfluence, 0, 0.72);
+      skyUniforms.dayAmount.value = THREE.MathUtils.clamp(dayAmount + phaseAmount * 0.16, 0, 1);
+      lerpSkyUniform(skyUniforms.dayHorizonColour.value, new THREE.Color(0xff9fd0), templeHorizonColour, phaseAmount);
+      lerpSkyUniform(skyUniforms.dayMiddleColour.value, new THREE.Color(0x78d2ff), templeMiddleColour, phaseAmount);
+      lerpSkyUniform(skyUniforms.dayUpperColour.value, new THREE.Color(0x6393ff), templeUpperColour, phaseAmount);
+      lerpSkyUniform(skyUniforms.dayZenithColour.value, new THREE.Color(0x705ed8), templeZenithColour, phaseAmount);
 
       (scene.background as THREE.Color).copy(nightBackgroundColour).lerp(dayBackgroundColour, dayAmount);
+      (scene.background as THREE.Color).lerp(templeBackgroundColour, phaseAmount * 0.38);
       const fogPulse = Math.sin(elapsed * 0.16) * 0.5 + 0.5;
       const dayFog = dayFogColour.clone().lerp(dayFogAccentColour, fogPulse * 0.32);
       const nightFog = nightFogColour.clone().lerp(nightFogAccentColour, fogPulse * 0.42);
       worldFog.color.copy(nightFog).lerp(dayFog, dayAmount);
+      worldFog.color.lerp(templeFogColour, phaseAmount * 0.46);
       worldFog.density = THREE.MathUtils.lerp(0.031, 0.022, dayAmount) + fogPulse * 0.0025;
 
       hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
@@ -85,6 +98,10 @@ export function createSkySystem(
       meteorField.update(elapsed, nightAmount);
     },
   };
+}
+
+function lerpSkyUniform(target: THREE.Color, normal: THREE.Color, phased: THREE.Color, amount: number): void {
+  target.copy(normal).lerp(phased, amount);
 }
 
 function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color }>): THREE.Mesh {

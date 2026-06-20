@@ -3,6 +3,7 @@ import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFootstepTrail } from "./footsteps";
+import { createTempleLandmark } from "./landmarks";
 import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
@@ -63,6 +64,14 @@ declare global {
         generatedObstacles: number;
         generatedReactiveFlora: number;
       };
+      getTempleState: () => {
+        x: number;
+        z: number;
+        approachX: number;
+        approachZ: number;
+        influenceRadius: number;
+        fullInfluenceRadius: number;
+      };
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -78,7 +87,9 @@ if (!app) {
 
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
+const enableTempleDebug = params.get("debug") === "temple";
 const enableCollisionDebug = params.get("test") === "collision";
+const enableDebugTools = enableCollisionDebug || enableTempleDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -113,11 +124,13 @@ const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerH
 
 const clock = new THREE.Clock();
 const keys = new Set<string>();
+const temple = createTempleLandmark(scene, heightAt);
+const initialPlayerPosition = enableTempleDebug ? temple.approachPosition : { x: 0, z: 24 };
 const player = {
   yaw: 0,
   pitch: -0.12,
-  localPosition: new THREE.Vector3(0, 0, 24),
-  position: pointOnPlanet(0, 24, heightAt(0, 24) + standHeight),
+  localPosition: new THREE.Vector3(initialPlayerPosition.x, 0, initialPlayerPosition.z),
+  position: pointOnPlanet(initialPlayerPosition.x, initialPlayerPosition.z, heightAt(initialPlayerPosition.x, initialPlayerPosition.z) + standHeight),
   velocity: new THREE.Vector3(),
   verticalVelocity: 0,
   verticalOffset: 0,
@@ -134,12 +147,14 @@ const terrain = createTerrainSystem();
 
 scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
+collisionWorld.addObstacle(temple.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNature(
   scene,
   heightAt,
   collisionWorld.addObstacle,
-  collisionWorld.replaceDynamicObstacles
+  collisionWorld.replaceDynamicObstacles,
+  [temple.reservedZone]
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
@@ -147,9 +162,13 @@ const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-});
+}, temple);
 
-if (enableCollisionDebug) {
+terrain.update(player.localPosition.x, player.localPosition.z);
+updateNatureChunks(player.localPosition.x, player.localPosition.z);
+updatePlayerWorldPosition();
+
+if (enableDebugTools) {
   window.__centauriDebug = {
     obstacles: collisionWorld.obstacles,
     getPlayer: () => ({
@@ -179,6 +198,14 @@ if (enableCollisionDebug) {
     }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
+    getTempleState: () => ({
+      x: temple.position.x,
+      z: temple.position.z,
+      approachX: temple.approachPosition.x,
+      approachZ: temple.approachPosition.z,
+      influenceRadius: temple.influenceRadius,
+      fullInfluenceRadius: temple.fullInfluenceRadius,
+    }),
     setPlayer: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
@@ -348,8 +375,10 @@ function animate(): void {
 
   footsteps.update(delta);
   waterCreatures.update(elapsed);
-  sky.update(elapsed);
+  temple.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
+  sky.update(elapsed, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
