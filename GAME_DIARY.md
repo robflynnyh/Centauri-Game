@@ -129,3 +129,5 @@ Retuned the wilderness seaweed after review so each flat blade has an organic st
 Added one deterministic glass dome landmark with a hollow collision shell, a clear entrance, a discoverable chronoglass field note, a `?debug=dome` review spawn, and a 4x blended sky-time effect while the player is inside.
 
 Reworked the glass dome follow-up so field-note numbers follow collection order, the interior uses one flat effective terrain surface and colour, and the dome ribs read more continuously in the PR preview.
+
+Smoothed the glass dome entrance with a doorway terrain ramp, restored broader continuous ribs for a cleaner exterior silhouette, and reframed `?debug=dome` with a raised idle inspection camera.

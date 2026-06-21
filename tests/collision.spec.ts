@@ -451,6 +451,8 @@ test("creates one large glass dome with a passable entrance and blocking shell",
       entranceClear: !debug.isBlockedAt(dome.entranceX, dome.entranceZ),
       sideBlocked: debug.isBlockedAt(sideX, sideZ),
       onLand: debug.terrainHeightAt(dome.x, dome.z) > 0.25,
+      viewYaw: debug.getViewState().yaw,
+      expectedViewYaw: Math.atan2(-dome.entranceDirectionX, -dome.entranceDirectionZ),
     };
   });
 
@@ -465,6 +467,7 @@ test("creates one large glass dome with a passable entrance and blocking shell",
   expect(result.entranceClear).toBe(true);
   expect(result.sideBlocked).toBe(true);
   expect(result.onLand).toBe(true);
+  expect(result.viewYaw).toBeCloseTo(result.expectedViewYaw, 5);
 });
 
 test("allows entering the glass dome only through its entrance", async ({ page }) => {
@@ -574,6 +577,49 @@ test("uses one flat effective terrain surface inside the glass dome", async ({ p
   expect(result.differsFromOutside).toBeGreaterThan(0.5);
   expect(result.playerHeightDelta).toBeLessThan(0.001);
   expect(result.inside).toBe(true);
+});
+
+test("ramps the glass dome entrance floor without sharp height pops", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const samples: number[] = [];
+    for (let offset = dome.radius + 10; offset >= dome.interiorRadius - 12; offset -= 1) {
+      const x = dome.x + dome.entranceDirectionX * offset;
+      const z = dome.z + dome.entranceDirectionZ * offset;
+      samples.push(debug.terrainHeightAt(x, z));
+    }
+    const adjacentTerrainJumps = samples.slice(1).map((height, index) => Math.abs(height - samples[index]));
+
+    const startX = dome.x + dome.entranceDirectionX * (dome.radius + 10);
+    const startZ = dome.z + dome.entranceDirectionZ * (dome.radius + 10);
+    debug.setPlayer(startX, startZ);
+    const playerHeights: number[] = [debug.getPlayer().y];
+    for (let i = 0; i < 32; i += 1) {
+      debug.attemptMove(-dome.entranceDirectionX, -dome.entranceDirectionZ);
+      playerHeights.push(debug.getPlayer().y);
+    }
+    const adjacentPlayerJumps = playerHeights.slice(1).map((height, index) => Math.abs(height - playerHeights[index]));
+
+    return {
+      startHeight: samples[0],
+      endHeight: samples[samples.length - 1],
+      floorHeight: dome.floorHeight,
+      maxTerrainJump: Math.max(...adjacentTerrainJumps),
+      maxPlayerJump: Math.max(...adjacentPlayerJumps),
+      insideAfterWalk: debug.getDomeState().inside,
+    };
+  });
+
+  expect(Math.abs(result.endHeight - result.floorHeight)).toBeLessThan(0.001);
+  expect(result.endHeight - result.startHeight).toBeGreaterThan(1.5);
+  expect(result.maxTerrainJump).toBeLessThan(0.75);
+  expect(result.maxPlayerJump).toBeLessThan(0.85);
+  expect(result.insideAfterWalk).toBe(true);
 });
 
 test("discovers the dome field note as the next collected note from the entrance marker", async ({ page }) => {

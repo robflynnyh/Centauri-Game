@@ -12,7 +12,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.addStyleTag({ content: ".eyelids { display: none !important; }" });
-  await page.waitForTimeout(18_000);
+  await page.waitForTimeout(16_400);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 

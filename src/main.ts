@@ -10,6 +10,7 @@ import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
   normalizePlanetCoords,
+  lookAtPlanetPoint,
   PLANET_ASSUMED_WALK_SPEED,
   PLANET_CIRCUMFERENCE,
   PLANET_RADIUS,
@@ -247,8 +248,8 @@ const initialPlayerLocalPosition = enableTempleDebug
       ? new THREE.Vector3(-128, 0, -464)
       : new THREE.Vector3(0, 0, 24);
 const player = {
-  yaw: 0,
-  pitch: -0.12,
+  yaw: enableDomeDebug ? Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z) : 0,
+  pitch: enableDomeDebug ? -0.36 : -0.12,
   localPosition: initialPlayerLocalPosition.clone(),
   position: pointOnPlanet(
     initialPlayerLocalPosition.x,
@@ -295,7 +296,7 @@ const visionState = {
   targetIsolationAmount: 0,
   nearestBiomePatchDistance: 0,
 };
-let isolationOverrideAmount: number | null = null;
+let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
@@ -548,11 +549,29 @@ function updateDomeTimeMultiplier(delta: number, focus: { x: number; z: number }
 }
 
 function effectiveHeightAt(x: number, z: number): number {
-  return dome.contains({ x, z }) ? dome.floorHeight : heightAt(x, z);
+  const baseHeight = heightAt(x, z);
+  const rampAmount = domeEntranceRampAmountAt(x, z);
+  if (rampAmount > 0) return THREE.MathUtils.lerp(baseHeight, dome.floorHeight, rampAmount);
+  return dome.contains({ x, z }) ? dome.floorHeight : baseHeight;
 }
 
 function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | null {
-  return dome.contains({ x, z }) ? domeFloorColour : null;
+  return dome.contains({ x, z }) || domeEntranceRampAmountAt(x, z) > 0.35 ? domeFloorColour : null;
+}
+
+function domeEntranceRampAmountAt(x: number, z: number): number {
+  const dx = x - dome.position.x;
+  const dz = z - dome.position.z;
+  const alongEntrance = dx * dome.entranceDirection.x + dz * dome.entranceDirection.z;
+  const crossEntrance = Math.abs(dx * dome.entranceDirection.z - dz * dome.entranceDirection.x);
+  const corridorHalfWidth = dome.entranceHalfWidth + 4.5;
+  if (crossEntrance > corridorHalfWidth) return 0;
+
+  const outerRamp = dome.radius + 10;
+  const innerRamp = dome.interiorRadius - 8;
+  const alongAmount = 1 - THREE.MathUtils.smoothstep(alongEntrance, innerRamp, outerRamp);
+  const widthAmount = 1 - THREE.MathUtils.smoothstep(crossEntrance, dome.entranceHalfWidth, corridorHalfWidth);
+  return THREE.MathUtils.clamp(alongAmount * widthAmount, 0, 1);
 }
 
 function playerSurfaceAltitude(): number {
@@ -652,6 +671,18 @@ function animate(): void {
   else if (sleepBefore.blackout) restPlayerInPlace(delta, 0.52);
   else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
   else explorationMotion = updateExploration(delta);
+
+  if (enableDomeDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      dome.approachPosition.x,
+      dome.approachPosition.z,
+      effectiveHeightAt(dome.approachPosition.x, dome.approachPosition.z) + 18,
+      dome.position.x,
+      dome.position.z,
+      dome.floorHeight + 34
+    );
+  }
 
   const sleepState = sleep.update(delta, {
     wantsSleep,

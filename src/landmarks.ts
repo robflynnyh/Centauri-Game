@@ -368,7 +368,7 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
     color: 0x92f7ff,
     transparent: true,
     opacity: 0.26,
-    depthWrite: true,
+    depthWrite: false,
     side: THREE.DoubleSide,
   });
   const ribMaterial = new THREE.MeshBasicMaterial({ color: 0xd8fbff });
@@ -384,27 +384,34 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
 
   const glass = new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 8, entranceGapAngle * 0.5, Math.PI * 2 - entranceGapAngle, 0, Math.PI * 0.5), glassMaterial);
   glass.rotation.y = entranceAngle;
+  glass.renderOrder = 1;
   group.add(glass);
 
-  for (let i = 0; i < 10; i += 1) {
-    const angle = entranceAngle + entranceGapAngle * 0.5 + ((Math.PI * 2 - entranceGapAngle) * i) / 9;
-    addDomeVerticalRib(group, radius, angle, i % 3 === 0 ? ribMaterial : shadowRibMaterial);
+  for (let i = 0; i < 7; i += 1) {
+    const angle = entranceAngle + entranceGapAngle * 0.72 + ((Math.PI * 2 - entranceGapAngle * 1.44) * i) / 6;
+    addDomeRib(group, radius, angle, i % 2 === 0 ? ribMaterial : shadowRibMaterial);
   }
 
   for (let i = 1; i <= 3; i += 1) {
     const ringRadius = radius * Math.cos((i / 5) * Math.PI * 0.5);
     const y = radius * Math.sin((i / 5) * Math.PI * 0.5);
-    addDomeRingSegments(group, ringRadius, y, entranceAngle, entranceGapAngle, i % 2 === 0 ? ribMaterial : shadowRibMaterial);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(ringRadius, 0.24, 5, 112), i % 2 === 0 ? ribMaterial : shadowRibMaterial);
+    ring.position.y = y;
+    ring.rotation.x = Math.PI / 2;
+    ring.renderOrder = 2;
+    group.add(ring);
   }
 
   const threshold = new THREE.Mesh(new THREE.BoxGeometry(entranceHalfWidth * 2.1, 0.62, 3.2), ribMaterial);
   threshold.position.set(Math.sin(entranceAngle) * radius, 0.38, Math.cos(entranceAngle) * radius);
   threshold.rotation.y = entranceAngle;
+  threshold.renderOrder = 2;
   group.add(threshold);
 
   const arch = new THREE.Mesh(new THREE.TorusGeometry(entranceHalfWidth, 0.34, 5, 24, Math.PI), ribMaterial);
   arch.position.set(Math.sin(entranceAngle) * (radius - 0.35), entranceHalfWidth * 0.82, Math.cos(entranceAngle) * (radius - 0.35));
   arch.rotation.set(0, entranceAngle, Math.PI);
+  arch.renderOrder = 2;
   group.add(arch);
 
   const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.22, 12), glowMaterial);
@@ -416,43 +423,12 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   return group;
 }
 
-function addDomeRingSegments(
-  group: THREE.Group,
-  ringRadius: number,
-  y: number,
-  entranceAngle: number,
-  entranceGapAngle: number,
-  material: THREE.Material
-): void {
-  const segmentCount = 56;
-  const segmentArc = (Math.PI * 2) / segmentCount;
-  for (let i = 0; i < segmentCount; i += 1) {
-    const angle = i * segmentArc;
-    if (angularDistance(angle, entranceAngle) < entranceGapAngle * 0.58) continue;
-    const segment = new THREE.Mesh(new THREE.BoxGeometry(ringRadius * segmentArc * 1.22, 0.34, 0.34), material);
-    segment.position.set(Math.sin(angle) * ringRadius, y, Math.cos(angle) * ringRadius);
-    segment.rotation.y = angle;
-    group.add(segment);
-  }
-}
-
-function addDomeVerticalRib(group: THREE.Group, radius: number, angle: number, material: THREE.Material): void {
-  const segmentCount = 9;
-  for (let i = 0; i < segmentCount; i += 1) {
-    const theta = ((i + 0.5) / segmentCount) * Math.PI * 0.5;
-    const nextTheta = ((i + 1) / segmentCount) * Math.PI * 0.5;
-    const groundRadius = Math.sin(theta) * radius;
-    const y = Math.cos(theta) * radius;
-    const length = Math.max(4.4, Math.abs(Math.sin(nextTheta) - Math.sin(theta)) * radius * 1.38);
-    const segment = new THREE.Mesh(new THREE.BoxGeometry(0.38, length, 0.38), material);
-    segment.position.set(Math.sin(angle) * groundRadius, y, Math.cos(angle) * groundRadius);
-    segment.rotation.set(theta, angle, 0);
-    group.add(segment);
-  }
-}
-
-function angularDistance(a: number, b: number): number {
-  return Math.abs(THREE.MathUtils.euclideanModulo(a - b + Math.PI, Math.PI * 2) - Math.PI);
+function addDomeRib(group: THREE.Group, radius: number, angle: number, material: THREE.Material): void {
+  const rib = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.5, 0.28, 5, 34, Math.PI), material);
+  rib.scale.x = 2;
+  rib.rotation.set(0, angle, Math.PI);
+  rib.renderOrder = 2;
+  group.add(rib);
 }
 
 function makeDomeNoteMarker(): THREE.Group {
