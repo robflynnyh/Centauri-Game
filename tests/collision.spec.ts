@@ -153,6 +153,59 @@ test("wraps straight walks around the spherical planet", async ({ page }) => {
   expect(result.playerIsAbovePlanet).toBe(true);
 });
 
+test("derives reversible sky and day-night variation from planet location", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+
+    const planet = debug.getPlanetState();
+    debug.setPlayer(0, 24);
+    const start = debug.getSkyState();
+    debug.setPlayer(4400, -1600);
+    const distant = debug.getSkyState();
+    debug.setPlayer(0, 24);
+    const returned = debug.getSkyState();
+    const oppositePairs = [0, planet.circumference / 4].map((x) => {
+      debug.setPlayer(x, 0);
+      const near = debug.getSkyState();
+      debug.setPlayer(x + planet.circumference / 2, 0);
+      const far = debug.getSkyState();
+      return {
+        near,
+        far,
+        dayDifference: Math.abs(near.dayAmount - far.dayAmount),
+        sunDotSum: Math.abs(near.sunDot + far.sunDot),
+      };
+    });
+    const strongestOppositePair = oppositePairs.reduce((best, pair) => (pair.dayDifference > best.dayDifference ? pair : best));
+
+    return { start, distant, returned, strongestOppositePair };
+  });
+
+  expect(Math.abs(result.distant.celestialYaw - result.start.celestialYaw)).toBeGreaterThan(0.04);
+  expect(Math.abs(result.distant.celestialAltitude - result.start.celestialAltitude)).toBeGreaterThan(0.08);
+  expect(Math.abs(result.distant.ringAltitude - result.start.ringAltitude)).toBeGreaterThan(0.08);
+  expect(Math.hypot(result.distant.localUpX - result.start.localUpX, result.distant.localUpY - result.start.localUpY, result.distant.localUpZ - result.start.localUpZ)).toBeGreaterThan(0.6);
+  expect(Math.abs(result.distant.ringSpinOffset - result.start.ringSpinOffset)).toBeGreaterThan(0.08);
+  expect(result.distant.dayHorizonHex).not.toBe(result.start.dayHorizonHex);
+  expect(result.strongestOppositePair.dayDifference).toBeGreaterThan(0.6);
+  expect(result.strongestOppositePair.sunDotSum).toBeLessThan(0.001);
+  expect(result.returned.celestialYaw).toBeCloseTo(result.start.celestialYaw, 7);
+  expect(result.returned.celestialAltitude).toBeCloseTo(result.start.celestialAltitude, 7);
+  expect(result.returned.ringTilt).toBeCloseTo(result.start.ringTilt, 7);
+  expect(result.returned.ringAltitude).toBeCloseTo(result.start.ringAltitude, 7);
+  expect(result.returned.dayAmount).toBeCloseTo(result.start.dayAmount, 7);
+  expect(result.returned.sunDot).toBeCloseTo(result.start.sunDot, 7);
+  expect(result.returned.localUpX).toBeCloseTo(result.start.localUpX, 7);
+  expect(result.returned.localUpY).toBeCloseTo(result.start.localUpY, 7);
+  expect(result.returned.localUpZ).toBeCloseTo(result.start.localUpZ, 7);
+  expect(result.returned.dayHorizonHex).toBe(result.start.dayHorizonHex);
+  expect(result.returned.nightHorizonHex).toBe(result.start.nightHorizonHex);
+});
+
 test("keeps chunked spherical terrain under the player beyond the starting field", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
@@ -235,6 +288,155 @@ test("keeps chunked spherical terrain under the player beyond the starting field
   expect(result.spawnStartsInDenseBiome).toBe(true);
   expect(result.complexDetailIsDistanceCapped).toBe(true);
   expect(result.spawnAndRemoteDensitySimilar).toBe(true);
+});
+
+test("generates reactive seaweed only in sparse flat wilderness", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const spawnState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri debug hook");
+    debug.setPlayer(0, 24);
+    return debug.getNatureState();
+  });
+
+  expect(spawnState.nearestBiomePatchDistance).toBeLessThan(32);
+  expect(spawnState.nearestSeaweedDistance).toBeGreaterThan(50);
+  expect(spawnState.seaweedSamples.every((sample) => sample.nearestBiomeEdgeDistance >= 38)).toBe(true);
+
+  await page.evaluate(() => window.__centauriDebug?.setPlayer(-128, -464));
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestBiomePatchDistance > 150 && state.generatedSeaweedPatches > 12 && state.seaweedSamples.length > 0);
+  });
+
+  const wildernessState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+  expect(wildernessState?.generatedSeaweedPatches).toBeGreaterThan(12);
+  expect(wildernessState?.generatedSeaweedBlades).toBeGreaterThan(90);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.nearestBiomeEdgeDistance >= 38)).toBe(true);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.flatness <= 0.72)).toBe(true);
+  expect(wildernessState?.seaweedSamples.every((sample) => sample.staticBend >= 0.08)).toBe(true);
+
+  const seaweed = wildernessState?.seaweedSamples.find((sample) => sample.x > 20 && sample.x < 30 && sample.z > -620 && sample.z < -608);
+  expect(seaweed).toBeTruthy();
+  expect(seaweed?.bladeCount).toBeGreaterThanOrEqual(6);
+  expect(seaweed?.staticBend).toBeGreaterThan(0.1);
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), seaweed);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestSeaweedDistance > 16 && state.nearestSeaweedFreezeAmount < 0.08);
+  });
+  const farSeaweedState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 1.5, sample.z + 1.5), seaweed);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestSeaweedDistance < 7 && state.nearestSeaweedFreezeAmount > 0.72);
+  });
+  const nearSeaweedState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  expect(farSeaweedState?.nearestSeaweedDistance).toBeGreaterThan(16);
+  expect(farSeaweedState?.nearestSeaweedFreezeAmount).toBeLessThan(0.08);
+  expect(nearSeaweedState?.nearestSeaweedDistance).toBeLessThan(7);
+  expect(nearSeaweedState?.nearestSeaweedFreezeAmount).toBeGreaterThan(0.72);
+});
+
+test("starts temple debug route near the single temple landmark", async ({ page }) => {
+  await page.goto("/?debug=temple");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+
+    const player = debug.getPlayer();
+    const temple = debug.getTempleState();
+    const templeObstacleCount = debug.obstacles.filter((obstacle) => obstacle.kind === "temple").length;
+    const dx = player.x - temple.x;
+    const dz = player.z - temple.z;
+    const approachDistance = Math.hypot(dx, dz);
+
+    return {
+      templeObstacleCount,
+      approachDistance,
+      noteDistance: Math.hypot(player.x - temple.noteX, player.z - temple.noteZ),
+      noteRadius: temple.noteRadius,
+      influenceRadius: temple.influenceRadius,
+      fullInfluenceRadius: temple.fullInfluenceRadius,
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      templeIsBlocked: debug.isBlockedAt(temple.x, temple.z),
+      templeIsOnLand: debug.terrainHeightAt(temple.x, temple.z) > 0.25,
+    };
+  });
+
+  expect(result.templeObstacleCount).toBe(1);
+  expect(result.approachDistance).toBeLessThan(result.influenceRadius);
+  expect(result.approachDistance).toBeGreaterThan(result.fullInfluenceRadius);
+  expect(result.noteDistance).toBeGreaterThan(result.noteRadius);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.templeIsBlocked).toBe(true);
+  expect(result.templeIsOnLand).toBe(true);
+});
+
+test("discovers the temple field note once from the temple glyph source", async ({ page }) => {
+  await page.goto("/?debug=temple");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+  await expect(page.getByText(/Unknown planet/)).toBeVisible();
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
+
+  const source = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    const temple = debug.getTempleState();
+    const notes = debug.getFieldNotesState();
+    return {
+      noteX: temple.noteX,
+      noteZ: temple.noteZ,
+      discoveredCount: notes.discoveredCount,
+      currentIndex: notes.current.index,
+    };
+  });
+
+  expect(source.discoveredCount).toBe(0);
+  expect(source.currentIndex).toBe(1);
+
+  await page.evaluate(({ noteX, noteZ }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    debug.setPlayer(noteX, noteZ);
+  }, source);
+
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
+  await expect(page.getByText("Field Note 002")).toBeVisible();
+  await expect(page.getByText(/Gate in the violet stone/)).toBeVisible();
+  await expect(page.getByText(/Unknown planet/)).toHaveCount(0);
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
+
+  const discovered = await page.evaluate(({ noteX, noteZ }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    const first = debug.getFieldNotesState();
+    debug.setPlayer(noteX, noteZ);
+    const second = debug.getFieldNotesState();
+    return {
+      firstCount: first.discoveredCount,
+      firstId: first.discovered[0]?.id,
+      firstDiscoveredAt: first.discovered[0]?.discoveredAt,
+      firstCurrentIndex: first.current.index,
+      secondCount: second.discoveredCount,
+      secondDiscoveredAt: second.discovered[0]?.discoveredAt,
+    };
+  }, source);
+
+  expect(discovered.firstCount).toBe(1);
+  expect(discovered.firstId).toBe("temple-gate");
+  expect(Number.isFinite(discovered.firstDiscoveredAt)).toBe(true);
+  expect(discovered.firstCurrentIndex).toBe(2);
+  expect(discovered.secondCount).toBe(1);
+  expect(discovered.secondDiscoveredAt).toBe(discovered.firstDiscoveredAt);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
