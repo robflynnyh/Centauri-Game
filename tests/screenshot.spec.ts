@@ -8,10 +8,11 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?demo=pr");
+  await page.goto("/?debug=birds&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(18_000);
+  await expect(page.getByText("birds debug")).toBeVisible();
+  await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
+  await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
@@ -81,6 +82,78 @@ test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
   expect(debugState.beetles.visible).toBeGreaterThan(0);
   expect(Number.isFinite(debugState.beetles.nearestObstacleClearance)).toBe(true);
   expect(debugState.beetles.nearestObstacleClearance).toBeGreaterThan(0.2);
+});
+
+test("starts near mountain birds and triggers clear fleeing", async ({ page }) => {
+  await page.goto("/?debug=birds&test=collision");
+  await expect(page.getByText("birds debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getBirdState));
+  await page.waitForTimeout(500);
+
+  const settledState = await page.evaluate(() => {
+    if (!window.__centauriDebug) throw new Error("Missing Centauri debug state");
+    return {
+      player: window.__centauriDebug.getPlayer(),
+      birds: window.__centauriDebug.getBirdState(),
+      lowlandHeight: window.__centauriDebug.terrainHeightAt(0, 24),
+    };
+  });
+
+  expect(settledState.birds.total).toBeGreaterThanOrEqual(3);
+  expect(settledState.birds.visible).toBeGreaterThan(0);
+  expect(settledState.birds.minAnchorHeight).toBeGreaterThan(settledState.lowlandHeight + 7);
+  expect(settledState.birds.minAnchorSuitability).toBeGreaterThan(0.55);
+  expect(Number.isFinite(settledState.birds.nearestTerrainClearance)).toBe(true);
+  expect(settledState.birds.nearestTerrainClearance).toBeGreaterThan(6);
+  expect(settledState.player.x).toBeCloseTo(settledState.birds.nearestAnchor.x + 22, 0);
+  expect(settledState.player.z).toBeCloseTo(settledState.birds.nearestAnchor.z + 8, 0);
+  expect(settledState.birds.total).toBeGreaterThan(24);
+  expect(Math.hypot(settledState.birds.distantAnchor.x - settledState.birds.nearestAnchor.x, settledState.birds.distantAnchor.z - settledState.birds.nearestAnchor.z)).toBeGreaterThan(720);
+
+  await page.evaluate(({ x, z }) => window.__centauriDebug?.setPlayer(x + 22, z + 8), settledState.birds.distantAnchor);
+  await page.waitForTimeout(500);
+  const distantState = await page.evaluate(() => {
+    if (!window.__centauriDebug) throw new Error("Missing Centauri debug state");
+    const birds = window.__centauriDebug.getBirdState();
+    return {
+      birds,
+      distantHeight: window.__centauriDebug.terrainHeightAt(birds.nearestAnchor.x, birds.nearestAnchor.z),
+      lowlandHeight: window.__centauriDebug.terrainHeightAt(0, 24),
+    };
+  });
+
+  expect(distantState.birds.visible).toBeGreaterThan(0);
+  expect(distantState.distantHeight).toBeGreaterThan(distantState.lowlandHeight + 7);
+
+  await page.evaluate(() => {
+    const anchor = window.__centauriDebug?.getBirdState().nearestAnchor;
+    if (!anchor) throw new Error("Missing bird anchor");
+    window.__centauriDebug?.setPlayer(anchor.x + 1.5, anchor.z + 1.5);
+  });
+  await page.waitForFunction(() => (window.__centauriDebug?.getBirdState().fleeing ?? 0) > 0);
+  const fleeState = await page.evaluate(() => window.__centauriDebug?.getBirdState());
+
+  expect(fleeState?.fleeing).toBeGreaterThan(0);
+  expect(fleeState?.nearestTerrainClearance).toBeGreaterThan(6);
+
+  await page.evaluate(() => {
+    const anchor = window.__centauriDebug?.getBirdState().nearestAnchor;
+    if (!anchor) throw new Error("Missing bird anchor");
+    window.__centauriDebug?.setPlayer(anchor.x - 5.5, anchor.z + 2.5);
+  });
+  await page.waitForTimeout(160);
+  const afterStrafeState = await page.evaluate(() => window.__centauriDebug?.getBirdState());
+
+  await page.waitForTimeout(650);
+  const afterStopState = await page.evaluate(() => window.__centauriDebug?.getBirdState());
+  const postStopMotion = Math.hypot(
+    (afterStopState?.nearestPosition.x ?? 0) - (afterStrafeState?.nearestPosition.x ?? 0),
+    (afterStopState?.nearestPosition.z ?? 0) - (afterStrafeState?.nearestPosition.z ?? 0)
+  );
+
+  expect(afterStopState?.fleeing).toBeGreaterThan(0);
+  expect(postStopMotion).toBeGreaterThan(0.2);
+  expect(afterStopState?.maxFrameDisplacement).toBeLessThan(2.5);
 });
 
 test("isolation debug state rises outside populated biome patches", async ({ page }) => {
