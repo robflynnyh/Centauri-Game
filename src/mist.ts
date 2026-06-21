@@ -70,18 +70,12 @@ const normalPatchLimit = 28;
 const demoPatchLimit = 36;
 const normalCandidatesPerChunk = 3;
 const demoCandidatesPerChunk = 3;
-const normalMistFadeStart = 32;
-const normalMistFadeEnd = 82;
-const demoMistFadeStart = 40;
-const demoMistFadeEnd = 102;
-const normalMistHardCullDistance = 92;
-const demoMistHardCullDistance = 112;
-const normalMistVisibilityCutoff = 0.075;
-const demoMistVisibilityCutoff = 0.065;
-const normalMistGenerationDistance = 112;
-const demoMistGenerationDistance = 132;
-const normalMistDebugFarDistance = 96;
-const demoMistDebugFarDistance = 116;
+const mistFadeStart = 32;
+const mistFadeEnd = 82;
+const mistHardCullDistance = 92;
+const mistVisibilityCutoff = 0.075;
+const mistGenerationDistance = 112;
+const mistDebugFarDistance = 96;
 
 export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, isDemo: boolean): MistSystem {
   const group = new THREE.Group();
@@ -109,7 +103,7 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
     patches.forEach((patch) => updatePatchGeometry(patch, heightAt, elapsed, normalizedFocus, isDemo));
   };
 
-  return { group, update, getDebugState: () => getMistDebugState(patches, isDemo) };
+  return { group, update, getDebugState: () => getMistDebugState(patches) };
 }
 
 function rebuildMistPatches(
@@ -148,7 +142,7 @@ function rebuildMistPatches(
       const z = (chunkZ + random()) * mistChunkSize;
       const candidateCenter = normalizePlanetCoords(x, z);
       const candidateDistance = surfaceDistanceBetweenLocal(focus, candidateCenter);
-      if (candidateDistance > (isDemo ? demoMistGenerationDistance : normalMistGenerationDistance)) continue;
+      if (candidateDistance > mistGenerationDistance) continue;
 
       const suitability = mistSuitabilityAt(x, z, heightAt);
       const demoAllowance = isDemo ? 0.2 : 0;
@@ -307,19 +301,16 @@ function updatePatchGeometry(
   const centerAltitude = heightAt(center.x, center.z) + patch.lift;
   const centerWorld = pointOnPlanet(center.x, center.z, centerAltitude);
   const distanceToFocus = surfaceDistanceBetweenLocal(focus, center);
-  const fadeStart = isDemo ? demoMistFadeStart : normalMistFadeStart;
-  const fadeEnd = isDemo ? demoMistFadeEnd : normalMistFadeEnd;
-  const rawFocusFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, fadeStart, fadeEnd);
-  const distanceFade = Math.pow(rawFocusFade, isDemo ? 3.4 : 3.8);
-  const terrainFade = mistTerrainDistanceFade(center.x, center.z, distanceToFocus, heightAt, isDemo);
-  const hardCullDistance = isDemo ? demoMistHardCullDistance : normalMistHardCullDistance;
-  const focusFade = distanceToFocus >= hardCullDistance ? 0 : distanceFade * terrainFade;
+  const rawFocusFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, mistFadeStart, mistFadeEnd);
+  const distanceFade = Math.pow(rawFocusFade, 3.8);
+  const terrainFade = mistTerrainDistanceFade(center.x, center.z, distanceToFocus, heightAt);
+  const focusFade = distanceToFocus >= mistHardCullDistance ? 0 : distanceFade * terrainFade;
 
   patch.distanceToFocus = distanceToFocus;
   patch.focusFade = focusFade;
   patch.maxAlpha = 0;
 
-  patch.mesh.visible = focusFade > (isDemo ? demoMistVisibilityCutoff : normalMistVisibilityCutoff);
+  patch.mesh.visible = focusFade > mistVisibilityCutoff;
   if (!patch.mesh.visible) {
     clearPatchAlpha(patch);
     return;
@@ -406,7 +397,7 @@ function mistSuitabilityAt(x: number, z: number, heightAt: HeightSampler): numbe
   return THREE.MathUtils.clamp(lowland * 0.42 + basin * 0.25 + quietGround * 0.12 + waterVein * 0.26, 0, 1);
 }
 
-function mistTerrainDistanceFade(x: number, z: number, distanceToFocus: number, heightAt: HeightSampler, isDemo: boolean): number {
+function mistTerrainDistanceFade(x: number, z: number, distanceToFocus: number, heightAt: HeightSampler): number {
   const centerHeight = heightAt(x, z);
   const sampleDistance = 7;
   const samples = [
@@ -416,9 +407,9 @@ function mistTerrainDistanceFade(x: number, z: number, distanceToFocus: number, 
     heightAt(x, z - sampleDistance),
   ];
   const roughness = samples.reduce((highest, height) => Math.max(highest, Math.abs(height - centerHeight)), 0);
-  const distancePressure = THREE.MathUtils.smoothstep(distanceToFocus, isDemo ? 28 : 24, isDemo ? 82 : 66);
-  const quietSlopeFade = 1 - THREE.MathUtils.smoothstep(roughness, 1.05, isDemo ? 3.4 : 2.8);
-  const lowlandFade = 1 - THREE.MathUtils.smoothstep(centerHeight, isDemo ? 6.6 : 5.1, isDemo ? 12.2 : 9.6);
+  const distancePressure = THREE.MathUtils.smoothstep(distanceToFocus, 24, 66);
+  const quietSlopeFade = 1 - THREE.MathUtils.smoothstep(roughness, 1.05, 2.8);
+  const lowlandFade = 1 - THREE.MathUtils.smoothstep(centerHeight, 5.1, 9.6);
   const distantTerrainFade = THREE.MathUtils.clamp(quietSlopeFade * 0.72 + lowlandFade * 0.28, 0, 1);
 
   return THREE.MathUtils.lerp(1, distantTerrainFade, distancePressure);
@@ -430,8 +421,8 @@ function clearPatchAlpha(patch: MistPatch): void {
   patch.alphaAttribute.needsUpdate = true;
 }
 
-function getMistDebugState(patches: MistPatch[], isDemo: boolean): MistDebugState {
-  const farDistance = isDemo ? demoMistDebugFarDistance : normalMistDebugFarDistance;
+function getMistDebugState(patches: MistPatch[]): MistDebugState {
+  const farDistance = mistDebugFarDistance;
   let visiblePatches = 0;
   let farVisiblePatches = 0;
   let farMaxAlpha = 0;
@@ -451,7 +442,7 @@ function getMistDebugState(patches: MistPatch[], isDemo: boolean): MistDebugStat
     farVisiblePatches,
     farMaxAlpha,
     farDistance,
-    hardCullDistance: isDemo ? demoMistHardCullDistance : normalMistHardCullDistance,
+    hardCullDistance: mistHardCullDistance,
   };
 }
 

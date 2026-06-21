@@ -18,6 +18,8 @@ Tightened the mist review follow-up with a shorter hard distance cutoff, zeroed 
 
 Changed ground mist into a strictly local near-player atmosphere by reducing patch generation scope and culling distinct wisps before they can read across distant terrain.
 
+Matched demo and normal mist fade/cull distances so the PR flythrough uses the same local-only mist range as ordinary play.
+
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
 Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.
