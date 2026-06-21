@@ -16,6 +16,15 @@ export type MistDebugState = {
   farMaxAlpha: number;
   farDistance: number;
   hardCullDistance: number;
+  visibleSamples: MistDebugPatchSample[];
+};
+
+export type MistDebugPatchSample = {
+  key: string;
+  x: number;
+  z: number;
+  distanceToFocus: number;
+  maxAlpha: number;
 };
 
 type MistRibbon = {
@@ -34,6 +43,7 @@ type MistRibbon = {
 };
 
 type MistPatch = {
+  key: string;
   baseX: number;
   baseZ: number;
   radius: number;
@@ -66,8 +76,6 @@ type MistMaterial = THREE.ShaderMaterial & {
 
 const mistChunkSize = 92;
 const mistChunkRadius = 1;
-const normalPatchLimit = 28;
-const demoPatchLimit = 36;
 const normalCandidatesPerChunk = 3;
 const demoCandidatesPerChunk = 3;
 const mistFadeStart = 32;
@@ -83,9 +91,10 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
   scene.add(group);
 
   const material = makeMistMaterial();
-  const patches: MistPatch[] = [];
+  const patches = new Map<string, MistPatch>();
   let centerChunkX = Number.NaN;
   let centerChunkZ = Number.NaN;
+  let relevantPatchKeys = new Set<string>();
 
   const update = (elapsed: number, focus: LocalPlanetPoint): void => {
     const normalizedFocus = normalizePlanetCoords(focus.x, focus.z);
@@ -95,31 +104,29 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
     if (nextChunkX !== centerChunkX || nextChunkZ !== centerChunkZ) {
       centerChunkX = nextChunkX;
       centerChunkZ = nextChunkZ;
-      rebuildMistPatches(group, patches, material, heightAt, normalizedFocus, centerChunkX, centerChunkZ, isDemo);
+      relevantPatchKeys = syncMistPatches(group, patches, material, heightAt, normalizedFocus, centerChunkX, centerChunkZ, isDemo);
     }
 
     material.uniforms.dayAmount.value = getDayAmount(elapsed, isDemo);
     material.uniforms.globalOpacity.value = isDemo ? 1.04 : 0.88;
     patches.forEach((patch) => updatePatchGeometry(patch, heightAt, elapsed, normalizedFocus, isDemo));
+    pruneInactiveMistPatches(group, patches, relevantPatchKeys);
   };
 
   return { group, update, getDebugState: () => getMistDebugState(patches) };
 }
 
-function rebuildMistPatches(
+function syncMistPatches(
   group: THREE.Group,
-  patches: MistPatch[],
+  patches: Map<string, MistPatch>,
   material: MistMaterial,
   heightAt: HeightSampler,
   focus: LocalPlanetPoint,
   centerChunkX: number,
   centerChunkZ: number,
   isDemo: boolean
-): void {
-  patches.forEach((patch) => patch.mesh.geometry.dispose());
-  patches.length = 0;
-  group.clear();
-
+): Set<string> {
+  const relevantPatchKeys = new Set<string>();
   const chunkOffsets: Array<{ x: number; z: number; distance: number }> = [];
   for (let z = -mistChunkRadius; z <= mistChunkRadius; z += 1) {
     for (let x = -mistChunkRadius; x <= mistChunkRadius; x += 1) {
@@ -128,63 +135,53 @@ function rebuildMistPatches(
   }
   chunkOffsets.sort((a, b) => a.distance - b.distance);
 
-  const patchLimit = isDemo ? demoPatchLimit : normalPatchLimit;
   const candidatesPerChunk = isDemo ? demoCandidatesPerChunk : normalCandidatesPerChunk;
-  addFocusMistPatches(group, patches, material, heightAt, focus, centerChunkX, centerChunkZ, isDemo);
 
   for (const offset of chunkOffsets) {
     const chunkX = centerChunkX + offset.x;
     const chunkZ = centerChunkZ + offset.z;
     const random = createChunkRandom(chunkX, chunkZ);
 
-    for (let candidate = 0; candidate < candidatesPerChunk && patches.length < patchLimit; candidate += 1) {
+    for (let candidate = 0; candidate < candidatesPerChunk; candidate += 1) {
+      const key = `${chunkX}:${chunkZ}:${candidate}`;
       const x = (chunkX + random()) * mistChunkSize;
       const z = (chunkZ + random()) * mistChunkSize;
       const candidateCenter = normalizePlanetCoords(x, z);
       const candidateDistance = surfaceDistanceBetweenLocal(focus, candidateCenter);
       if (candidateDistance > mistGenerationDistance) continue;
 
+      relevantPatchKeys.add(key);
       const suitability = mistSuitabilityAt(x, z, heightAt);
       const demoAllowance = isDemo ? 0.2 : 0;
       const chunkFalloff = 1 - THREE.MathUtils.smoothstep(offset.distance, 0.5, mistChunkRadius + 0.15);
       const chance = suitability * (isDemo ? 1.2 : 0.96) + chunkFalloff * (isDemo ? 0.18 : 0.08);
+      const roll = random();
 
-      if (suitability + demoAllowance < 0.26 || random() > chance) continue;
+      if (patches.has(key)) continue;
 
-      const patch = createMistPatch(x, z, suitability, random, material, isDemo);
-      patches.push(patch);
+      if (suitability + demoAllowance < 0.26 || roll > chance) continue;
+
+      const patch = createMistPatch(key, x, z, suitability, random, material, isDemo);
+      patches.set(key, patch);
       group.add(patch.mesh);
     }
   }
+
+  return relevantPatchKeys;
 }
 
-function addFocusMistPatches(
-  group: THREE.Group,
-  patches: MistPatch[],
-  material: MistMaterial,
-  heightAt: HeightSampler,
-  focus: LocalPlanetPoint,
-  centerChunkX: number,
-  centerChunkZ: number,
-  isDemo: boolean
-): void {
-  const random = createChunkRandom(centerChunkX + 911, centerChunkZ - 349);
-  const count = isDemo ? 4 : 2;
+function pruneInactiveMistPatches(group: THREE.Group, patches: Map<string, MistPatch>, relevantPatchKeys: Set<string>): void {
+  patches.forEach((patch, key) => {
+    if (relevantPatchKeys.has(key) || patch.mesh.visible) return;
 
-  for (let i = 0; i < count; i += 1) {
-    const angle = random() * Math.PI * 2 + i * 1.72;
-    const distance = (isDemo ? 14 : 10) + random() * (isDemo ? 34 : 24);
-    const x = focus.x + Math.cos(angle) * distance;
-    const z = focus.z + Math.sin(angle) * distance;
-    const suitability = Math.max(mistSuitabilityAt(x, z, heightAt), isDemo ? 0.74 : 0.58);
-    const patch = createMistPatch(x, z, suitability, random, material, isDemo);
-    patch.baseAlpha *= isDemo ? 1.25 : 1.12;
-    patches.push(patch);
-    group.add(patch.mesh);
-  }
+    group.remove(patch.mesh);
+    patch.mesh.geometry.dispose();
+    patches.delete(key);
+  });
 }
 
 function createMistPatch(
+  key: string,
   x: number,
   z: number,
   suitability: number,
@@ -223,6 +220,7 @@ function createMistPatch(
   mesh.frustumCulled = true;
 
   const patch = {
+    key,
     baseX: x,
     baseZ: z,
     radius,
@@ -421,15 +419,25 @@ function clearPatchAlpha(patch: MistPatch): void {
   patch.alphaAttribute.needsUpdate = true;
 }
 
-function getMistDebugState(patches: MistPatch[]): MistDebugState {
+function getMistDebugState(patches: Map<string, MistPatch>): MistDebugState {
   const farDistance = mistDebugFarDistance;
   let visiblePatches = 0;
   let farVisiblePatches = 0;
   let farMaxAlpha = 0;
+  const visibleSamples: MistDebugPatchSample[] = [];
 
   patches.forEach((patch) => {
     if (!patch.mesh.visible) return;
     visiblePatches += 1;
+    if (visibleSamples.length < 12) {
+      visibleSamples.push({
+        key: patch.key,
+        x: patch.baseX,
+        z: patch.baseZ,
+        distanceToFocus: patch.distanceToFocus,
+        maxAlpha: patch.maxAlpha,
+      });
+    }
     if (patch.distanceToFocus < farDistance) return;
 
     farVisiblePatches += 1;
@@ -437,12 +445,13 @@ function getMistDebugState(patches: MistPatch[]): MistDebugState {
   });
 
   return {
-    patches: patches.length,
+    patches: patches.size,
     visiblePatches,
     farVisiblePatches,
     farMaxAlpha,
     farDistance,
     hardCullDistance: mistHardCullDistance,
+    visibleSamples,
   };
 }
 

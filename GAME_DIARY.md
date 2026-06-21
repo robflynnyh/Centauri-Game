@@ -20,6 +20,8 @@ Changed ground mist into a strictly local near-player atmosphere by reducing pat
 
 Matched demo and normal mist fade/cull distances so the PR flythrough uses the same local-only mist range as ordinary play.
 
+Stabilized local mist patch generation across chunk boundaries by keeping deterministic chunk-keyed patches alive while visible instead of clearing and reseeding the whole mist field.
+
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
 Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.

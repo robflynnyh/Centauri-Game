@@ -383,6 +383,43 @@ test("culls far mist patches in normal debug walking views", async ({ page }) =>
   expect(states.every((state) => state.farMaxAlpha === 0)).toBe(true);
 });
 
+test("keeps nearby mist patch identity stable across chunk boundaries", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMistState));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mist debug hook");
+
+    debug.setPlayer(86, 24);
+    const before = debug.getMistState();
+    debug.setPlayer(98, 24);
+    const after = debug.getMistState();
+    const beforeByKey = new Map(before.visibleSamples.map((sample) => [sample.key, sample]));
+    const retained: { key: string; shift: number }[] = [];
+    after.visibleSamples.forEach((afterSample) => {
+      const beforeSample = beforeByKey.get(afterSample.key);
+      if (!beforeSample) return;
+
+      retained.push({
+        key: afterSample.key,
+        shift: Math.hypot(afterSample.x - beforeSample.x, afterSample.z - beforeSample.z),
+      });
+    });
+
+    return {
+      beforeVisible: before.visiblePatches,
+      afterVisible: after.visiblePatches,
+      retained,
+    };
+  });
+
+  expect(result.beforeVisible).toBeGreaterThan(0);
+  expect(result.afterVisible).toBeGreaterThan(0);
+  expect(result.retained.length).toBeGreaterThan(0);
+  expect(result.retained.every((sample) => sample.shift < 0.001)).toBe(true);
+});
+
 test("starts temple debug route near the single temple landmark", async ({ page }) => {
   await page.goto("/?debug=temple");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
