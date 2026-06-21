@@ -430,6 +430,11 @@ function updateLookStatus(): void {
   lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse locked" : "click to lock";
 }
 
+function clearTransientInputState(): void {
+  keys.clear();
+  player.jumpQueued = false;
+}
+
 updateLookStatus();
 
 function updateSleepHud(state: SleepDebugState): void {
@@ -457,6 +462,10 @@ window.addEventListener("keydown", (event) => {
   startAudio();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
+window.addEventListener("blur", clearTransientInputState);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") clearTransientInputState();
+});
 renderer.domElement.addEventListener("click", () => {
   startAudio();
   if (isDemo) return;

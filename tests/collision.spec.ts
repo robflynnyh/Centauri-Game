@@ -138,6 +138,36 @@ test("supports grounded jump and visible crouch height changes", async ({ page }
   await page.keyboard.up("Control");
 });
 
+test("clears shortcut-stale crouch keys so jump works after tab return", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    debug.setPlayer(0, 24);
+  });
+
+  const start = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getPlayer();
+  });
+
+  await page.keyboard.down("Control");
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await page.keyboard.press("Space");
+  await page.keyboard.up("Control");
+
+  await page.waitForFunction(
+    (startY) => {
+      const debug = window.__centauriDebug;
+      return Boolean(debug && debug.getPlayer().y > startY + 0.55 && !debug.getMovementState().grounded);
+    },
+    start.y
+  );
+});
+
 test("wraps straight walks around the spherical planet", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
