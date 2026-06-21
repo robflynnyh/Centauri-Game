@@ -109,8 +109,6 @@ export function createSkySystem(
   const celestialGroup = new THREE.Group();
   skyAnchor.add(celestialGroup);
   celestialBodies.forEach((body, index) => addCelestialBody(celestialGroup, camera, body, index));
-  const sunVisual = createSunVisual(camera);
-  skyAnchor.add(sunVisual.group);
   const starField = createStarField();
   skyAnchor.add(starField.points);
   const meteorField = createMeteorField(camera, isDemo);
@@ -160,7 +158,7 @@ export function createSkySystem(
       moon.intensity = THREE.MathUtils.lerp(0.18, 0.08, dayAmount);
 
       updateSkyRing(skyRing, locationState, elapsed);
-      sunVisual.update(locationState, phaseAmount);
+      updateSunVisualState(locationState, camera);
       celestialGroup.children.forEach((child, index) => updateCelestialBody(child, camera, celestialBodies[index], index, locationState, elapsed));
       starField.update(nightAmount, phaseAmount, locationState);
       meteorField.update(elapsed, nightAmount, locationState);
@@ -342,12 +340,12 @@ function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color |
         sky = mix(sky, vec3(1.0, 0.52, 0.82), horizonGlow * 0.22);
         sky += vec3(1.0, 0.76, 0.42) * pow(sunDot, 10.0) * (0.18 + dayAmount * 0.28);
         float sunAboveHorizon = smoothstep(0.1, 0.48, dayAmount);
-        float sunHalo = smoothstep(0.948, 0.986, sunDot) * sunAboveHorizon;
-        float sunDisc = smoothstep(0.982, 0.995, sunDot) * sunAboveHorizon;
+        float sunHalo = smoothstep(0.936, 0.982, sunDot) * sunAboveHorizon;
+        float sunDisc = smoothstep(0.976, 0.992, sunDot) * sunAboveHorizon;
         vec3 sunHaloColour = mix(vec3(1.0, 0.52, 0.22), vec3(0.42, 1.0, 0.86), templeInfluence * 0.22);
         vec3 sunDiscColour = mix(vec3(1.0, 0.86, 0.36), vec3(1.0, 1.0, 0.62), templeInfluence * 0.18);
-        sky = mix(sky, sunHaloColour, sunHalo * 0.3);
-        sky = mix(sky, sunDiscColour, sunDisc * 0.92);
+        sky = mix(sky, sunHaloColour, sunHalo * 0.34);
+        sky = mix(sky, sunDiscColour, sunDisc * 0.86);
         sky += vec3(0.42, 1.0, 0.88) * templeInfluence * (0.08 + horizonGlow * 0.16);
 
         float grain = fract(sin(dot(direction.xy + direction.zz, vec2(43.31, 19.17))) * 14758.5453);
@@ -402,119 +400,18 @@ function stableDirection(longitude: number, latitude: number): THREE.Vector3 {
   return new THREE.Vector3(Math.sin(longitude) * cosLatitude, Math.cos(longitude) * cosLatitude, Math.sin(latitude)).normalize();
 }
 
-function createSunVisual(
-  camera: THREE.Camera
-): { group: THREE.Group; update: (state: SkyLocationState, templeInfluence: number) => void } {
-  const group = new THREE.Group();
-  group.name = "visible-sun-disc";
-  group.renderOrder = 4;
-
-  const haloMaterial = new THREE.SpriteMaterial({
-    color: 0xffb45f,
-    map: makeSunTexture("halo"),
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const halo = new THREE.Sprite(haloMaterial);
-  halo.name = "visible-sun-blocky-halo";
-  halo.renderOrder = 4;
-  halo.scale.set(33, 33, 1);
-  group.add(halo);
-
-  const outerMaterial = new THREE.SpriteMaterial({
-    color: 0xffd36d,
-    map: makeSunTexture("disc"),
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const outerDisc = new THREE.Sprite(outerMaterial);
-  outerDisc.name = "visible-sun-outer-disc";
-  outerDisc.position.z = 0.02;
-  outerDisc.renderOrder = 5;
-  outerDisc.scale.set(21.5, 21.5, 1);
-  group.add(outerDisc);
-
-  const innerMaterial = new THREE.SpriteMaterial({
-    color: 0xfff2a0,
-    map: makeSunTexture("core"),
-    transparent: true,
-    opacity: 0,
-    depthTest: false,
-    depthWrite: false,
-  });
-  const innerDisc = new THREE.Sprite(innerMaterial);
-  innerDisc.name = "visible-sun-inner-disc";
-  innerDisc.position.z = 0.04;
-  innerDisc.renderOrder = 6;
-  innerDisc.scale.set(14.5, 14.5, 1);
-  group.add(innerDisc);
-
-  return {
-    group,
-    update: (state, templeInfluence) => {
-      const horizonFade = THREE.MathUtils.smoothstep(state.sunDot, -0.03, 0.16);
-      const daylightFade = THREE.MathUtils.smoothstep(state.dayAmount, 0.08, 0.54);
-      const opacity = THREE.MathUtils.clamp(horizonFade * daylightFade, 0, 1);
-      const templeTint = THREE.MathUtils.clamp(templeInfluence, 0, 0.72);
-      haloMaterial.color.set(0xffb45f).lerp(new THREE.Color(0x6dffe0), templeTint * 0.24);
-      outerMaterial.color.set(0xffd36d).lerp(new THREE.Color(0xe8ff72), templeTint * 0.2);
-      innerMaterial.color.set(0xfff2a0).lerp(new THREE.Color(0xffffff), templeTint * 0.14);
-      haloMaterial.opacity = opacity * 0.34;
-      outerMaterial.opacity = opacity * 0.88;
-      innerMaterial.opacity = opacity;
-
-      group.visible = opacity > 0.015;
-      group.position.copy(state.sunDirection).multiplyScalar(sunVisualDistance);
-      group.lookAt(camera.position);
-      const pulse = 1 + Math.sin(state.planetSpinPhase * 4 + state.longitude * 0.7) * 0.025;
-      group.scale.setScalar(pulse);
-
-      const sunWorldPosition = group.getWorldPosition(new THREE.Vector3());
-      const projected = sunWorldPosition.clone().project(camera);
-      const cameraForward = camera.getWorldDirection(new THREE.Vector3());
-      const inFrontOfCamera = sunWorldPosition.sub(camera.position).normalize().dot(cameraForward) > 0;
-      state.sunVisualOpacity = opacity;
-      state.sunVisualScreenX = projected.x;
-      state.sunVisualScreenY = projected.y;
-      state.sunVisualVisible = group.visible && inFrontOfCamera && Math.abs(projected.x) <= 1.18 && Math.abs(projected.y) <= 1.18;
-    },
-  };
-}
-
-function makeSunTexture(kind: "halo" | "disc" | "core"): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 32;
-  canvas.height = 32;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Missing sun texture canvas context");
-
-  context.imageSmoothingEnabled = false;
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  const center = 15.5;
-  const radius = kind === "halo" ? 15 : kind === "disc" ? 12 : 8;
-  const feather = kind === "halo" ? 5 : kind === "disc" ? 2 : 1;
-
-  for (let y = 0; y < canvas.height; y += 1) {
-    for (let x = 0; x < canvas.width; x += 1) {
-      const blockX = Math.floor(x / 2) * 2 + 1;
-      const blockY = Math.floor(y / 2) * 2 + 1;
-      const distance = Math.hypot(blockX - center, blockY - center);
-      if (distance > radius) continue;
-      const alpha = kind === "core" ? 1 : THREE.MathUtils.clamp((radius - distance) / feather, 0, 1);
-      context.fillStyle = `rgba(255, 255, 255, ${alpha.toFixed(3)})`;
-      context.fillRect(x, y, 1, 1);
-    }
-  }
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.NearestFilter;
-  texture.minFilter = THREE.NearestFilter;
-  texture.generateMipmaps = false;
-  return texture;
+function updateSunVisualState(state: SkyLocationState, camera: THREE.Camera): void {
+  const horizonFade = THREE.MathUtils.smoothstep(state.sunDot, -0.03, 0.16);
+  const daylightFade = THREE.MathUtils.smoothstep(state.dayAmount, 0.08, 0.54);
+  const opacity = THREE.MathUtils.clamp(horizonFade * daylightFade, 0, 1);
+  const sunWorldPosition = state.sunDirection.clone().multiplyScalar(sunVisualDistance).add(camera.position);
+  const projected = sunWorldPosition.clone().project(camera);
+  const cameraForward = camera.getWorldDirection(new THREE.Vector3());
+  const inFrontOfCamera = sunWorldPosition.sub(camera.position).normalize().dot(cameraForward) > 0;
+  state.sunVisualOpacity = opacity;
+  state.sunVisualScreenX = projected.x;
+  state.sunVisualScreenY = projected.y;
+  state.sunVisualVisible = opacity > 0.015 && inFrontOfCamera && Math.abs(projected.x) <= 1.18 && Math.abs(projected.y) <= 1.18;
 }
 
 function addCelestialBody(celestialGroup: THREE.Group, camera: THREE.Camera, body: CelestialBody, index: number): void {

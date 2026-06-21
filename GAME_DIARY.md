@@ -10,6 +10,8 @@ Changed sky time to come from planet spin: the sun, stars, planets, ring, and me
 
 Added a large simple camera-anchored sun disc that follows the computed daylight direction, fades below the local horizon, and is covered by deterministic day/night sky screenshot checks.
 
+Reworked the visible sun into the sky shader only so the PR preview reads as one background sky light instead of a foreground disc layered over the mountains.
+
 ## 2026-06-20
 
 Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.
