@@ -5,6 +5,7 @@ test.use({ video: "off" });
 type SleepState = {
   amount: number;
   drainSeconds: number;
+  drainMultiplier: number;
   sleeping: boolean;
   blackout: boolean;
   eyelidAmount: number;
@@ -24,6 +25,47 @@ test("drains the sleep meter with accelerated debug timing", async ({ page }) =>
   expect(initial.amount).toBeGreaterThan(0.9);
   expect(drained.amount).toBeLessThan(initial.amount - 0.12);
   expect(drained.blackout).toBe(false);
+});
+
+test("uses exertion-specific drain rates for idle, crouch, walk, and airborne movement", async ({ page }) => {
+  await page.goto("/?test=sleep");
+  await waitForSleepDebug(page);
+
+  const delta = 0.2;
+  const idle = await drainFromFull(page, delta, {
+    wantsSleep: false,
+    moving: false,
+    grounded: true,
+    movementAmount: 0,
+  });
+  const crouching = await drainFromFull(page, delta, {
+    wantsSleep: false,
+    moving: true,
+    grounded: true,
+    movementAmount: 0.7,
+    crouching: true,
+  });
+  const walking = await drainFromFull(page, delta, {
+    wantsSleep: false,
+    moving: true,
+    grounded: true,
+    movementAmount: 1,
+  });
+  const airborne = await drainFromFull(page, delta, {
+    wantsSleep: false,
+    moving: true,
+    grounded: false,
+    movementAmount: 1,
+    airborne: true,
+  });
+
+  expect(idle.drainMultiplier).toBeCloseTo(0.6);
+  expect(crouching.drainMultiplier).toBeCloseTo(0.8);
+  expect(walking.drainMultiplier).toBeCloseTo(1.25);
+  expect(airborne.drainMultiplier).toBeCloseTo(2.1);
+  expect(idle.drained).toBeLessThan(crouching.drained);
+  expect(crouching.drained).toBeLessThan(walking.drained);
+  expect(airborne.drained).toBeGreaterThan(walking.drained);
 });
 
 test("refills only after the player holds still to sleep", async ({ page }) => {
@@ -88,7 +130,7 @@ test("fades to a recoverable blackout when the sleep meter reaches zero", async 
   await waitForSleepDebug(page);
   await setSleepAmount(page, 0.1);
 
-  const blackout = await advanceSleep(page, 0.25, { wantsSleep: false, moving: false, grounded: true });
+  const blackout = await advanceSleep(page, 0.34, { wantsSleep: false, moving: false, grounded: true });
   const beforeMove = await getPlayer(page);
   await expect(page.locator(".blackout")).toHaveClass(/blackout--visible/);
 
@@ -123,7 +165,14 @@ async function setSleepAmount(page: Page, amount: number): Promise<SleepState> {
 async function advanceSleep(
   page: Page,
   delta: number,
-  input: { wantsSleep: boolean; moving: boolean; grounded: boolean }
+  input: Partial<{
+    wantsSleep: boolean;
+    moving: boolean;
+    grounded: boolean;
+    movementAmount: number;
+    crouching: boolean;
+    airborne: boolean;
+  }>
 ): Promise<SleepState> {
   return page.evaluate(
     ({ deltaSeconds, updateInput }) => {
@@ -133,6 +182,23 @@ async function advanceSleep(
     },
     { deltaSeconds: delta, updateInput: input }
   );
+}
+
+async function drainFromFull(
+  page: Page,
+  delta: number,
+  input: Partial<{
+    wantsSleep: boolean;
+    moving: boolean;
+    grounded: boolean;
+    movementAmount: number;
+    crouching: boolean;
+    airborne: boolean;
+  }>
+): Promise<{ drained: number; drainMultiplier: number }> {
+  const before = await setSleepAmount(page, 1);
+  const after = await advanceSleep(page, delta, input);
+  return { drained: before.amount - after.amount, drainMultiplier: after.drainMultiplier };
 }
 
 async function getPlayer(page: Page): Promise<{ x: number; z: number }> {
