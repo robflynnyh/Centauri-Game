@@ -13,6 +13,9 @@ export type SleepUpdateInput = {
   wantsSleep: boolean;
   moving: boolean;
   grounded: boolean;
+  movementAmount?: number;
+  crouching?: boolean;
+  airborne?: boolean;
 };
 
 export type SleepDebugState = {
@@ -27,6 +30,7 @@ export type SleepDebugState = {
   eyelidAmount: number;
   eyelidPhase: "open" | "closing" | "closed" | "opening";
   drainSeconds: number;
+  drainMultiplier: number;
   refillSeconds: number;
   message: string;
 };
@@ -46,6 +50,38 @@ function clamp01(value: number): number {
 
 function positiveOrDefault(value: number | undefined, fallback: number): number {
   return value && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeSleepInput(input: SleepUpdateInput): SleepUpdateInput {
+  const movementAmount = clamp(input.movementAmount ?? (input.moving ? 1 : 0), 0, 1);
+  return {
+    ...input,
+    moving: input.moving || movementAmount > 0.05,
+    movementAmount,
+    crouching: Boolean(input.crouching),
+    airborne: Boolean(input.airborne || !input.grounded),
+  };
+}
+
+function getDrainMultiplier(input: SleepUpdateInput): number {
+  const movementAmount = clamp(input.movementAmount ?? (input.moving ? 1 : 0), 0, 1);
+  const airborne = Boolean(input.airborne || !input.grounded);
+  const moving = input.moving || movementAmount > 0.05;
+  let multiplier = moving ? 1 + movementAmount * 0.25 : 0.6;
+
+  if (moving && input.crouching) {
+    multiplier = 0.8;
+  }
+  if (airborne) {
+    multiplier = Math.max(multiplier, 2.1);
+  }
+
+  return clamp(multiplier, 0.5, 2.5);
 }
 
 export function createSleepController(options: SleepControllerOptions = {}): {
@@ -71,6 +107,7 @@ export function createSleepController(options: SleepControllerOptions = {}): {
   let blackoutSeconds = blackout ? blackoutMinimumSeconds : 0;
   let eyelidAmount = 0;
   let lastInput: SleepUpdateInput = { wantsSleep: false, moving: false, grounded: true };
+  let lastDrainMultiplier = getDrainMultiplier(lastInput);
 
   function moveEyelids(delta: number, closed: boolean): void {
     const duration = closed ? eyelidCloseSeconds : eyelidOpenSeconds;
@@ -111,6 +148,7 @@ export function createSleepController(options: SleepControllerOptions = {}): {
       eyelidAmount,
       eyelidPhase: getEyelidPhase(),
       drainSeconds,
+      drainMultiplier: lastDrainMultiplier,
       refillSeconds,
       message: getMessage(),
     };
@@ -118,7 +156,8 @@ export function createSleepController(options: SleepControllerOptions = {}): {
 
   function update(delta: number, input: SleepUpdateInput): SleepDebugState {
     const step = Math.max(0, delta);
-    lastInput = input;
+    lastInput = normalizeSleepInput(input);
+    lastDrainMultiplier = getDrainMultiplier(lastInput);
 
     if (blackout) {
       blackoutSeconds += step;
@@ -136,8 +175,8 @@ export function createSleepController(options: SleepControllerOptions = {}): {
       return getState();
     }
 
-    const restingAtFull = input.wantsSleep && input.grounded && !input.moving && amount >= 1;
-    const canSettle = input.wantsSleep && input.grounded && !input.moving && amount < 1;
+    const restingAtFull = lastInput.wantsSleep && lastInput.grounded && !lastInput.moving && amount >= 1;
+    const canSettle = lastInput.wantsSleep && lastInput.grounded && !lastInput.moving && amount < 1;
     if (canSettle) {
       stillSeconds += step;
       sleeping = stillSeconds >= settleSeconds;
@@ -149,7 +188,7 @@ export function createSleepController(options: SleepControllerOptions = {}): {
     } else {
       sleeping = false;
       stillSeconds = 0;
-      amount = clamp01(amount - step / drainSeconds);
+      amount = clamp01(amount - (step / drainSeconds) * lastDrainMultiplier);
     }
 
     if (amount <= 0) {
