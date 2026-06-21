@@ -370,6 +370,7 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
     opacity: 0.26,
     depthWrite: false,
     side: THREE.DoubleSide,
+    forceSinglePass: true,
   });
   const ribMaterial = new THREE.MeshBasicMaterial({ color: 0xd8fbff });
   const shadowRibMaterial = new THREE.MeshBasicMaterial({ color: 0x4b6eb9 });
@@ -382,7 +383,7 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
     side: THREE.DoubleSide,
   });
 
-  const glass = new THREE.Mesh(new THREE.SphereGeometry(radius, 18, 8, entranceGapAngle * 0.5, Math.PI * 2 - entranceGapAngle, 0, Math.PI * 0.5), glassMaterial);
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(radius, 28, 8, entranceGapAngle * 0.5, Math.PI * 2 - entranceGapAngle, 0, Math.PI * 0.5), glassMaterial);
   glass.rotation.y = entranceAngle;
   glass.renderOrder = 1;
   group.add(glass);
@@ -409,8 +410,8 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   group.add(threshold);
 
   const arch = new THREE.Mesh(new THREE.TorusGeometry(entranceHalfWidth, 0.34, 5, 24, Math.PI), ribMaterial);
-  arch.position.set(Math.sin(entranceAngle) * (radius - 0.35), entranceHalfWidth * 0.82, Math.cos(entranceAngle) * (radius - 0.35));
-  arch.rotation.set(0, entranceAngle, Math.PI);
+  arch.position.set(Math.sin(entranceAngle) * (radius - 0.35), 0.96, Math.cos(entranceAngle) * (radius - 0.35));
+  arch.rotation.set(0, entranceAngle, 0);
   arch.renderOrder = 2;
   group.add(arch);
 
