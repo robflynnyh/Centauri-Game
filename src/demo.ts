@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { lookAtPlanetPoint, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
+import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
 
 type HeightSampler = (x: number, z: number) => number;
@@ -13,7 +13,7 @@ function intervalPulse(value: number, start: number, peak: number, end: number):
 }
 
 function showSkyRegion(
-  camera: THREE.Camera,
+  camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
   onWalk: WalkObserver | undefined,
   elapsed: number,
@@ -26,7 +26,7 @@ function showSkyRegion(
 }
 
 function showFixedTimeSkyRegion(
-  camera: THREE.Camera,
+  camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
   onWalk: WalkObserver | undefined,
   anchorElapsed: number,
@@ -39,7 +39,7 @@ function showFixedTimeSkyRegion(
 }
 
 function showSkyRegionAtLongitude(
-  camera: THREE.Camera,
+  camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
   onWalk: WalkObserver | undefined,
   sunLongitude: number,
@@ -64,17 +64,34 @@ function showSkyRegionAtLongitude(
   );
 }
 
+function setDemoFov(camera: THREE.PerspectiveCamera, fov: number): void {
+  if (Math.abs(camera.fov - fov) < 0.01) return;
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
+}
+
 export function createPrDemoController(
-  camera: THREE.Camera,
+  camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
   resolveMove: ResolveMove,
   onWalk?: WalkObserver,
-  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint }
+  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
+  observatory?: {
+    position: LocalPlanetPoint;
+    approachPosition: LocalPlanetPoint;
+    telescope: {
+      viewPosition: LocalPlanetPoint;
+      viewHeight: number;
+      yaw: number;
+      pitch: number;
+    };
+  }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
   return {
     update: (elapsed, delta) => {
+      setDemoFov(camera, 68);
       if (elapsed < 3.6) {
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.18, 0, -delta * 1.6));
         const crouchDip = intervalPulse(elapsed, 0.8, 1.25, 1.85) * 0.8;
@@ -128,21 +145,53 @@ export function createPrDemoController(
       }
 
       if (elapsed < 10.6) {
+        const observatoryPosition = observatory?.position ?? { x: -430, z: 312 };
+        const approach = observatory?.approachPosition ?? { x: -442, z: 324 };
+        onWalk?.(new THREE.Vector3(observatoryPosition.x, 0, observatoryPosition.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          approach.x,
+          approach.z,
+          heightAt(approach.x, approach.z) + 7.2,
+          observatoryPosition.x,
+          observatoryPosition.z,
+          heightAt(observatoryPosition.x, observatoryPosition.z) + 4.4
+        );
+        return;
+      }
+
+      if (elapsed < 12.3) {
+        const telescope = observatory?.telescope;
+        const viewPosition = telescope?.viewPosition ?? { x: -432, z: 316 };
+        setDemoFov(camera, 26);
+        onWalk?.(new THREE.Vector3(viewPosition.x, 0, viewPosition.z), 0);
+        setCameraOnPlanet(
+          camera,
+          viewPosition.x,
+          viewPosition.z,
+          telescope?.viewHeight ?? heightAt(viewPosition.x, viewPosition.z) + 2.35,
+          (telescope?.yaw ?? 0) + Math.sin(elapsed * 0.72) * 0.34,
+          (telescope?.pitch ?? 0.26) + Math.sin(elapsed * 0.55) * 0.12
+        );
+        return;
+      }
+
+      if (elapsed < 14.0) {
         showSkyRegion(camera, heightAt, onWalk, elapsed, 0, -0.15, 0.18);
         return;
       }
 
-      if (elapsed < 12.6) {
+      if (elapsed < 15.7) {
         showFixedTimeSkyRegion(camera, heightAt, onWalk, 10.6, Math.PI * 0.5, 0.05, -0.22);
         return;
       }
 
-      if (elapsed < 16.0) {
+      if (elapsed < 18.4) {
         showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI, 0.16, -0.18);
         return;
       }
 
-      if (elapsed < 18.2) {
+      if (elapsed < 20.0) {
         const focus = { x: 12.9, z: -73.4 };
         const x = 23 + Math.sin(elapsed * 0.62) * 1.1;
         const z = -62 + Math.cos(elapsed * 0.54) * 1.1;
@@ -159,7 +208,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 19.8) {
+      if (elapsed < 21.4) {
         const focus = { x: 12.9, z: -73.4 };
         const x = 27 + Math.sin(elapsed * 0.7) * 1.4;
         const z = -60 + Math.cos(elapsed * 0.6) * 1.4;
@@ -176,7 +225,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 20.6) {
+      if (elapsed < 22.2) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 44 + Math.sin(elapsed * 0.5) * 3;
         const z = -593 + Math.cos(elapsed * 0.45) * 3;
@@ -193,7 +242,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 21.2) {
+      if (elapsed < 22.8) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
         const z = -607 + Math.cos(elapsed * 0.48) * 1.2;

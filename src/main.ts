@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures, createMountainBirds, createRareFlyingBeetles, type BirdDebugState } from "./creatures";
 import { createPrDemoController } from "./demo";
-import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
+import { createFieldNotesHud, createFieldNotesState, type FieldNoteId, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
-import { createTempleLandmark } from "./landmarks";
+import { createObservatoryLandmark, createTempleLandmark } from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature } from "./nature";
 import {
@@ -24,6 +24,29 @@ import { createSkySystem, type SkyDebugState } from "./sky";
 import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
 import "./style.css";
 
+type ObservatoryDebugState = {
+  x: number;
+  z: number;
+  approachX: number;
+  approachZ: number;
+  noteX: number;
+  noteZ: number;
+  noteRadius: number;
+  telescopeUseX: number;
+  telescopeUseZ: number;
+  telescopeViewX: number;
+  telescopeViewZ: number;
+  telescopeInteractionRadius: number;
+  telescopeYaw: number;
+  telescopePitch: number;
+  telescopeBaseYaw: number;
+  telescopeBasePitch: number;
+  telescopeActive: boolean;
+  cameraFov: number;
+  nearby: boolean;
+  obstacleCount: number;
+};
+
 declare global {
   interface Window {
     __centauriDebug?: {
@@ -36,7 +59,7 @@ declare global {
         assumedWalkSpeed: number;
         radialDistance: number;
       };
-      getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
+      getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean; telescopeActive: boolean; cameraFov: number };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
       getTerrainState: () => {
         centerX: number;
@@ -96,6 +119,10 @@ declare global {
         influenceRadius: number;
         fullInfluenceRadius: number;
       };
+      getObservatoryState: () => ObservatoryDebugState;
+      enterTelescope: () => ObservatoryDebugState;
+      exitTelescope: () => ObservatoryDebugState;
+      panTelescope: (yawDelta: number, pitchDelta: number) => ObservatoryDebugState;
       getFieldNotesState: () => FieldNotesSnapshot;
       getCreatureState: () => {
         total: number;
@@ -139,12 +166,22 @@ if (!app) {
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
+const enableObservatoryDebug = params.get("debug") === "observatory";
+const enableTelescopeDebug = params.get("debug") === "telescope";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || isBirdDebug || enableSleepDebug || enableIsolationDebug;
+const enableDebugTools =
+  enableCollisionDebug ||
+  enableTempleDebug ||
+  enableObservatoryDebug ||
+  enableTelescopeDebug ||
+  isBeetleDebug ||
+  isBirdDebug ||
+  enableSleepDebug ||
+  enableIsolationDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -154,19 +191,20 @@ const braking = 24;
 const gravity = 18;
 const jumpImpulse = 7.2;
 const mouseLookSensitivity = 0.0024;
-const hudBadgeText = isDemo
-  ? "PR demo mode"
-  : enableTempleDebug
-    ? "temple debug"
-      : isBeetleDebug
-        ? "beetle debug"
-        : isBirdDebug
-          ? "birds debug"
-          : enableSleepDebug
-            ? "sleep debug"
-            : enableIsolationDebug
-              ? "isolation debug"
-              : "exploration mode";
+const normalCameraFov = 68;
+const telescopeCameraFov = 26;
+
+function getHudBadgeText(): string {
+  if (isDemo) return "PR demo mode";
+  if (enableTempleDebug) return "temple debug";
+  if (enableObservatoryDebug) return "observatory debug";
+  if (enableTelescopeDebug) return "telescope debug";
+  if (isBeetleDebug) return "beetle debug";
+  if (isBirdDebug) return "birds debug";
+  if (enableSleepDebug) return "sleep debug";
+  if (enableIsolationDebug) return "isolation debug";
+  return "exploration mode";
+}
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -201,8 +239,13 @@ app.innerHTML = `
         <div class="hud__sleep-fill"></div>
       </div>
     </div>
-    <div class="hud__badge">${hudBadgeText}</div>
+    <div class="hud__badge">${getHudBadgeText()}</div>
     <div class="hud__look" aria-live="polite"></div>
+  </div>
+  <div class="telescope-scope" aria-hidden="true">
+    <div class="telescope-scope__ring"></div>
+    <div class="telescope-scope__cross telescope-scope__cross--vertical"></div>
+    <div class="telescope-scope__cross telescope-scope__cross--horizontal"></div>
   </div>
   <div class="eyelids" aria-hidden="true" data-phase="open">
     <div class="eyelid eyelid--top"></div>
@@ -222,12 +265,17 @@ renderer.domElement.setAttribute("aria-label", "Centauri exploration view");
 app.appendChild(renderer.domElement);
 const pixelRenderer = createPixelRenderPipeline(renderer, window.innerWidth, window.innerHeight);
 
-const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.1, 5200);
+const camera = new THREE.PerspectiveCamera(normalCameraFov, window.innerWidth / window.innerHeight, 0.1, 5200);
 
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
+const observatory = createObservatoryLandmark(scene, heightAt, [temple.reservedZone]);
 const fieldNotes = createFieldNotesState();
+const fieldNoteSources: Array<{ noteId: FieldNoteId; position: { x: number; z: number }; radius: number }> = [
+  temple.noteSource,
+  observatory.noteSource,
+];
 const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
 const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
 if (!fieldNotesHeading || !fieldNotesBody) {
@@ -236,19 +284,9 @@ if (!fieldNotesHeading || !fieldNotesBody) {
 const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fieldNotes);
 const mountainBirds = createMountainBirds(scene, heightAt);
 const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
-const initialPlayerLocalPosition = enableTempleDebug
-  ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
-  : isBeetleDebug
-    ? new THREE.Vector3(4.8, 0, 14.2)
-    : isBirdDebug
-      ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
-      : enableIsolationDebug
-        ? new THREE.Vector3(-128, 0, -464)
-        : new THREE.Vector3(0, 0, 24);
-const initialPlayerYaw = isBirdDebug
-  ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
-  : 0;
-const initialPlayerPitch = isBirdDebug ? 0.18 : -0.12;
+const initialPlayerLocalPosition = getInitialPlayerLocalPosition();
+const initialPlayerYaw = getInitialPlayerYaw(initialPlayerLocalPosition);
+const initialPlayerPitch = enableTelescopeDebug ? observatory.telescope.pitch - 0.04 : enableObservatoryDebug || isBirdDebug ? 0.18 : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -266,11 +304,19 @@ const player = {
   jumpQueued: false,
 };
 let mouseLookActive = false;
+const telescopeMode = {
+  active: false,
+  yaw: observatory.telescope.yaw,
+  pitch: observatory.telescope.pitch,
+  previousYaw: initialPlayerYaw,
+  previousPitch: initialPlayerPitch,
+};
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
 const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
 const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
+const telescopeScope = document.querySelector<HTMLDivElement>(".telescope-scope");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
@@ -280,18 +326,20 @@ const mist = createMistSystem(scene, heightAt, isDemo);
 scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
+collisionWorld.addObstacle(observatory.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNature(
   scene,
   heightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
-  [temple.reservedZone]
+  [temple.reservedZone, observatory.reservedZone]
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
+const telescopeFloraFocus = new THREE.Vector3();
 const visionState = {
   isolationAmount: 0,
   targetIsolationAmount: 0,
@@ -301,7 +349,7 @@ let isolationOverrideAmount: number | null = null;
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple);
+}, temple, observatory);
 
 terrain.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
@@ -326,9 +374,11 @@ if (enableDebugTools) {
       radialDistance: player.position.length(),
     }),
     getViewState: () => ({
-      yaw: player.yaw,
-      pitch: player.pitch,
+      yaw: telescopeMode.active ? telescopeMode.yaw : player.yaw,
+      pitch: telescopeMode.active ? telescopeMode.pitch : player.pitch,
       mouseLookActive,
+      telescopeActive: telescopeMode.active,
+      cameraFov: camera.fov,
     }),
     getMovementState: () => ({
       grounded: player.grounded,
@@ -360,6 +410,21 @@ if (enableDebugTools) {
       influenceRadius: temple.influenceRadius,
       fullInfluenceRadius: temple.fullInfluenceRadius,
     }),
+    getObservatoryState: getObservatoryDebugState,
+    enterTelescope: () => {
+      enterTelescopeMode(true);
+      return getObservatoryDebugState();
+    },
+    exitTelescope: () => {
+      exitTelescopeMode(false);
+      return getObservatoryDebugState();
+    },
+    panTelescope: (yawDelta, pitchDelta) => {
+      if (!telescopeMode.active) enterTelescopeMode(true);
+      setTelescopeLook(telescopeMode.yaw + yawDelta, telescopeMode.pitch + pitchDelta);
+      updateTelescopeCamera();
+      return getObservatoryDebugState();
+    },
     getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
     setSkyElapsed: (elapsed: number) => {
@@ -395,6 +460,7 @@ if (enableDebugTools) {
       return state;
     },
     setPlayer: (x: number, z: number) => {
+      if (telescopeMode.active) exitTelescopeMode(false);
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
       player.velocity.set(0, 0, 0);
@@ -406,12 +472,15 @@ if (enableDebugTools) {
       terrain.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
       sky.update(clock.elapsedTime, player.localPosition);
+      updateLookStatus();
     },
     attemptMove: (x: number, z: number) => {
+      if (telescopeMode.active) return { x: player.localPosition.x, z: player.localPosition.z };
       collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
+      updateLookStatus();
       return { x: player.localPosition.x, z: player.localPosition.z };
     },
     isBlockedAt: (x: number, z: number) => {
@@ -445,7 +514,19 @@ function startAudio(): void {
 
 function updateLookStatus(): void {
   if (!lookStatus) return;
-  lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse locked" : "click to lock";
+  if (isDemo) {
+    lookStatus.textContent = "";
+    return;
+  }
+  if (telescopeMode.active) {
+    lookStatus.textContent = "telescope: E or Esc to exit";
+    return;
+  }
+  if (isNearTelescope()) {
+    lookStatus.textContent = "E telescope";
+    return;
+  }
+  lookStatus.textContent = mouseLookActive ? "mouse locked" : "click to lock";
 }
 
 function clearTransientInputState(): void {
@@ -468,6 +549,31 @@ function updateSleepHud(state: SleepDebugState): void {
 updateSleepHud(sleep.getState());
 
 window.addEventListener("keydown", (event) => {
+  void audio.resume();
+  startAudio();
+  if (event.code === "KeyE") {
+    if (telescopeMode.active) {
+      event.preventDefault();
+      exitTelescopeMode(true);
+      return;
+    }
+    if (isNearTelescope()) {
+      event.preventDefault();
+      enterTelescopeMode();
+      return;
+    }
+  }
+  if (event.code === "Escape" && telescopeMode.active) {
+    event.preventDefault();
+    exitTelescopeMode(true);
+    return;
+  }
+  if (telescopeMode.active) {
+    if (isMovementControlCode(event.code) || event.code === "Space" || event.code === "KeyR") {
+      event.preventDefault();
+    }
+    return;
+  }
   keys.add(event.code);
   if (event.code === "KeyR") {
     event.preventDefault();
@@ -476,8 +582,6 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (!event.repeat) player.jumpQueued = true;
   }
-  void audio.resume();
-  startAudio();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
 window.addEventListener("blur", clearTransientInputState);
@@ -488,6 +592,14 @@ renderer.domElement.addEventListener("click", () => {
   startAudio();
   if (isDemo) return;
   renderer.domElement.focus();
+  if (telescopeMode.active) {
+    if (document.pointerLockElement === renderer.domElement) {
+      document.exitPointerLock();
+    } else {
+      requestPointerLockForView();
+    }
+    return;
+  }
   if (document.pointerLockElement === renderer.domElement) {
     document.exitPointerLock();
     return;
@@ -499,10 +611,20 @@ renderer.domElement.addEventListener("click", () => {
 });
 document.addEventListener("pointerlockchange", () => {
   mouseLookActive = document.pointerLockElement === renderer.domElement;
+  if (telescopeMode.active && !mouseLookActive) {
+    exitTelescopeMode(false);
+  }
   updateLookStatus();
 });
 document.addEventListener("mousemove", (event) => {
   if (!mouseLookActive || isDemo) return;
+  if (telescopeMode.active) {
+    setTelescopeLook(
+      telescopeMode.yaw - event.movementX * mouseLookSensitivity,
+      telescopeMode.pitch - event.movementY * mouseLookSensitivity
+    );
+    return;
+  }
   player.yaw -= event.movementX * mouseLookSensitivity;
   player.pitch = THREE.MathUtils.clamp(player.pitch - event.movementY * mouseLookSensitivity, -1.1, 0.6);
 });
@@ -517,6 +639,70 @@ function isSleepPressed(): boolean {
 
 function hasMovementInput(): boolean {
   return keys.has("KeyW") || keys.has("KeyS") || keys.has("KeyA") || keys.has("KeyD");
+}
+
+function isMovementControlCode(code: string): boolean {
+  return (
+    code === "KeyW" ||
+    code === "KeyS" ||
+    code === "KeyA" ||
+    code === "KeyD" ||
+    code === "ControlLeft" ||
+    code === "ControlRight" ||
+    code === "ShiftLeft" ||
+    code === "ShiftRight" ||
+    code === "KeyC"
+  );
+}
+
+function getInitialPlayerLocalPosition(): THREE.Vector3 {
+  if (enableTelescopeDebug) {
+    return new THREE.Vector3(observatory.telescope.usePosition.x, 0, observatory.telescope.usePosition.z);
+  }
+  if (enableObservatoryDebug) {
+    const viewpoint = getObservatoryReviewPosition();
+    return new THREE.Vector3(viewpoint.x, 0, viewpoint.z);
+  }
+  if (enableTempleDebug) {
+    return new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z);
+  }
+  if (isBeetleDebug) {
+    return new THREE.Vector3(4.8, 0, 14.2);
+  }
+  if (isBirdDebug) {
+    return new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8);
+  }
+  if (enableIsolationDebug) {
+    return new THREE.Vector3(-128, 0, -464);
+  }
+  return new THREE.Vector3(0, 0, 24);
+}
+
+function getInitialPlayerYaw(localPosition: THREE.Vector3): number {
+  if (isBirdDebug) {
+    return Math.atan2(localPosition.x - birdDebugAnchor.x, localPosition.z - birdDebugAnchor.z);
+  }
+  if (enableTelescopeDebug) {
+    return observatory.telescope.yaw;
+  }
+  if (enableObservatoryDebug) {
+    return lookYawToward(localPosition, observatory.position);
+  }
+  return 0;
+}
+
+function lookYawToward(from: { x: number; z: number }, target: { x: number; z: number }): number {
+  return Math.atan2(from.x - target.x, from.z - target.z);
+}
+
+function getObservatoryReviewPosition(): { x: number; z: number } {
+  const sightline = { x: -Math.sin(observatory.telescope.yaw), z: -Math.cos(observatory.telescope.yaw) };
+  const behindSightline = { x: -sightline.x, z: -sightline.z };
+  const sideSightline = { x: sightline.z, z: -sightline.x };
+  return normalizePlanetCoords(
+    observatory.position.x + behindSightline.x * 15 + sideSightline.x * 12,
+    observatory.position.z + behindSightline.z * 15 + sideSightline.z * 12
+  );
 }
 
 function moveToward(current: number, target: number, maxDelta: number): number {
@@ -558,7 +744,126 @@ function restPlayerInPlace(delta: number, targetHeight: number): void {
   setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
 }
 
+function setCameraFov(fov: number): void {
+  if (Math.abs(camera.fov - fov) < 0.01) return;
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
+}
+
+function isNearTelescope(focus: { x: number; z: number } = player.localPosition): boolean {
+  return surfaceDistanceBetweenLocal(focus, observatory.telescope.usePosition) <= observatory.telescope.interactionRadius;
+}
+
+function enterTelescopeMode(force = false): boolean {
+  if (telescopeMode.active) return true;
+  if (!force && !isNearTelescope()) return false;
+
+  telescopeMode.active = true;
+  telescopeMode.previousYaw = player.yaw;
+  telescopeMode.previousPitch = player.pitch;
+  telescopeMode.yaw = observatory.telescope.yaw;
+  telescopeMode.pitch = observatory.telescope.pitch;
+  player.velocity.set(0, 0, 0);
+  player.verticalVelocity = 0;
+  player.verticalOffset = 0;
+  player.grounded = true;
+  clearTransientInputState();
+  telescopeScope?.classList.add("telescope-scope--active");
+  telescopeScope?.setAttribute("aria-hidden", "false");
+  renderer.domElement.focus();
+  requestPointerLockForView();
+  updateTelescopeCamera();
+  updateLookStatus();
+  return true;
+}
+
+function exitTelescopeMode(releasePointerLock: boolean): void {
+  if (!telescopeMode.active) return;
+  telescopeMode.active = false;
+  player.yaw = telescopeMode.previousYaw;
+  player.pitch = telescopeMode.previousPitch;
+  clearTransientInputState();
+  telescopeScope?.classList.remove("telescope-scope--active");
+  telescopeScope?.setAttribute("aria-hidden", "true");
+  setCameraFov(normalCameraFov);
+  updatePlayerWorldPosition();
+  if (releasePointerLock && document.pointerLockElement === renderer.domElement) {
+    document.exitPointerLock();
+  }
+  updateLookStatus();
+}
+
+function requestPointerLockForView(): void {
+  if (document.pointerLockElement === renderer.domElement) return;
+  const pointerLockRequest = renderer.domElement.requestPointerLock();
+  if (pointerLockRequest) {
+    pointerLockRequest.catch(() => updateLookStatus());
+  }
+}
+
+function shortestAngleDelta(from: number, to: number): number {
+  const fullTurn = Math.PI * 2;
+  return THREE.MathUtils.euclideanModulo(to - from + Math.PI, fullTurn) - Math.PI;
+}
+
+function setTelescopeLook(yaw: number, pitch: number): void {
+  const yawLimit = 0.95;
+  const yawDelta = THREE.MathUtils.clamp(shortestAngleDelta(observatory.telescope.yaw, yaw), -yawLimit, yawLimit);
+  telescopeMode.yaw = observatory.telescope.yaw + yawDelta;
+  telescopeMode.pitch = THREE.MathUtils.clamp(pitch, -0.08, 0.76);
+}
+
+function updateTelescopeCamera(): void {
+  setCameraFov(telescopeCameraFov);
+  setCameraOnPlanet(
+    camera,
+    observatory.telescope.viewPosition.x,
+    observatory.telescope.viewPosition.z,
+    observatory.telescope.viewHeight,
+    telescopeMode.yaw,
+    telescopeMode.pitch
+  );
+}
+
+function updateTelescopeMode(): { horizontalSpeed: number } {
+  player.velocity.set(0, 0, 0);
+  player.verticalVelocity = 0;
+  player.verticalOffset = 0;
+  player.grounded = true;
+  player.jumpQueued = false;
+  player.cameraHeight = standHeight;
+  updatePlayerWorldPosition();
+  updateTelescopeCamera();
+  return { horizontalSpeed: 0 };
+}
+
+function getObservatoryDebugState(): ObservatoryDebugState {
+  return {
+    x: observatory.position.x,
+    z: observatory.position.z,
+    approachX: observatory.approachPosition.x,
+    approachZ: observatory.approachPosition.z,
+    noteX: observatory.noteSource.position.x,
+    noteZ: observatory.noteSource.position.z,
+    noteRadius: observatory.noteSource.radius,
+    telescopeUseX: observatory.telescope.usePosition.x,
+    telescopeUseZ: observatory.telescope.usePosition.z,
+    telescopeViewX: observatory.telescope.viewPosition.x,
+    telescopeViewZ: observatory.telescope.viewPosition.z,
+    telescopeInteractionRadius: observatory.telescope.interactionRadius,
+    telescopeYaw: telescopeMode.yaw,
+    telescopePitch: telescopeMode.pitch,
+    telescopeBaseYaw: observatory.telescope.yaw,
+    telescopeBasePitch: observatory.telescope.pitch,
+    telescopeActive: telescopeMode.active,
+    cameraFov: camera.fov,
+    nearby: isNearTelescope(),
+    obstacleCount: collisionWorld.obstacles.filter((obstacle) => obstacle.kind === "observatory").length,
+  };
+}
+
 function updateExploration(delta: number): { horizontalSpeed: number } {
+  setCameraFov(normalCameraFov);
   const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
   const right = new THREE.Vector3(forward.z, 0, -forward.x);
   const wish = new THREE.Vector3();
@@ -615,10 +920,11 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
 }
 
 function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: number): void {
-  const source = temple.noteSource;
-  if (surfaceDistanceBetweenLocal(focus, source.position) > source.radius) return;
-  if (fieldNotes.discover(source.noteId, elapsed)) {
-    fieldNotesHud.refresh();
+  for (const source of fieldNoteSources) {
+    if (surfaceDistanceBetweenLocal(focus, source.position) > source.radius) continue;
+    if (fieldNotes.discover(source.noteId, elapsed)) {
+      fieldNotesHud.refresh();
+    }
   }
 }
 
@@ -626,18 +932,19 @@ function animate(): void {
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
   const sleepBefore = sleep.getState();
-  const movementIntent = hasMovementInput();
-  const wantsSleep = isDemo ? sleepBefore.amount < 1 : isSleepPressed();
+  const movementIntent = !telescopeMode.active && hasMovementInput();
+  const wantsSleep = telescopeMode.active ? false : isDemo ? sleepBefore.amount < 1 : isSleepPressed();
   let explorationMotion = { horizontalSpeed: 0 };
 
   if (isDemo) prDemo.update(elapsed, delta);
+  else if (telescopeMode.active) explorationMotion = updateTelescopeMode();
   else if (sleepBefore.blackout) restPlayerInPlace(delta, 0.52);
   else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
   else explorationMotion = updateExploration(delta);
 
-  const movementAmount = isDemo ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
-  const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
-  const grounded = isDemo || player.grounded;
+  const movementAmount = isDemo || telescopeMode.active ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
+  const moving = isDemo || telescopeMode.active ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
+  const grounded = isDemo || telescopeMode.active || player.grounded;
   const sleepState = enableSleepDebug
     ? sleep.getState()
     : sleep.update(delta, {
@@ -652,7 +959,11 @@ function animate(): void {
 
   footsteps.update(delta);
   temple.update(elapsed);
-  const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  observatory.update(elapsed);
+  if (telescopeMode.active) {
+    telescopeFloraFocus.set(observatory.telescope.viewPosition.x, 0, observatory.telescope.viewPosition.z);
+  }
+  const floraFocus = isDemo ? demoFloraFocus : telescopeMode.active ? telescopeFloraFocus : player.localPosition;
   waterCreatures.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
   mountainBirds.update(elapsed, floraFocus);
@@ -664,6 +975,7 @@ function animate(): void {
   updateFloraReactivity(floraFocus, delta, elapsed);
   updateVisionState(delta);
   mist.update(elapsed, floraFocus);
+  updateLookStatus();
 
   pixelRenderer.render(scene, camera, {
     elapsed,

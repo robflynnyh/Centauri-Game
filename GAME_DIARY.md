@@ -12,6 +12,8 @@ Added sparse mountain birds as tiny curved V-shaped flocks that circle high ridg
 
 Distributed mountain bird flocks across repeated high-ridge regions so longer exploration can reveal more mountain-only bird groups beyond the initial debug/start flock.
 
+Added a single alien observatory landmark with a discoverable collection-order field note, an interactable zoomed telescope mode, `?debug=observatory`/`?debug=telescope` review routes, and PR-demo visibility.
+
 ## 2026-06-20
 
 Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.

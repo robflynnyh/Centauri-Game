@@ -25,12 +25,39 @@ export type TempleLandmark = {
   update: (elapsed: number) => void;
 };
 
+export type ObservatoryLandmark = {
+  group: THREE.Group;
+  position: LocalPlanetPoint;
+  approachPosition: LocalPlanetPoint;
+  noteSource: {
+    noteId: "observatory-sightline";
+    position: LocalPlanetPoint;
+    radius: number;
+  };
+  telescope: {
+    usePosition: LocalPlanetPoint;
+    viewPosition: LocalPlanetPoint;
+    yaw: number;
+    pitch: number;
+    viewHeight: number;
+    interactionRadius: number;
+  };
+  collision: CollisionObstacle;
+  reservedZone: LandmarkZone;
+  update: (elapsed: number) => void;
+};
+
 const templeSeed = "centauri-field-note-001-temple";
 const templeClearanceRadius = 24;
 const templeCollisionRadius = 5.8;
 const templeInfluenceRadius = 46;
 const templeFullInfluenceRadius = 13;
 const templeNoteRadius = 12.5;
+const observatorySeed = "centauri-field-note-observatory-telescope";
+const observatoryClearanceRadius = 34;
+const observatoryCollisionRadius = 4.8;
+const observatoryNoteRadius = 12;
+const telescopeInteractionRadius = 7.4;
 
 export function createTempleLandmark(scene: THREE.Scene, heightAt: HeightSampler): TempleLandmark {
   const position = chooseTemplePosition(heightAt);
@@ -72,6 +99,66 @@ export function createTempleLandmark(scene: THREE.Scene, heightAt: HeightSampler
   };
 }
 
+export function createObservatoryLandmark(
+  scene: THREE.Scene,
+  heightAt: HeightSampler,
+  avoidZones: LandmarkZone[] = []
+): ObservatoryLandmark {
+  const position = chooseObservatoryPosition(heightAt, avoidZones);
+  const yaw = seededUnit(`${observatorySeed}:yaw`) * Math.PI * 2;
+  const sightline = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+  const behindSightline = { x: -sightline.x, z: -sightline.z };
+  const sideSightline = { x: sightline.z, z: -sightline.x };
+  const approachPosition = offsetLocal(position, behindSightline, 17);
+  const usePosition = offsetLocal(position, behindSightline, 3.6);
+  const viewPosition = offsetLocal(position, behindSightline, 2.2);
+  const notePosition = offsetLocal(position, sideSightline, 5.6);
+  const altitude = heightAt(position.x, position.z);
+  const viewHeight = heightAt(viewPosition.x, viewPosition.z) + 2.35;
+  const group = makeObservatory();
+  placeObjectOnPlanet(group, position.x, position.z, altitude + 0.04, new THREE.Euler(0, yaw, 0));
+  scene.add(group);
+
+  const noteMarker = makeObservatoryNoteMarker();
+  placeObjectOnPlanet(
+    noteMarker,
+    notePosition.x,
+    notePosition.z,
+    heightAt(notePosition.x, notePosition.z) + 0.03,
+    new THREE.Euler(0, yaw + Math.PI * 0.18, 0)
+  );
+  scene.add(noteMarker);
+
+  return {
+    group,
+    position,
+    approachPosition,
+    noteSource: {
+      noteId: "observatory-sightline",
+      position: notePosition,
+      radius: observatoryNoteRadius,
+    },
+    telescope: {
+      usePosition,
+      viewPosition,
+      yaw,
+      pitch: 0.26,
+      viewHeight,
+      interactionRadius: telescopeInteractionRadius,
+    },
+    collision: { kind: "observatory", x: position.x, z: position.z, radius: observatoryCollisionRadius },
+    reservedZone: { x: position.x, z: position.z, radius: observatoryClearanceRadius },
+    update: (elapsed) => {
+      const lensGlow = group.userData.lensGlow as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+      const reticle = group.userData.reticle as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+      if (!lensGlow || !reticle) return;
+      const pulse = Math.sin(elapsed * 1.1 + 0.6) * 0.5 + 0.5;
+      lensGlow.material.opacity = 0.2 + pulse * 0.18;
+      reticle.material.opacity = 0.34 + pulse * 0.22;
+    },
+  };
+}
+
 export function isInLandmarkZone(point: LocalPlanetPoint, zones: LandmarkZone[]): boolean {
   return zones.some((zone) => surfaceDistanceBetweenLocal(point, zone) < zone.radius);
 }
@@ -105,6 +192,41 @@ function isValidTempleTerrain(point: LocalPlanetPoint, heightAt: HeightSampler):
     heightAt(point.x, point.z - 5),
   ];
   return samples.every((height) => height > 0.25 && Math.abs(height - centerHeight) < 5.2);
+}
+
+function chooseObservatoryPosition(heightAt: HeightSampler, avoidZones: LandmarkZone[]): LocalPlanetPoint {
+  const random = createSeededRandom(observatorySeed);
+  const fallbackPositions = [
+    normalizePlanetCoords(-430, 312),
+    normalizePlanetCoords(-388, 246),
+    normalizePlanetCoords(-510, 188),
+  ];
+
+  for (let i = 0; i < 96; i += 1) {
+    const angle = random() * Math.PI * 2;
+    const radius = 210 + random() * 210;
+    const candidate = normalizePlanetCoords(Math.cos(angle) * radius - 360, Math.sin(angle) * radius + 260);
+    if (isInLandmarkZone(candidate, avoidZones)) continue;
+    if (!isValidObservatoryTerrain(candidate, heightAt)) continue;
+    return candidate;
+  }
+
+  return fallbackPositions.find((point) => !isInLandmarkZone(point, avoidZones) && isValidObservatoryTerrain(point, heightAt)) ?? fallbackPositions[0];
+}
+
+function isValidObservatoryTerrain(point: LocalPlanetPoint, heightAt: HeightSampler): boolean {
+  const centerHeight = heightAt(point.x, point.z);
+  if (centerHeight < 0.9) return false;
+
+  const samples = [
+    heightAt(point.x + 6, point.z),
+    heightAt(point.x - 6, point.z),
+    heightAt(point.x, point.z + 6),
+    heightAt(point.x, point.z - 6),
+    heightAt(point.x + 11, point.z + 3),
+    heightAt(point.x - 8, point.z - 8),
+  ];
+  return samples.every((height) => height > 0.25 && Math.abs(height - centerHeight) < 6.4);
 }
 
 function templeInfluenceAt(playerPosition: LocalPlanetPoint, templePosition: LocalPlanetPoint, elapsed: number): number {
@@ -248,6 +370,147 @@ function makeTempleNoteMarker(): THREE.Group {
   return group;
 }
 
+function makeObservatory(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "single-observatory-telescope-landmark";
+
+  const platformMaterial = new THREE.MeshBasicMaterial({ color: 0x202b68 });
+  const rimMaterial = new THREE.MeshBasicMaterial({ color: 0x59c1d6 });
+  const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x101632 });
+  const telescopeMaterial = new THREE.MeshBasicMaterial({ color: 0xe46bb9 });
+  const lensMaterial = new THREE.MeshBasicMaterial({ color: 0x8dffe0 });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x82ffea,
+    transparent: true,
+    opacity: 0.32,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 6.4, 0.72, 8), platformMaterial);
+  base.position.y = 0.36;
+  base.rotation.y = Math.PI / 8;
+  base.scale.z = 0.78;
+  group.add(base);
+
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(5.25, 0.14, 4, 8), rimMaterial);
+  rim.position.y = 0.86;
+  rim.rotation.x = Math.PI / 2;
+  rim.scale.z = 0.78;
+  group.add(rim);
+
+  const steps = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.42, 1.4), darkMaterial);
+  steps.position.set(0, 0.28, 4.55);
+  steps.rotation.y = 0.04;
+  group.add(steps);
+
+  const pier = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.72, 2.55, 5), darkMaterial);
+  pier.position.y = 2.0;
+  group.add(pier);
+
+  const cradle = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.42, 1.0), rimMaterial);
+  cradle.position.set(0, 3.28, -0.16);
+  cradle.rotation.z = 0.05;
+  group.add(cradle);
+
+  addObservatoryLeg(group, -1.35, 0.9, 1.4, 0.42, darkMaterial);
+  addObservatoryLeg(group, 1.28, 0.8, 1.28, -0.36, darkMaterial);
+  addObservatoryLeg(group, 0.0, -1.55, 1.55, 0.02, darkMaterial);
+
+  const tubeLength = 5.4;
+  const tubeElevation = 0.28;
+  const tubeGeometry = new THREE.CylinderGeometry(0.52, 0.66, tubeLength, 6);
+  tubeGeometry.rotateX(Math.PI / 2);
+  const tube = new THREE.Mesh(tubeGeometry, telescopeMaterial);
+  tube.position.set(0, 3.58, -1.35);
+  tube.rotation.x = tubeElevation;
+  group.add(tube);
+
+  const apertureY = tube.position.y + Math.sin(tubeElevation) * (tubeLength * 0.5);
+  const apertureZ = tube.position.z - Math.cos(tubeElevation) * (tubeLength * 0.5);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.58, 6), lensMaterial);
+  lens.position.set(0, apertureY, apertureZ - 0.04);
+  lens.rotation.x = Math.PI / 2 + tubeElevation;
+  group.add(lens);
+
+  const lensGlow = new THREE.Mesh(new THREE.CircleGeometry(0.98, 8), glowMaterial.clone());
+  lensGlow.position.copy(lens.position);
+  lensGlow.position.z -= 0.05;
+  lensGlow.rotation.copy(lens.rotation);
+  group.add(lensGlow);
+
+  const eyepiece = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.34, 1.0, 5), darkMaterial);
+  eyepiece.geometry.rotateX(Math.PI / 2);
+  eyepiece.position.set(0, tube.position.y - Math.sin(tubeElevation) * 2.95, tube.position.z + Math.cos(tubeElevation) * 2.95);
+  eyepiece.rotation.x = tubeElevation;
+  group.add(eyepiece);
+
+  const reticle = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.035, 4, 16), glowMaterial.clone());
+  reticle.position.set(0, apertureY + 0.03, apertureZ - 0.08);
+  reticle.rotation.x = Math.PI / 2 + tubeElevation;
+  group.add(reticle);
+
+  const sightFin = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.88, 3), rimMaterial);
+  sightFin.position.set(0, 4.12, -1.2);
+  sightFin.rotation.set(0.36, Math.PI, 0);
+  group.add(sightFin);
+
+  const backFlag = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.8, 0.72), rimMaterial);
+  backFlag.position.set(-1.2, 2.15, 2.65);
+  backFlag.rotation.set(0.05, -0.16, -0.12);
+  group.add(backFlag);
+
+  group.userData = { lensGlow, reticle };
+  return group;
+}
+
+function addObservatoryLeg(group: THREE.Group, x: number, z: number, height: number, lean: number, material: THREE.Material): void {
+  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.26, height, 0.26), material);
+  leg.position.set(x, 0.8 + height * 0.5, z);
+  leg.rotation.set(lean * 0.35, 0, lean);
+  group.add(leg);
+}
+
+function makeObservatoryNoteMarker(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "observatory-field-note-star-marker";
+
+  const plinthMaterial = new THREE.MeshBasicMaterial({ color: 0x101632 });
+  const faceMaterial = new THREE.MeshBasicMaterial({ color: 0xffd36a });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x82ffea,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.74, 1.1, 0.28, 5), plinthMaterial);
+  base.position.y = 0.14;
+  group.add(base);
+
+  const slate = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.42, 0.18), faceMaterial);
+  slate.position.set(0, 1.05, 0);
+  slate.rotation.set(0.08, 0, 0.12);
+  group.add(slate);
+
+  const vertical = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.12), glowMaterial);
+  vertical.position.set(0, 1.12, 0.14);
+  group.add(vertical);
+
+  const horizontal = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.12, 0.12), glowMaterial.clone());
+  horizontal.position.set(0, 1.12, 0.16);
+  horizontal.rotation.z = 0.18;
+  group.add(horizontal);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.035, 4, 14), glowMaterial.clone());
+  halo.position.y = 1.86;
+  halo.rotation.x = Math.PI / 2;
+  group.add(halo);
+
+  return group;
+}
+
 function addGateSegment(
   group: THREE.Group,
   radius: number,
@@ -366,6 +629,11 @@ function createSeededRandom(seed: string): () => number {
 
 function seededUnit(seed: string): number {
   return createSeededRandom(seed)();
+}
+
+function offsetLocal(origin: LocalPlanetPoint, direction: LocalPlanetPoint, distance: number): LocalPlanetPoint {
+  const length = Math.hypot(direction.x, direction.z) || 1;
+  return normalizePlanetCoords(origin.x + (direction.x / length) * distance, origin.z + (direction.z / length) * distance);
 }
 
 function hashString(value: string): number {

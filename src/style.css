@@ -125,6 +125,53 @@ canvas {
   display: none;
 }
 
+.telescope-scope {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: none;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(130, 255, 234, 0.18), rgba(130, 255, 234, 0.18)) center / 2px 100% no-repeat,
+    linear-gradient(90deg, rgba(130, 255, 234, 0.16), rgba(130, 255, 234, 0.16)) center / 100% 2px no-repeat,
+    radial-gradient(circle at center, transparent 0 35%, rgba(5, 7, 18, 0.46) 36% 52%, rgba(5, 7, 18, 0.82) 68%);
+}
+
+.telescope-scope--active {
+  display: block;
+}
+
+.telescope-scope__ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(68vw, 68vh);
+  aspect-ratio: 1;
+  border: 2px solid rgba(130, 255, 234, 0.42);
+  box-shadow:
+    0 0 0 8px rgba(7, 9, 20, 0.16),
+    0 0 28px rgba(130, 255, 234, 0.16);
+  transform: translate(-50%, -50%);
+}
+
+.telescope-scope__cross {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(255, 211, 106, 0.42);
+  transform: translate(-50%, -50%);
+}
+
+.telescope-scope__cross--vertical {
+  width: 2px;
+  height: min(30vw, 30vh);
+}
+
+.telescope-scope__cross--horizontal {
+  width: min(30vw, 30vh);
+  height: 2px;
+}
+
 .eyelids {
   --eyelid-cover: 0%;
   position: fixed;
