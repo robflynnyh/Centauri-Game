@@ -338,10 +338,16 @@ if (enableDebugTools) {
       return state;
     },
     advanceSleep: (delta: number, input: Partial<SleepUpdateInput> = {}) => {
+      const moving = input.moving ?? hasMovementInput();
+      const movementAmount = input.movementAmount ?? (moving ? 1 : 0);
+      const grounded = input.grounded ?? player.grounded;
       const state = sleep.update(delta, {
         wantsSleep: input.wantsSleep ?? isSleepPressed(),
-        moving: input.moving ?? hasMovementInput(),
-        grounded: input.grounded ?? player.grounded,
+        moving,
+        grounded,
+        movementAmount,
+        crouching: input.crouching ?? isCrouchPressed(),
+        airborne: input.airborne ?? !grounded,
       });
       updateSleepHud(state);
       return state;
@@ -578,10 +584,16 @@ function animate(): void {
   else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
   else explorationMotion = updateExploration(delta);
 
+  const movementAmount = isDemo ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
+  const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
+  const grounded = isDemo || player.grounded;
   const sleepState = sleep.update(delta, {
     wantsSleep,
-    moving: isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15,
-    grounded: isDemo || player.grounded,
+    moving,
+    grounded,
+    movementAmount,
+    crouching: !isDemo && isCrouchPressed(),
+    airborne: !grounded,
   });
   updateSleepHud(sleepState);
 
