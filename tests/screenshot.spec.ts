@@ -43,26 +43,27 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
-  await page.waitForFunction(() => {
+  const daySide = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1);
+    return state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1 ? state : undefined;
   });
-  const daySide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
-  await page.waitForFunction(() => {
+  const twilightEdge = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04);
+    return state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04 ? state : undefined;
   });
-  const twilightEdge = await page.evaluate(() => window.__centauriDebug?.getSkyState());
-  await page.waitForFunction(() => {
+  const nightSide = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1);
+    return state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1 ? state : undefined;
   });
-  const nightSide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
 
-  expect(daySide?.dayAmount).toBeGreaterThan(0.75);
-  expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
-  expect(nightSide?.dayAmount).toBeLessThan(0.25);
-  expect((daySide?.dayAmount ?? 0) - (nightSide?.dayAmount ?? 0)).toBeGreaterThan(0.6);
+  const dayState = await daySide.jsonValue();
+  const twilightState = await twilightEdge.jsonValue();
+  const nightState = await nightSide.jsonValue();
+
+  expect(dayState.dayAmount).toBeGreaterThan(0.75);
+  expect(twilightState.twilightAmount).toBeGreaterThan(0.45);
+  expect(nightState.dayAmount).toBeLessThan(0.25);
+  expect(dayState.dayAmount - nightState.dayAmount).toBeGreaterThan(0.6);
 });
 
 test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
