@@ -92,22 +92,26 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 6.4) {
-        resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
-        onWalk?.(demoPlayer, delta);
+      if (elapsed < 7.4) {
+        if (elapsed < 6.4) {
+          resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
+          onWalk?.(demoPlayer, delta);
+        } else {
+          onWalk?.(demoPlayer, 0);
+        }
         lookAtPlanetPoint(
           camera,
           demoPlayer.x,
           demoPlayer.z,
           heightAt(demoPlayer.x, demoPlayer.z) + 3.15,
-          6.2,
-          7,
-          heightAt(6.2, 7) + 2.5
+          6.7,
+          10.2,
+          heightAt(6.7, 10.2) + 1.85
         );
         return;
       }
 
-      if (elapsed < 8.2) {
+      if (elapsed < 8.8) {
         const templePosition = temple?.position ?? { x: 260, z: -240 };
         const approach = temple?.approachPosition ?? { x: 278, z: -248 };
         onWalk?.(new THREE.Vector3(templePosition.x, 0, templePosition.z), 0);

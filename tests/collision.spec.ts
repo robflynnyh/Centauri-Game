@@ -42,6 +42,61 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
   expect(result.playerStandsOnMountain).toBe(true);
 });
 
+test("keeps fleeing water creatures clear of solid obstacles", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    debug.setPlayer(6.8, 8.2);
+  });
+  await page.waitForTimeout(1_800);
+
+  const creatureState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getCreatureState();
+  });
+
+  expect(creatureState.total).toBe(5);
+  expect(creatureState.activeHops).toBeGreaterThan(0);
+  expect(creatureState.nearestObstacleClearance).toBeGreaterThan(0.1);
+});
+
+test("lets scared water creatures flee beyond the old water leash", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const observed = { maxDistanceFromWater: 0, minScaredHopDistance: Number.POSITIVE_INFINITY };
+  for (let chaseStep = 0; chaseStep < 7; chaseStep += 1) {
+    await page.evaluate(() => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri collision debug hook");
+      const state = debug.getCreatureState();
+      const frog = state.creatures.reduce((farthest, candidate) =>
+        candidate.distanceFromWater > farthest.distanceFromWater ? candidate : farthest
+      );
+      const dx = frog.x - frog.anchorX;
+      const dz = frog.z - frog.anchorZ;
+      const distance = Math.hypot(dx, dz) || 1;
+      debug.setPlayer(frog.x - (dx / distance) * 2.15, frog.z - (dz / distance) * 2.15);
+    });
+    await page.waitForTimeout(1_150);
+
+    const state = await page.evaluate(() => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri collision debug hook");
+      return debug.getCreatureState();
+    });
+    observed.maxDistanceFromWater = Math.max(observed.maxDistanceFromWater, state.maxDistanceFromWater);
+    if (state.scaredHops > 0) observed.minScaredHopDistance = Math.min(observed.minScaredHopDistance, state.minScaredHopDistance);
+  }
+
+  expect(observed.maxDistanceFromWater).toBeGreaterThan(6.4);
+  expect(observed.minScaredHopDistance).toBeGreaterThan(0.4);
+});
+
 test("supports grounded jump and visible crouch height changes", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
@@ -81,6 +136,36 @@ test("supports grounded jump and visible crouch height changes", async ({ page }
     start.movement.cameraHeight
   );
   await page.keyboard.up("Control");
+});
+
+test("clears shortcut-stale crouch keys so jump works after tab return", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    debug.setPlayer(0, 24);
+  });
+
+  const start = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getPlayer();
+  });
+
+  await page.keyboard.down("Control");
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await page.keyboard.press("Space");
+  await page.keyboard.up("Control");
+
+  await page.waitForFunction(
+    (startY) => {
+      const debug = window.__centauriDebug;
+      return Boolean(debug && debug.getPlayer().y > startY + 0.55 && !debug.getMovementState().grounded);
+    },
+    start.y
+  );
 });
 
 test("wraps straight walks around the spherical planet", async ({ page }) => {

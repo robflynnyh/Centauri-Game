@@ -97,6 +97,24 @@ declare global {
         fullInfluenceRadius: number;
       };
       getFieldNotesState: () => FieldNotesSnapshot;
+      getCreatureState: () => {
+        total: number;
+        activeHops: number;
+        scaredHops: number;
+        nearestObstacleClearance: number;
+        maxDistanceFromWater: number;
+        minActiveHopDistance: number;
+        minScaredHopDistance: number;
+        creatures: {
+          x: number;
+          z: number;
+          anchorX: number;
+          anchorZ: number;
+          distanceFromWater: number;
+          activeHopKind: "scared" | "return" | null;
+          hopDistance: number;
+        }[];
+      };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getBirdState: () => BirdDebugState;
       getSleepState: () => SleepDebugState;
@@ -269,7 +287,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
   collisionWorld.replaceDynamicObstacles,
   [temple.reservedZone]
 );
-const waterCreatures = createAlienWaterCreatures(scene, heightAt);
+const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
@@ -347,6 +365,7 @@ if (enableDebugTools) {
       sky.update(elapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
       return sky.getDebugState();
     },
+    getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
     getBirdState: mountainBirds.getState,
     getSleepState: sleep.getState,
@@ -424,6 +443,11 @@ function updateLookStatus(): void {
   lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse locked" : "click to lock";
 }
 
+function clearTransientInputState(): void {
+  keys.clear();
+  player.jumpQueued = false;
+}
+
 updateLookStatus();
 
 function updateSleepHud(state: SleepDebugState): void {
@@ -451,6 +475,10 @@ window.addEventListener("keydown", (event) => {
   startAudio();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
+window.addEventListener("blur", clearTransientInputState);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") clearTransientInputState();
+});
 renderer.domElement.addEventListener("click", () => {
   startAudio();
   if (isDemo) return;
@@ -605,20 +633,22 @@ function animate(): void {
   const movementAmount = isDemo ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
   const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
   const grounded = isDemo || player.grounded;
-  const sleepState = sleep.update(delta, {
-    wantsSleep,
-    moving,
-    grounded,
-    movementAmount,
-    crouching: !isDemo && isCrouchPressed(),
-    airborne: !grounded,
-  });
+  const sleepState = enableSleepDebug
+    ? sleep.getState()
+    : sleep.update(delta, {
+        wantsSleep,
+        moving,
+        grounded,
+        movementAmount,
+        crouching: !isDemo && isCrouchPressed(),
+        airborne: !grounded,
+      });
   updateSleepHud(sleepState);
 
   footsteps.update(delta);
-  waterCreatures.update(elapsed);
   temple.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  waterCreatures.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
   mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
