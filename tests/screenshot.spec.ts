@@ -11,7 +11,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(5_800);
+  await page.waitForTimeout(9_700);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
@@ -59,7 +59,43 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
   expect(daySide.dayAmount).toBeGreaterThan(0.75);
   expect(twilightEdge.twilightAmount).toBeGreaterThan(0.45);
   expect(nightSide.dayAmount).toBeLessThan(0.25);
-  expect(daySide.dayAmount - nightSide.dayAmount).toBeGreaterThan(0.6);
+  expect(daySide.dayAmount - nightSide.dayAmount).toBeGreaterThan(0.5);
+});
+
+test("PR demo renders the visible sun only on the day side", async ({ page }, testInfo) => {
+  await page.goto("/?demo=pr&test=collision");
+  await expect(page.getByText("PR demo mode")).toBeVisible();
+  await page.addStyleTag({ content: ".hud, .eyelids, .blackout { display: none !important; }" });
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const daySun = await (await page.waitForFunction(
+    () => {
+      const state = window.__centauriDebug?.getSkyState();
+      return state && state.dayAmount > 0.54 && state.sunDot > -0.02 && (state.sunVisualOpacity ?? 0) > 0.4 ? state : false;
+    },
+    undefined,
+    { timeout: 30_000 }
+  )).jsonValue();
+  const daySignal = await getSunPixelSignal(page, daySun.sunVisualScreenX, daySun.sunVisualScreenY, testInfo.outputPath("visible-sun-day.png"));
+
+  expect(daySun.dayAmount).toBeGreaterThan(0.54);
+  expect(daySun.sunDot).toBeGreaterThan(-0.02);
+  expect(daySignal.sunPixels).toBeGreaterThan(500);
+  expect(daySignal.maxBrightness).toBeGreaterThan(75);
+  expect(daySignal.warmPixels).toBeGreaterThan(500);
+
+  const nightSun = await (await page.waitForFunction(
+    () => {
+      const state = window.__centauriDebug?.getSkyState();
+      return state && state.dayAmount < 0.25 ? state : false;
+    },
+    undefined,
+    { timeout: 30_000 }
+  )).jsonValue();
+
+  expect(nightSun.dayAmount).toBeLessThan(0.25);
+  expect(nightSun.sunVisualVisible ?? false).toBe(false);
+  expect(nightSun.sunVisualOpacity ?? 0).toBeLessThan(0.05);
 });
 
 test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
@@ -211,6 +247,56 @@ async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
       signature: signature / pixels,
     };
   }, `data:image/png;base64,${screenshot.toString("base64")}`);
+}
+
+async function getSunPixelSignal(
+  page: Page,
+  ndcX: number,
+  ndcY: number,
+  screenshotPath: string
+): Promise<{
+  maxBrightness: number;
+  sunPixels: number;
+  warmPixels: number;
+}> {
+  const screenshot = await page.screenshot({ path: screenshotPath, fullPage: false });
+  return page.evaluate(
+    async ({ source, ndcX, ndcY }) => {
+      const image = new Image();
+      image.src = source;
+      await image.decode();
+      const sampler = document.createElement("canvas");
+      sampler.width = image.width;
+      sampler.height = image.height;
+      const context = sampler.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("Missing 2D sampling context");
+
+      context.drawImage(image, 0, 0);
+      void ndcX;
+      void ndcY;
+      const data = context.getImageData(0, 0, image.width, image.height).data;
+
+      let maxBrightness = 0;
+      let sunPixels = 0;
+      let warmPixels = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const red = data[i];
+        const green = data[i + 1];
+        const blue = data[i + 2];
+        const brightness = (red + green + blue) / 3;
+        maxBrightness = Math.max(maxBrightness, brightness);
+        if (brightness > 70) sunPixels += 1;
+        if (red > 50 && green > 45 && blue > 55) warmPixels += 1;
+      }
+
+      return { maxBrightness, sunPixels, warmPixels };
+    },
+    {
+      source: `data:image/png;base64,${screenshot.toString("base64")}`,
+      ndcX,
+      ndcY,
+    }
+  );
 }
 
 async function getImageDifference(

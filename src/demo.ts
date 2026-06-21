@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { lookAtPlanetPoint, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
+import { lookAtPlanetPoint, planetFrameAt, PLANET_RADIUS, pointOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
 
 type HeightSampler = (x: number, z: number) => number;
@@ -36,6 +36,24 @@ function showFixedTimeSkyRegion(
 ): void {
   const sunLongitude = getSunFacingLongitude(anchorElapsed, true);
   showSkyRegionAtLongitude(camera, heightAt, onWalk, sunLongitude, longitudeOffset, latitude, targetLongitudeOffset);
+}
+
+function showSunDiscRegion(
+  camera: THREE.Camera,
+  heightAt: HeightSampler,
+  onWalk: WalkObserver | undefined,
+  elapsed: number
+): void {
+  const sunLongitude = getSunFacingLongitude(elapsed, true);
+  const latitude = 0.1;
+  const x = sunLongitude * PLANET_RADIUS;
+  const z = latitude * PLANET_RADIUS;
+  const position = new THREE.Vector3(x, 0, z);
+  onWalk?.(position, 0);
+  const frame = planetFrameAt(x, z);
+  camera.position.copy(pointOnPlanet(x, z, heightAt(x, z) + 36));
+  camera.up.copy(frame.localZ);
+  camera.lookAt(pointOnPlanet(x, z, heightAt(x, z) + 190));
 }
 
 function showSkyRegionAtLongitude(
@@ -127,22 +145,22 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 10.6) {
-        showSkyRegion(camera, heightAt, onWalk, elapsed, 0, -0.15, 0.18);
+      if (elapsed < 12.0) {
+        showSunDiscRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
 
-      if (elapsed < 12.6) {
-        showFixedTimeSkyRegion(camera, heightAt, onWalk, 10.6, Math.PI * 0.5, 0.05, -0.22);
+      if (elapsed < 14.0) {
+        showFixedTimeSkyRegion(camera, heightAt, onWalk, 12.0, Math.PI * 0.5, 0.05, -0.22);
         return;
       }
 
-      if (elapsed < 16.0) {
+      if (elapsed < 17.4) {
         showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI, 0.16, -0.18);
         return;
       }
 
-      if (elapsed < 18.2) {
+      if (elapsed < 18.8) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 44 + Math.sin(elapsed * 0.5) * 3;
         const z = -593 + Math.cos(elapsed * 0.45) * 3;

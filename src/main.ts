@@ -182,6 +182,7 @@ const sleep = createSleepController({
 });
 
 app.innerHTML = `
+  <div class="sun-disc" aria-hidden="true"></div>
   <div class="hud">
     <section class="hud__title">
       <h1 class="hud__note-heading"></h1>
@@ -258,6 +259,7 @@ const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
 const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
 const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
+const sunDisc = document.querySelector<HTMLDivElement>(".sun-disc");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
@@ -445,6 +447,17 @@ function updateSleepHud(state: SleepDebugState): void {
   eyelidOverlay?.setAttribute("data-phase", state.eyelidPhase);
   blackoutOverlay?.classList.toggle("blackout--visible", state.blackout);
   blackoutOverlay?.setAttribute("aria-hidden", state.blackout ? "false" : "true");
+}
+
+function updateSunDisc(state: SkyDebugState): void {
+  if (!sunDisc) return;
+  const screenX = (state.sunVisualScreenX * 0.5 + 0.5) * 100;
+  const screenY = (-state.sunVisualScreenY * 0.5 + 0.5) * 100;
+  const visible = state.sunVisualVisible && state.sunVisualOpacity > 0.02;
+  sunDisc.style.setProperty("--sun-x", `${screenX.toFixed(3)}vw`);
+  sunDisc.style.setProperty("--sun-y", `${screenY.toFixed(3)}vh`);
+  sunDisc.style.setProperty("--sun-opacity", visible ? state.sunVisualOpacity.toFixed(3) : "0");
+  sunDisc.classList.toggle("sun-disc--visible", visible);
 }
 
 updateSleepHud(sleep.getState());
@@ -640,6 +653,7 @@ function animate(): void {
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   updateFieldNoteDiscovery(templeFocus, elapsed);
   sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
+  updateSunDisc(sky.getDebugState());
   terrain.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);

@@ -20,8 +20,51 @@ body,
 }
 
 canvas {
+  position: relative;
+  z-index: 0;
   display: block;
   image-rendering: pixelated;
+}
+
+.sun-disc {
+  --sun-x: 50vw;
+  --sun-y: 50vh;
+  --sun-opacity: 0;
+  position: fixed;
+  left: var(--sun-x);
+  top: var(--sun-y);
+  z-index: 1;
+  width: clamp(72px, 9vw, 126px);
+  aspect-ratio: 1;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  image-rendering: pixelated;
+  transition: opacity 0.18s linear;
+}
+
+.sun-disc::before,
+.sun-disc::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.sun-disc::before {
+  background:
+    radial-gradient(circle, rgba(255, 242, 160, 0.98) 0 36%, rgba(255, 211, 109, 0.9) 37% 54%, rgba(255, 180, 95, 0.34) 55% 74%, transparent 75%);
+  filter: blur(0.6px);
+}
+
+.sun-disc::after {
+  inset: 18%;
+  background: #fff2a0;
+  box-shadow: 0 0 0 10px rgba(255, 211, 109, 0.58);
+}
+
+.sun-disc--visible {
+  opacity: var(--sun-opacity);
 }
 
 .hud {
