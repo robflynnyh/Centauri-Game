@@ -1,9 +1,12 @@
 import * as THREE from "three";
 import { normalizePlanetCoords, planetFrameAt, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
 
+type PlanetFrameSnapshot = ReturnType<typeof planetFrameAt>;
+
 export type SkyDebugState = {
   longitude: number;
   latitude: number;
+  planetSpinPhase: number;
   sunDot: number;
   dayAmount: number;
   twilightAmount: number;
@@ -28,9 +31,11 @@ export type SkyDebugState = {
 };
 
 type SkyLocationState = SkyDebugState & {
-  frame: ReturnType<typeof planetFrameAt>;
+  frame: PlanetFrameSnapshot;
+  spunFrame: PlanetFrameSnapshot;
   sunDirection: THREE.Vector3;
   antiSunDirection: THREE.Vector3;
+  stableSunDirection: THREE.Vector3;
 };
 
 export function createSkySystem(
@@ -150,7 +155,7 @@ export function createSkySystem(
 
       updateSkyRing(skyRing, locationState, elapsed);
       celestialGroup.children.forEach((child, index) => updateCelestialBody(child, camera, celestialBodies[index], index, locationState, elapsed));
-      starField.update(nightAmount, phaseAmount);
+      starField.update(nightAmount, phaseAmount, locationState);
       meteorField.update(elapsed, nightAmount, locationState);
     },
     getDebugState: () => ({ ...locationState }),
@@ -165,17 +170,21 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
   const normalized = normalizePlanetCoords(location.x, location.z);
   const longitude = normalized.x / PLANET_RADIUS;
   const latitude = normalized.z / PLANET_RADIUS;
+  const planetSpinPhase = getPlanetSpinPhase(elapsed, isDemo);
   const frame = planetFrameAt(normalized.x, normalized.z);
-  const sunDirection = getSunDirection(elapsed, isDemo);
-  const sunState = getLocationDayState(frame, sunDirection);
+  const spunFrame = planetFrameAt(normalized.x + planetSpinPhase * PLANET_RADIUS, normalized.z);
+  const stableSunDirection = getSunDirection();
+  const sunDirection = apparentSkyDirection(stableSunDirection, frame, spunFrame);
+  const sunState = getLocationDayState(spunFrame, stableSunDirection);
   const antiSunDirection = sunDirection.clone().multiplyScalar(-1);
   const regionA = Math.sin(longitude * 1.35 + latitude * 0.9) * 0.5 + 0.5;
   const regionB = Math.sin(longitude * 0.7 - latitude * 1.6 + Math.cos(longitude * 1.1)) * 0.5 + 0.5;
   const horizonTint = Math.cos(latitude * 2.2 - longitude * 0.45) * 0.5 + 0.5;
-  const firstCelestialDirection = celestialBodies[0].direction;
+  const firstCelestialDirection = apparentSkyDirection(celestialBodies[0].direction, frame, spunFrame);
   const celestialAzimuth = localAzimuth(firstCelestialDirection, frame);
   const celestialAltitude = firstCelestialDirection.dot(frame.up);
-  const ringAltitude = ringDirection.dot(frame.up);
+  const apparentRingDirection = apparentSkyDirection(ringDirection, frame, spunFrame);
+  const ringAltitude = apparentRingDirection.dot(frame.up);
   const meteorRadiantAltitude = antiSunDirection.dot(frame.up);
 
   const dayHorizon = new THREE.Color(0xff9fd0).lerp(new THREE.Color(0xffc67a), horizonTint * 0.34);
@@ -184,12 +193,13 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
   return {
     longitude,
     latitude,
+    planetSpinPhase,
     sunDot: sunState.sunDot,
     dayAmount: sunState.dayAmount,
     twilightAmount: sunState.twilightAmount,
-    localUpX: frame.up.x,
-    localUpY: frame.up.y,
-    localUpZ: frame.up.z,
+    localUpX: spunFrame.up.x,
+    localUpY: spunFrame.up.y,
+    localUpZ: spunFrame.up.z,
     sunDirectionX: sunDirection.x,
     sunDirectionY: sunDirection.y,
     sunDirectionZ: sunDirection.z,
@@ -198,7 +208,7 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
     horizonTint,
     celestialYaw: celestialAzimuth,
     celestialAltitude,
-    ringTilt: localAzimuth(ringDirection, frame),
+    ringTilt: localAzimuth(apparentRingDirection, frame),
     ringAltitude,
     ringSpinOffset: THREE.MathUtils.lerp(-0.55, 0.55, regionB),
     meteorYaw: localAzimuth(antiSunDirection, frame),
@@ -206,13 +216,15 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
     dayHorizonHex: dayHorizon.getHex(),
     nightHorizonHex: nightHorizon.getHex(),
     frame,
+    spunFrame,
     sunDirection,
     antiSunDirection,
+    stableSunDirection,
   };
 }
 
 function getLocationDayState(
-  frame: ReturnType<typeof planetFrameAt>,
+  frame: PlanetFrameSnapshot,
   sunDirection: THREE.Vector3
 ): { sunDot: number; dayAmount: number; twilightAmount: number } {
   const sunDot = THREE.MathUtils.clamp(frame.up.dot(sunDirection), -1, 1);
@@ -221,15 +233,41 @@ function getLocationDayState(
   return { sunDot, dayAmount, twilightAmount };
 }
 
-function localAzimuth(direction: THREE.Vector3, frame: ReturnType<typeof planetFrameAt>): number {
+function localAzimuth(direction: THREE.Vector3, frame: PlanetFrameSnapshot): number {
   return Math.atan2(direction.dot(frame.east), direction.dot(frame.localZ));
 }
 
-function getSunDirection(elapsed: number, isDemo: boolean): THREE.Vector3 {
+const fullTurn = Math.PI * 2;
+const spinPhaseOffset = 0.18;
+const stableSunLongitude = spinPhaseOffset * fullTurn * 2;
+const stableSunLatitude = 0.1;
+
+export function getPlanetSpinPhase(elapsed: number, isDemo: boolean): number {
   const cycleLength = isDemo ? 18 : 96;
-  const phase = (elapsed / cycleLength + 0.18) % 1;
-  const angle = phase * Math.PI * 2;
-  return new THREE.Vector3(Math.sin(angle), Math.cos(angle), Math.sin(angle * 0.37) * 0.22).normalize();
+  return ((elapsed / cycleLength + spinPhaseOffset) % 1) * fullTurn;
+}
+
+export function getSunFacingLongitude(elapsed: number, isDemo: boolean): number {
+  return THREE.MathUtils.euclideanModulo(stableSunLongitude - getPlanetSpinPhase(elapsed, isDemo) + Math.PI, fullTurn) - Math.PI;
+}
+
+function getSunDirection(): THREE.Vector3 {
+  return stableDirection(stableSunLongitude, stableSunLatitude);
+}
+
+function apparentSkyDirection(direction: THREE.Vector3, frame: PlanetFrameSnapshot, spunFrame: PlanetFrameSnapshot): THREE.Vector3 {
+  return frame.east
+    .clone()
+    .multiplyScalar(direction.dot(spunFrame.east))
+    .add(frame.up.clone().multiplyScalar(direction.dot(spunFrame.up)))
+    .add(frame.localZ.clone().multiplyScalar(direction.dot(spunFrame.localZ)))
+    .normalize();
+}
+
+function apparentSkyQuaternion(state: SkyLocationState): THREE.Quaternion {
+  const spunBasis = new THREE.Matrix4().makeBasis(state.spunFrame.east, state.spunFrame.up, state.spunFrame.localZ);
+  const frameBasis = new THREE.Matrix4().makeBasis(state.frame.east, state.frame.up, state.frame.localZ);
+  return new THREE.Quaternion().setFromRotationMatrix(frameBasis.multiply(spunBasis.invert()));
 }
 
 function updateSkyPalette(skyUniforms: Record<string, { value: number | THREE.Color | THREE.Vector3 }>, state: SkyDebugState): void {
@@ -408,9 +446,10 @@ function updateCelestialBody(
   state: SkyLocationState,
   elapsed: number
 ): void {
-  const altitudeFade = THREE.MathUtils.smoothstep(body.direction.dot(state.frame.up), -0.2, 0.18);
+  const apparentDirection = apparentSkyDirection(body.direction, state.frame, state.spunFrame);
+  const altitudeFade = THREE.MathUtils.smoothstep(apparentDirection.dot(state.frame.up), -0.2, 0.18);
   const prominence = 0.9 + (Math.sin(state.longitude * 1.7 + state.latitude * 1.1 + index * 2.13) * 0.5 + 0.5) * 0.22;
-  child.position.copy(body.direction).multiplyScalar(skyShellDistance + (index % 3) * 4);
+  child.position.copy(apparentDirection).multiplyScalar(skyShellDistance + (index % 3) * 4);
   child.scale.setScalar(prominence * THREE.MathUtils.lerp(0.64, 1.12, altitudeFade));
   child.visible = altitudeFade > 0.03;
   child.lookAt(camera.position);
@@ -418,13 +457,14 @@ function updateCelestialBody(
 }
 
 function updateSkyRing(skyRing: THREE.Mesh, state: SkyLocationState, elapsed: number): void {
-  skyRing.position.copy(ringDirection).multiplyScalar(150);
-  skyRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ringDirection);
+  const apparentRingDirection = apparentSkyDirection(ringDirection, state.frame, state.spunFrame);
+  skyRing.position.copy(apparentRingDirection).multiplyScalar(150);
+  skyRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), apparentRingDirection);
   skyRing.rotateZ(elapsed * 0.035 + state.ringSpinOffset);
-  skyRing.visible = ringDirection.dot(state.frame.up) > -0.16;
+  skyRing.visible = apparentRingDirection.dot(state.frame.up) > -0.16;
 }
 
-function createStarField(): { points: THREE.Points; update: (nightAmount: number, templeInfluence: number) => void } {
+function createStarField(): { points: THREE.Points; update: (nightAmount: number, templeInfluence: number, state: SkyLocationState) => void } {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
   const goldenAngle = Math.PI * (3 - Math.sqrt(5));
@@ -450,9 +490,10 @@ function createStarField(): { points: THREE.Points; update: (nightAmount: number
 
   return {
     points,
-    update: (nightAmount, templeInfluence) => {
+    update: (nightAmount, templeInfluence, state) => {
       material.opacity = THREE.MathUtils.clamp(nightAmount * 0.72 + templeInfluence * 0.18, 0, 0.86);
       points.visible = material.opacity > 0.02;
+      points.quaternion.copy(apparentSkyQuaternion(state));
     },
   };
 }

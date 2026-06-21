@@ -102,6 +102,7 @@ declare global {
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
       getSkyState: () => SkyDebugState;
+      setSkyElapsed: (elapsed: number) => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
@@ -330,6 +331,10 @@ if (enableDebugTools) {
     }),
     getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
+    setSkyElapsed: (elapsed: number) => {
+      sky.update(elapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
+      return sky.getDebugState();
+    },
     getBeetleState: flyingBeetles.getState,
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
