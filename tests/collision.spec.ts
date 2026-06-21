@@ -409,6 +409,150 @@ test("discovers the temple field note once from the temple glyph source", async 
   expect(discovered.secondDiscoveredAt).toBe(discovered.firstDiscoveredAt);
 });
 
+test("creates one large glass dome with a passable entrance and blocking shell", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("dome debug")).toBeVisible();
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const planet = debug.getPlanetState();
+    const player = debug.getPlayer();
+    const shellCount = debug.obstacles.filter((obstacle) => obstacle.kind === "dome-shell").length;
+    const circumferenceSeconds = (Math.PI * 2 * dome.radius) / planet.assumedWalkSpeed;
+    const sideX = dome.x + dome.entranceDirectionZ * (dome.radius + 2.5);
+    const sideZ = dome.z - dome.entranceDirectionX * (dome.radius + 2.5);
+
+    return {
+      shellCount,
+      radius: dome.radius,
+      circumferenceSeconds,
+      approachDistance: Math.hypot(player.x - dome.x, player.z - dome.z),
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      centerClear: !debug.isBlockedAt(dome.x, dome.z),
+      entranceClear: !debug.isBlockedAt(dome.entranceX, dome.entranceZ),
+      sideBlocked: debug.isBlockedAt(sideX, sideZ),
+      onLand: debug.terrainHeightAt(dome.x, dome.z) > 0.25,
+    };
+  });
+
+  expect(result.shellCount).toBe(1);
+  expect(result.radius).toBeGreaterThan(58);
+  expect(result.radius).toBeLessThan(64);
+  expect(result.circumferenceSeconds).toBeGreaterThan(57);
+  expect(result.circumferenceSeconds).toBeLessThan(63);
+  expect(result.approachDistance).toBeGreaterThan(result.radius);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.centerClear).toBe(true);
+  expect(result.entranceClear).toBe(true);
+  expect(result.sideBlocked).toBe(true);
+  expect(result.onLand).toBe(true);
+});
+
+test("allows entering the glass dome only through its entrance", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const entranceStartX = dome.x + dome.entranceDirectionX * (dome.radius + 9);
+    const entranceStartZ = dome.z + dome.entranceDirectionZ * (dome.radius + 9);
+    debug.setPlayer(entranceStartX, entranceStartZ);
+    const throughEntrance = debug.attemptMove(-dome.entranceDirectionX * 19, -dome.entranceDirectionZ * 19);
+    const afterEntrance = debug.getDomeState();
+
+    const sideX = dome.x + dome.entranceDirectionZ * (dome.radius + 4);
+    const sideZ = dome.z - dome.entranceDirectionX * (dome.radius + 4);
+    debug.setPlayer(sideX, sideZ);
+    const blockedSide = debug.attemptMove(-dome.entranceDirectionZ * 3, dome.entranceDirectionX * 3);
+    const sideTravel = Math.hypot(blockedSide.x - sideX, blockedSide.z - sideZ);
+
+    return {
+      entranceTravel: Math.hypot(throughEntrance.x - entranceStartX, throughEntrance.z - entranceStartZ),
+      insideAfterEntrance: afterEntrance.inside,
+      entranceClearance: afterEntrance.entranceClearance,
+      sideTravel,
+      sideStillOutside: !debug.getDomeState().inside,
+    };
+  });
+
+  expect(result.entranceTravel).toBeGreaterThan(14);
+  expect(result.insideAfterEntrance).toBe(true);
+  expect(result.entranceClearance).toBeGreaterThan(0);
+  expect(result.sideTravel).toBeLessThan(1.2);
+  expect(result.sideStillOutside).toBe(true);
+});
+
+test("blends the sky time multiplier up inside the dome and back down outside", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const positions = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    return {
+      insideX: dome.x + dome.entranceDirectionX * (dome.radius - 12),
+      insideZ: dome.z + dome.entranceDirectionZ * (dome.radius - 12),
+      outsideX: dome.approachX,
+      outsideZ: dome.approachZ,
+    };
+  });
+
+  await page.evaluate(({ insideX, insideZ }) => window.__centauriDebug?.setPlayer(insideX, insideZ), positions);
+  await page.waitForFunction(() => (window.__centauriDebug?.getDomeState().timeMultiplier ?? 1) > 3.4);
+  const inside = await page.evaluate(() => window.__centauriDebug?.getDomeState());
+
+  await page.evaluate(({ outsideX, outsideZ }) => window.__centauriDebug?.setPlayer(outsideX, outsideZ), positions);
+  await page.waitForFunction(() => (window.__centauriDebug?.getDomeState().timeMultiplier ?? 4) < 1.25);
+  const outside = await page.evaluate(() => window.__centauriDebug?.getDomeState());
+
+  expect(inside?.inside).toBe(true);
+  expect(inside?.targetTimeMultiplier).toBe(4);
+  expect(inside?.timeMultiplier).toBeGreaterThan(3.4);
+  expect(outside?.inside).toBe(false);
+  expect(outside?.targetTimeMultiplier).toBe(1);
+  expect(outside?.timeMultiplier).toBeLessThan(1.25);
+});
+
+test("discovers the dome field note from the entrance marker", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+
+  const source = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const notes = debug.getFieldNotesState();
+    return {
+      noteX: dome.noteX,
+      noteZ: dome.noteZ,
+      noteRadius: dome.noteRadius,
+      discoveredCount: notes.discoveredCount,
+      total: notes.total,
+    };
+  });
+
+  expect(source.discoveredCount).toBe(0);
+  expect(source.total).toBe(3);
+  expect(source.noteRadius).toBeGreaterThan(6);
+
+  await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
+  await expect(page.getByText("Field Note 003")).toBeVisible();
+  await expect(page.getByText(/Glass weather over bare ground/)).toBeVisible();
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
+
+  const discovered = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+  expect(discovered?.discovered[0]?.id).toBe("dome-chronoglass");
+  expect(discovered?.current.index).toBe(3);
+});
+
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

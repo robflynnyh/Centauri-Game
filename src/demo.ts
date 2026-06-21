@@ -48,7 +48,14 @@ export function createPrDemoController(
   heightAt: HeightSampler,
   resolveMove: ResolveMove,
   onWalk?: WalkObserver,
-  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint }
+  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
+  dome?: {
+    position: LocalPlanetPoint;
+    approachPosition: LocalPlanetPoint;
+    entrancePosition: LocalPlanetPoint;
+    entranceDirection: LocalPlanetPoint;
+    radius: number;
+  }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -117,7 +124,53 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 18.2) {
+      if (elapsed < 18.8) {
+        const domePosition = dome?.position ?? { x: -360, z: 260 };
+        const approach = dome?.approachPosition ?? { x: -415, z: 282 };
+        const entrance = dome?.entrancePosition ?? { x: -390, z: 270 };
+        onWalk?.(new THREE.Vector3(approach.x, 0, approach.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          approach.x,
+          approach.z,
+          heightAt(approach.x, approach.z) + 18,
+          domePosition.x,
+          domePosition.z,
+          heightAt(domePosition.x, domePosition.z) + 34
+        );
+        if (elapsed > 17.55) {
+          lookAtPlanetPoint(
+            camera,
+            entrance.x,
+            entrance.z,
+            heightAt(entrance.x, entrance.z) + 4.2,
+            domePosition.x,
+            domePosition.z,
+            heightAt(domePosition.x, domePosition.z) + 10
+          );
+        }
+        return;
+      }
+
+      if (elapsed < 22.6) {
+        const domePosition = dome?.position ?? { x: -360, z: 260 };
+        const direction = dome?.entranceDirection ?? { x: 0, z: 1 };
+        const insideX = domePosition.x + direction.x * ((dome?.radius ?? 61) - 9);
+        const insideZ = domePosition.z + direction.z * ((dome?.radius ?? 61) - 9);
+        onWalk?.(new THREE.Vector3(insideX, 0, insideZ), 0);
+        lookAtPlanetPoint(
+          camera,
+          insideX,
+          insideZ,
+          heightAt(insideX, insideZ) + 5.2,
+          domePosition.x + Math.sin(elapsed * 1.7) * 20,
+          domePosition.z + Math.cos(elapsed * 1.35) * 20,
+          heightAt(domePosition.x, domePosition.z) + 68
+        );
+        return;
+      }
+
+      if (elapsed < 24.4) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 44 + Math.sin(elapsed * 0.5) * 3;
         const z = -593 + Math.cos(elapsed * 0.45) * 3;
@@ -134,7 +187,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 20.0) {
+      if (elapsed < 26.0) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
         const z = -607 + Math.cos(elapsed * 0.48) * 1.2;

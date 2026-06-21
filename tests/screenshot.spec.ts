@@ -11,6 +11,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
+  await page.addStyleTag({ content: ".eyelids { display: none !important; }" });
   await page.waitForTimeout(18_000);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
@@ -43,21 +44,21 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
-  await page.waitForFunction(() => {
+  const daySideHandle = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1);
+    return state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1 ? state : false;
   });
-  const daySide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
-  await page.waitForFunction(() => {
+  const twilightEdgeHandle = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04);
+    return state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04 ? state : false;
   });
-  const twilightEdge = await page.evaluate(() => window.__centauriDebug?.getSkyState());
-  await page.waitForFunction(() => {
+  const nightSideHandle = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1);
+    return state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1 ? state : false;
   });
-  const nightSide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
+  const daySide = await daySideHandle.jsonValue();
+  const twilightEdge = await twilightEdgeHandle.jsonValue();
+  const nightSide = await nightSideHandle.jsonValue();
 
   expect(daySide?.dayAmount).toBeGreaterThan(0.75);
   expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
