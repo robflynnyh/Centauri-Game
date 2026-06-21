@@ -97,6 +97,7 @@ declare global {
         fullInfluenceRadius: number;
       };
       getFieldNotesState: () => FieldNotesSnapshot;
+      getCreatureState: () => { total: number; activeHops: number; nearestObstacleClearance: number };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
@@ -256,7 +257,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
   collisionWorld.replaceDynamicObstacles,
   [temple.reservedZone]
 );
-const waterCreatures = createAlienWaterCreatures(scene, heightAt);
+const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
@@ -330,6 +331,7 @@ if (enableDebugTools) {
     }),
     getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
+    getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {

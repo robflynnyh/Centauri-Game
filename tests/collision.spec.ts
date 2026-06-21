@@ -42,6 +42,28 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
   expect(result.playerStandsOnMountain).toBe(true);
 });
 
+test("keeps fleeing water creatures clear of solid obstacles", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    debug.setPlayer(6.8, 8.2);
+  });
+  await page.waitForTimeout(1_800);
+
+  const creatureState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getCreatureState();
+  });
+
+  expect(creatureState.total).toBe(5);
+  expect(creatureState.activeHops).toBeGreaterThan(0);
+  expect(creatureState.nearestObstacleClearance).toBeGreaterThan(0.1);
+});
+
 test("supports grounded jump and visible crouch height changes", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
