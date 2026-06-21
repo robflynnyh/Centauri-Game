@@ -442,6 +442,69 @@ test("generates reactive seaweed only in sparse flat wilderness", async ({ page 
   expect(nearSeaweedState?.nearestSeaweedFreezeAmount).toBeGreaterThan(0.72);
 });
 
+test("culls far mist patches in normal debug walking views", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMistState));
+
+  const states = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mist debug hook");
+
+    const samples = [
+      { x: 0, z: 24 },
+      { x: 0, z: -74 },
+      { x: 420, z: -360 },
+    ];
+
+    return samples.map((sample) => {
+      debug.setPlayer(sample.x, sample.z);
+      return debug.getMistState();
+    });
+  });
+
+  expect(states.every((state) => state.visiblePatches > 0)).toBe(true);
+  expect(states.every((state) => state.farDistance >= state.hardCullDistance)).toBe(true);
+  expect(states.every((state) => state.farVisiblePatches === 0)).toBe(true);
+  expect(states.every((state) => state.farMaxAlpha === 0)).toBe(true);
+});
+
+test("keeps nearby mist patch identity stable across chunk boundaries", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMistState));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mist debug hook");
+
+    debug.setPlayer(86, 24);
+    const before = debug.getMistState();
+    debug.setPlayer(98, 24);
+    const after = debug.getMistState();
+    const beforeByKey = new Map(before.visibleSamples.map((sample) => [sample.key, sample]));
+    const retained: { key: string; shift: number }[] = [];
+    after.visibleSamples.forEach((afterSample) => {
+      const beforeSample = beforeByKey.get(afterSample.key);
+      if (!beforeSample) return;
+
+      retained.push({
+        key: afterSample.key,
+        shift: Math.hypot(afterSample.x - beforeSample.x, afterSample.z - beforeSample.z),
+      });
+    });
+
+    return {
+      beforeVisible: before.visiblePatches,
+      afterVisible: after.visiblePatches,
+      retained,
+    };
+  });
+
+  expect(result.beforeVisible).toBeGreaterThan(0);
+  expect(result.afterVisible).toBeGreaterThan(0);
+  expect(result.retained.length).toBeGreaterThan(0);
+  expect(result.retained.every((sample) => sample.shift < 0.001)).toBe(true);
+});
+
 test("starts temple debug route near the single temple landmark", async ({ page }) => {
   await page.goto("/?debug=temple");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

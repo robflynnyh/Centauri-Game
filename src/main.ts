@@ -5,7 +5,7 @@ import { createPrDemoController } from "./demo";
 import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import { createTempleLandmark } from "./landmarks";
-import { createMistSystem } from "./mist";
+import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature } from "./nature";
 import {
   normalizeLocalVector,
@@ -116,6 +116,7 @@ declare global {
         }[];
       };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getMistState: () => MistDebugState;
       getBirdState: () => BirdDebugState;
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
@@ -367,6 +368,10 @@ if (enableDebugTools) {
     },
     getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
+    getMistState: () => {
+      mist.update(clock.elapsedTime, player.localPosition);
+      return mist.getDebugState();
+    },
     getBirdState: mountainBirds.getState,
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {

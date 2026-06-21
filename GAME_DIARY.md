@@ -18,6 +18,16 @@ Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to ref
 
 Added a calm eyelid close/open overlay for voluntary sleep, keeping it distinct from the zero-sleep blackout while making rest feel more intentional in the PR demo.
 
+Retuned ground mist distance falloff so nearby low wisps remain spooky while mid/far patches fade harder, especially on rough high terrain and cliff silhouettes.
+
+Tightened the mist review follow-up with a shorter hard distance cutoff, zeroed hidden-patch alpha, and a debug assertion that far mist patches are fully culled from normal walking views.
+
+Changed ground mist into a strictly local near-player atmosphere by reducing patch generation scope and culling distinct wisps before they can read across distant terrain.
+
+Matched demo and normal mist fade/cull distances so the PR flythrough uses the same local-only mist range as ordinary play.
+
+Stabilized local mist patch generation across chunk boundaries by keeping deterministic chunk-keyed patches alive while visible instead of clearing and reseeding the whole mist field.
+
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
 Retuned the ground mist after review so it is clearly visible in normal play and the PR demo while staying as low terrain-hugging vapour bands instead of object-like particles.
