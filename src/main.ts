@@ -100,6 +100,8 @@ declare global {
         x: number;
         z: number;
         radius: number;
+        interiorRadius: number;
+        floorHeight: number;
         shellThickness: number;
         entranceHalfWidth: number;
         entranceDirectionX: number;
@@ -227,6 +229,7 @@ const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
 const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone]);
+const domeFloorColour = new THREE.Color(0x273c78);
 const fieldNotes = createFieldNotesState();
 const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
 const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
@@ -250,7 +253,7 @@ const player = {
   position: pointOnPlanet(
     initialPlayerLocalPosition.x,
     initialPlayerLocalPosition.z,
-    heightAt(initialPlayerLocalPosition.x, initialPlayerLocalPosition.z) + standHeight
+    effectiveHeightAt(initialPlayerLocalPosition.x, initialPlayerLocalPosition.z) + standHeight
   ),
   velocity: new THREE.Vector3(),
   verticalVelocity: 0,
@@ -268,8 +271,8 @@ const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
-const terrain = createTerrainSystem();
-const mist = createMistSystem(scene, heightAt, isDemo);
+const terrain = createTerrainSystem(effectiveHeightAt, terrainColourOverride);
+const mist = createMistSystem(scene, effectiveHeightAt, isDemo);
 
 scene.add(terrain.group);
 scene.add(makeHorizonLandforms());
@@ -278,14 +281,14 @@ collisionWorld.addObstacle(dome.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNature(
   scene,
-  heightAt,
+  effectiveHeightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
   [temple.reservedZone, dome.reservedZone]
 );
-const waterCreatures = createAlienWaterCreatures(scene, heightAt);
-const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
-const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
+const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt);
+const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
+const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const visionState = {
   isolationAmount: 0,
@@ -293,7 +296,7 @@ const visionState = {
   nearestBiomePatchDistance: 0,
 };
 let isolationOverrideAmount: number | null = null;
-const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
+const prDemo = createPrDemoController(camera, effectiveHeightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
 }, temple, dome);
@@ -362,6 +365,8 @@ if (enableDebugTools) {
       x: dome.position.x,
       z: dome.position.z,
       radius: dome.radius,
+      interiorRadius: dome.interiorRadius,
+      floorHeight: dome.floorHeight,
       shellThickness: dome.shellThickness,
       entranceHalfWidth: dome.entranceHalfWidth,
       entranceDirectionX: dome.entranceDirection.x,
@@ -421,7 +426,7 @@ if (enableDebugTools) {
       const normalized = normalizePlanetCoords(x, z);
       return collisionWorld.isBlockedAt(normalized.x, normalized.z);
     },
-    terrainHeightAt: heightAt,
+    terrainHeightAt: effectiveHeightAt,
   };
 }
 
@@ -542,8 +547,16 @@ function updateDomeTimeMultiplier(delta: number, focus: { x: number; z: number }
   return domeTimeMultiplier;
 }
 
+function effectiveHeightAt(x: number, z: number): number {
+  return dome.contains({ x, z }) ? dome.floorHeight : heightAt(x, z);
+}
+
+function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | null {
+  return dome.contains({ x, z }) ? domeFloorColour : null;
+}
+
 function playerSurfaceAltitude(): number {
-  return heightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight + player.verticalOffset;
+  return effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight + player.verticalOffset;
 }
 
 function updatePlayerWorldPosition(): void {

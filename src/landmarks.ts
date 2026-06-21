@@ -35,6 +35,8 @@ export type GlassDomeLandmark = {
   group: THREE.Group;
   position: LocalPlanetPoint;
   radius: number;
+  interiorRadius: number;
+  floorHeight: number;
   shellThickness: number;
   entranceHalfWidth: number;
   entranceDirection: LocalPlanetPoint;
@@ -112,9 +114,10 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
   const entrancePosition = offsetLocal(position, entranceDirection, domeRadius);
   const approachPosition = offsetLocal(position, entranceDirection, domeRadius + 18);
   const notePosition = offsetLocal(position, entranceDirection, domeRadius - 8);
-  const altitude = heightAt(position.x, position.z);
+  const floorHeight = heightAt(position.x, position.z) + 0.08;
+  const interiorRadius = domeRadius - domeShellThickness * 0.85;
   const group = makeGlassDome(domeRadius, domeEntranceHalfWidth, entranceAngle);
-  placeObjectOnPlanet(group, position.x, position.z, altitude + 0.08);
+  placeObjectOnPlanet(group, position.x, position.z, floorHeight);
   scene.add(group);
 
   const noteMarker = makeDomeNoteMarker();
@@ -122,7 +125,7 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
     noteMarker,
     notePosition.x,
     notePosition.z,
-    heightAt(notePosition.x, notePosition.z) + 0.04,
+    floorHeight + 0.04,
     new THREE.Euler(0, entranceAngle + Math.PI, 0)
   );
   scene.add(noteMarker);
@@ -137,12 +140,14 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
   };
   const isInEntrance = (point: LocalPlanetPoint): boolean => entranceClearanceAt(point) > 0;
   const surfaceDistanceToCenter = (point: LocalPlanetPoint): number => surfaceDistanceBetweenLocal(point, position);
-  const contains = (playerPosition: LocalPlanetPoint): boolean => surfaceDistanceToCenter(playerPosition) < domeRadius - domeShellThickness * 0.45;
+  const contains = (playerPosition: LocalPlanetPoint): boolean => surfaceDistanceToCenter(playerPosition) < interiorRadius;
 
   return {
     group,
     position,
     radius: domeRadius,
+    interiorRadius,
+    floorHeight,
     shellThickness: domeShellThickness,
     entranceHalfWidth: domeEntranceHalfWidth,
     entranceDirection,
@@ -362,8 +367,8 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   const glassMaterial = new THREE.MeshBasicMaterial({
     color: 0x92f7ff,
     transparent: true,
-    opacity: 0.24,
-    depthWrite: false,
+    opacity: 0.26,
+    depthWrite: true,
     side: THREE.DoubleSide,
   });
   const ribMaterial = new THREE.MeshBasicMaterial({ color: 0xd8fbff });
@@ -383,16 +388,13 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
 
   for (let i = 0; i < 10; i += 1) {
     const angle = entranceAngle + entranceGapAngle * 0.5 + ((Math.PI * 2 - entranceGapAngle) * i) / 9;
-    addDomeRib(group, radius, angle, i % 3 === 0 ? ribMaterial : shadowRibMaterial);
+    addDomeVerticalRib(group, radius, angle, i % 3 === 0 ? ribMaterial : shadowRibMaterial);
   }
 
   for (let i = 1; i <= 3; i += 1) {
     const ringRadius = radius * Math.cos((i / 5) * Math.PI * 0.5);
     const y = radius * Math.sin((i / 5) * Math.PI * 0.5);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(ringRadius, 0.22, 4, 96, Math.PI * 2 - entranceGapAngle), i % 2 === 0 ? ribMaterial : shadowRibMaterial);
-    ring.position.y = y;
-    ring.rotation.set(Math.PI / 2, 0, entranceAngle + entranceGapAngle * 0.5);
-    group.add(ring);
+    addDomeRingSegments(group, ringRadius, y, entranceAngle, entranceGapAngle, i % 2 === 0 ? ribMaterial : shadowRibMaterial);
   }
 
   const threshold = new THREE.Mesh(new THREE.BoxGeometry(entranceHalfWidth * 2.1, 0.62, 3.2), ribMaterial);
@@ -405,20 +407,52 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   arch.rotation.set(0, entranceAngle, Math.PI);
   group.add(arch);
 
-  const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.82, 18), glowMaterial);
+  const innerGlow = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.22, 12), glowMaterial);
   innerGlow.rotation.x = -Math.PI / 2;
-  innerGlow.position.y = 0.18;
+  innerGlow.position.y = 0.1;
   group.add(innerGlow);
 
   group.userData = { glass, innerGlow };
   return group;
 }
 
-function addDomeRib(group: THREE.Group, radius: number, angle: number, material: THREE.Material): void {
-  const rib = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.5, 0.24, 4, 28, Math.PI), material);
-  rib.scale.x = 2;
-  rib.rotation.set(0, angle, Math.PI);
-  group.add(rib);
+function addDomeRingSegments(
+  group: THREE.Group,
+  ringRadius: number,
+  y: number,
+  entranceAngle: number,
+  entranceGapAngle: number,
+  material: THREE.Material
+): void {
+  const segmentCount = 56;
+  const segmentArc = (Math.PI * 2) / segmentCount;
+  for (let i = 0; i < segmentCount; i += 1) {
+    const angle = i * segmentArc;
+    if (angularDistance(angle, entranceAngle) < entranceGapAngle * 0.58) continue;
+    const segment = new THREE.Mesh(new THREE.BoxGeometry(ringRadius * segmentArc * 1.22, 0.34, 0.34), material);
+    segment.position.set(Math.sin(angle) * ringRadius, y, Math.cos(angle) * ringRadius);
+    segment.rotation.y = angle;
+    group.add(segment);
+  }
+}
+
+function addDomeVerticalRib(group: THREE.Group, radius: number, angle: number, material: THREE.Material): void {
+  const segmentCount = 9;
+  for (let i = 0; i < segmentCount; i += 1) {
+    const theta = ((i + 0.5) / segmentCount) * Math.PI * 0.5;
+    const nextTheta = ((i + 1) / segmentCount) * Math.PI * 0.5;
+    const groundRadius = Math.sin(theta) * radius;
+    const y = Math.cos(theta) * radius;
+    const length = Math.max(4.4, Math.abs(Math.sin(nextTheta) - Math.sin(theta)) * radius * 1.38);
+    const segment = new THREE.Mesh(new THREE.BoxGeometry(0.38, length, 0.38), material);
+    segment.position.set(Math.sin(angle) * groundRadius, y, Math.cos(angle) * groundRadius);
+    segment.rotation.set(theta, angle, 0);
+    group.add(segment);
+  }
+}
+
+function angularDistance(a: number, b: number): number {
+  return Math.abs(THREE.MathUtils.euclideanModulo(a - b + Math.PI, Math.PI * 2) - Math.PI);
 }
 
 function makeDomeNoteMarker(): THREE.Group {

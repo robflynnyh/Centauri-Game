@@ -127,3 +127,5 @@ Added sparse wilderness seaweed patches as flat green reactive blade sprites tha
 Retuned the wilderness seaweed after review so each flat blade has an organic static bend even when frozen, and suitable sparse areas receive a few more patches and blades without relaxing biome or slope constraints.
 
 Added one deterministic glass dome landmark with a hollow collision shell, a clear entrance, a discoverable chronoglass field note, a `?debug=dome` review spawn, and a 4x blended sky-time effect while the player is inside.
+
+Reworked the glass dome follow-up so field-note numbers follow collection order, the interior uses one flat effective terrain surface and colour, and the dome ribs read more continuously in the PR preview.

@@ -7,11 +7,13 @@ export type FieldNoteDefinition = {
   body: string;
 };
 
-export type DiscoverableFieldNoteDefinition = FieldNoteDefinition & {
+export type DiscoverableFieldNoteDefinition = {
   id: FieldNoteId;
+  body: string;
 };
 
-export type FieldNoteEntry = DiscoverableFieldNoteDefinition & {
+export type FieldNoteEntry = FieldNoteDefinition & {
+  id: FieldNoteId;
   discoveredAt: number;
 };
 
@@ -33,12 +35,10 @@ export const INITIAL_FIELD_NOTE: FieldNoteDefinition = {
 export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   {
     id: "temple-gate",
-    index: 2,
     body: "Gate in the violet stone. The ring is broken, but the air inside it keeps a second colour. The planet leans toward it.",
   },
   {
     id: "dome-chronoglass",
-    index: 3,
     body: "Glass weather over bare ground. Inside the dome, daylight hurries across the sky as if the planet is remembering faster.",
   },
 ];
@@ -61,7 +61,7 @@ export function createFieldNotesState(definitions = FIELD_NOTE_DEFINITIONS): Fie
     discover: (id, elapsed) => {
       const definition = byId.get(id);
       if (!definition || discovered.has(id)) return false;
-      discovered.set(id, { ...definition, discoveredAt: elapsed });
+      discovered.set(id, { ...definition, index: discovered.size + 2, discoveredAt: elapsed });
       return true;
     },
     hasDiscovered: (id) => discovered.has(id),

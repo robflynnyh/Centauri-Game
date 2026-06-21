@@ -407,6 +407,22 @@ test("discovers the temple field note once from the temple glyph source", async 
   expect(discovered.firstCurrentIndex).toBe(2);
   expect(discovered.secondCount).toBe(1);
   expect(discovered.secondDiscoveredAt).toBe(discovered.firstDiscoveredAt);
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri temple debug hook");
+    const dome = debug.getDomeState();
+    debug.setPlayer(dome.noteX, dome.noteZ);
+  });
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 2);
+  const afterDome = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+
+  expect(afterDome?.discoveredCount).toBe(2);
+  expect(afterDome?.discovered[0]?.id).toBe("temple-gate");
+  expect(afterDome?.discovered[0]?.index).toBe(2);
+  expect(afterDome?.discovered[1]?.id).toBe("dome-chronoglass");
+  expect(afterDome?.discovered[1]?.index).toBe(3);
+  expect(afterDome?.current.index).toBe(3);
 });
 
 test("creates one large glass dome with a passable entrance and blocking shell", async ({ page }) => {
@@ -519,7 +535,48 @@ test("blends the sky time multiplier up inside the dome and back down outside", 
   expect(outside?.timeMultiplier).toBeLessThan(1.25);
 });
 
-test("discovers the dome field note from the entrance marker", async ({ page }) => {
+test("uses one flat effective terrain surface inside the glass dome", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const perp = { x: dome.entranceDirectionZ, z: -dome.entranceDirectionX };
+    const offsets = [
+      { x: 0, z: 0 },
+      { x: dome.entranceDirectionX * dome.interiorRadius * 0.48, z: dome.entranceDirectionZ * dome.interiorRadius * 0.48 },
+      { x: -dome.entranceDirectionX * dome.interiorRadius * 0.36, z: -dome.entranceDirectionZ * dome.interiorRadius * 0.36 },
+      { x: perp.x * dome.interiorRadius * 0.42, z: perp.z * dome.interiorRadius * 0.42 },
+      { x: -perp.x * dome.interiorRadius * 0.42, z: -perp.z * dome.interiorRadius * 0.42 },
+    ];
+    const heights = offsets.map((offset) => debug.terrainHeightAt(dome.x + offset.x, dome.z + offset.z));
+    const remoteHeight = debug.terrainHeightAt(dome.approachX, dome.approachZ);
+    const standPoint = offsets[1];
+    debug.setPlayer(dome.x + standPoint.x, dome.z + standPoint.z);
+    const player = debug.getPlayer();
+    const movement = debug.getMovementState();
+    const standingHeight = debug.terrainHeightAt(player.x, player.z) + movement.cameraHeight;
+
+    return {
+      floorHeight: dome.floorHeight,
+      heights,
+      maxHeightDelta: Math.max(...heights) - Math.min(...heights),
+      differsFromOutside: Math.abs(remoteHeight - dome.floorHeight),
+      playerHeightDelta: Math.abs(player.y - standingHeight),
+      inside: debug.getDomeState().inside,
+    };
+  });
+
+  expect(result.maxHeightDelta).toBeLessThan(0.001);
+  expect(result.heights.every((height) => Math.abs(height - result.floorHeight) < 0.001)).toBe(true);
+  expect(result.differsFromOutside).toBeGreaterThan(0.5);
+  expect(result.playerHeightDelta).toBeLessThan(0.001);
+  expect(result.inside).toBe(true);
+});
+
+test("discovers the dome field note as the next collected note from the entrance marker", async ({ page }) => {
   await page.goto("/?debug=dome");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
   await expect(page.getByText("Field Note 001")).toBeVisible();
@@ -544,13 +601,34 @@ test("discovers the dome field note from the entrance marker", async ({ page }) 
 
   await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
   await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
-  await expect(page.getByText("Field Note 003")).toBeVisible();
+  await expect(page.getByText("Field Note 002")).toBeVisible();
   await expect(page.getByText(/Glass weather over bare ground/)).toBeVisible();
   await expect(page.getByText(/recovered/)).toHaveCount(0);
 
-  const discovered = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
-  expect(discovered?.discovered[0]?.id).toBe("dome-chronoglass");
-  expect(discovered?.current.index).toBe(3);
+  const firstDiscovered = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    return debug.getFieldNotesState();
+  });
+  expect(firstDiscovered.discovered[0]?.id).toBe("dome-chronoglass");
+  expect(firstDiscovered.discovered[0]?.index).toBe(2);
+  expect(firstDiscovered.current.index).toBe(2);
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const temple = debug.getTempleState();
+    debug.setPlayer(temple.noteX, temple.noteZ);
+  });
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 2);
+  const secondDiscovered = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+
+  expect(secondDiscovered?.discoveredCount).toBe(2);
+  expect(secondDiscovered?.discovered[0]?.id).toBe("dome-chronoglass");
+  expect(secondDiscovered?.discovered[0]?.index).toBe(2);
+  expect(secondDiscovered?.discovered[1]?.id).toBe("temple-gate");
+  expect(secondDiscovered?.discovered[1]?.index).toBe(3);
+  expect(secondDiscovered?.current.index).toBe(3);
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {

@@ -48,16 +48,16 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
     const state = window.__centauriDebug?.getSkyState();
     return state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1 ? state : false;
   });
+  const daySide = await daySideHandle.jsonValue();
   const twilightEdgeHandle = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
     return state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04 ? state : false;
   });
+  const twilightEdge = await twilightEdgeHandle.jsonValue();
   const nightSideHandle = await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
     return state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1 ? state : false;
   });
-  const daySide = await daySideHandle.jsonValue();
-  const twilightEdge = await twilightEdgeHandle.jsonValue();
   const nightSide = await nightSideHandle.jsonValue();
 
   expect(daySide?.dayAmount).toBeGreaterThan(0.75);
