@@ -139,6 +139,40 @@ export function createPrDemoController(
       }
 
       if (elapsed < 18.2) {
+        const focus = { x: 12.9, z: -73.4 };
+        const x = 23 + Math.sin(elapsed * 0.62) * 1.1;
+        const z = -62 + Math.cos(elapsed * 0.54) * 1.1;
+        onWalk?.(new THREE.Vector3(focus.x + 70, 0, focus.z + 70), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 7.8,
+          focus.x,
+          focus.z,
+          heightAt(focus.x, focus.z) + 3.5
+        );
+        return;
+      }
+
+      if (elapsed < 19.8) {
+        const focus = { x: 12.9, z: -73.4 };
+        const x = 27 + Math.sin(elapsed * 0.7) * 1.4;
+        const z = -60 + Math.cos(elapsed * 0.6) * 1.4;
+        onWalk?.(new THREE.Vector3(focus.x + 1.5, 0, focus.z + 1.5), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 8.4,
+          focus.x + 22,
+          focus.z - 10,
+          heightAt(focus.x, focus.z) + 31
+        );
+        return;
+      }
+
+      if (elapsed < 20.6) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 44 + Math.sin(elapsed * 0.5) * 3;
         const z = -593 + Math.cos(elapsed * 0.45) * 3;
@@ -155,7 +189,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 20.0) {
+      if (elapsed < 21.2) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
         const z = -607 + Math.cos(elapsed * 0.48) * 1.2;

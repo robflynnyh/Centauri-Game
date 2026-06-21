@@ -6,6 +6,10 @@ Made sleep drain scale with exertion: idle standing drains slowest, crouch-walki
 
 Changed sky time to come from planet spin: the sun, stars, planets, ring, and meteors now project through a spun sky frame so they rise and set at a fixed location while the demo includes a fixed-position sky watch beat.
 
+Added sparse mountain birds as tiny curved V-shaped flocks that circle high ridges, flee upward and away from nearby focus/player movement, expose `?debug=birds`, and appear in the deterministic PR demo for review.
+
+Distributed mountain bird flocks across repeated high-ridge regions so longer exploration can reveal more mountain-only bird groups beyond the initial debug/start flock.
+
 ## 2026-06-20
 
 Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.
