@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { lookAtPlanetPoint, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
+import { getSunFacingLongitude } from "./sky";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -11,11 +12,6 @@ function intervalPulse(value: number, start: number, peak: number, end: number):
   return 1 - THREE.MathUtils.smoothstep(value, peak, end);
 }
 
-function sunFacingLongitude(elapsed: number): number {
-  const phase = (elapsed / 18 + 0.18) % 1;
-  return phase * Math.PI * 2;
-}
-
 function showSkyRegion(
   camera: THREE.Camera,
   heightAt: HeightSampler,
@@ -25,7 +21,32 @@ function showSkyRegion(
   latitude: number,
   targetLongitudeOffset: number
 ): void {
-  const sunLongitude = sunFacingLongitude(elapsed);
+  const sunLongitude = getSunFacingLongitude(elapsed, true);
+  showSkyRegionAtLongitude(camera, heightAt, onWalk, sunLongitude, longitudeOffset, latitude, targetLongitudeOffset);
+}
+
+function showFixedTimeSkyRegion(
+  camera: THREE.Camera,
+  heightAt: HeightSampler,
+  onWalk: WalkObserver | undefined,
+  anchorElapsed: number,
+  longitudeOffset: number,
+  latitude: number,
+  targetLongitudeOffset: number
+): void {
+  const sunLongitude = getSunFacingLongitude(anchorElapsed, true);
+  showSkyRegionAtLongitude(camera, heightAt, onWalk, sunLongitude, longitudeOffset, latitude, targetLongitudeOffset);
+}
+
+function showSkyRegionAtLongitude(
+  camera: THREE.Camera,
+  heightAt: HeightSampler,
+  onWalk: WalkObserver | undefined,
+  sunLongitude: number,
+  longitudeOffset: number,
+  latitude: number,
+  targetLongitudeOffset: number
+): void {
   const x = (sunLongitude + longitudeOffset) * PLANET_RADIUS;
   const z = latitude * PLANET_RADIUS;
   const targetX = (sunLongitude + longitudeOffset + targetLongitudeOffset) * PLANET_RADIUS;
@@ -71,22 +92,26 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 6.4) {
-        resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
-        onWalk?.(demoPlayer, delta);
+      if (elapsed < 7.4) {
+        if (elapsed < 6.4) {
+          resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.32, 0, -delta * 2.75));
+          onWalk?.(demoPlayer, delta);
+        } else {
+          onWalk?.(demoPlayer, 0);
+        }
         lookAtPlanetPoint(
           camera,
           demoPlayer.x,
           demoPlayer.z,
           heightAt(demoPlayer.x, demoPlayer.z) + 3.15,
-          6.2,
-          7,
-          heightAt(6.2, 7) + 2.5
+          6.7,
+          10.2,
+          heightAt(6.7, 10.2) + 1.85
         );
         return;
       }
 
-      if (elapsed < 8.2) {
+      if (elapsed < 8.8) {
         const templePosition = temple?.position ?? { x: 260, z: -240 };
         const approach = temple?.approachPosition ?? { x: 278, z: -248 };
         onWalk?.(new THREE.Vector3(templePosition.x, 0, templePosition.z), 0);
@@ -108,7 +133,7 @@ export function createPrDemoController(
       }
 
       if (elapsed < 12.6) {
-        showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI * 0.5, 0.05, -0.22);
+        showFixedTimeSkyRegion(camera, heightAt, onWalk, 10.6, Math.PI * 0.5, 0.05, -0.22);
         return;
       }
 

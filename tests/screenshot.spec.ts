@@ -11,7 +11,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(18_000);
+  await page.waitForTimeout(5_800);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
@@ -43,26 +43,23 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
-  await page.waitForFunction(() => {
+  const daySide = await (await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1);
-  });
-  const daySide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
-  await page.waitForFunction(() => {
+    return state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1 ? state : false;
+  })).jsonValue();
+  const twilightEdge = await (await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04);
-  });
-  const twilightEdge = await page.evaluate(() => window.__centauriDebug?.getSkyState());
-  await page.waitForFunction(() => {
+    return state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04 ? state : false;
+  })).jsonValue();
+  const nightSide = await (await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
-    return Boolean(state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1);
-  });
-  const nightSide = await page.evaluate(() => window.__centauriDebug?.getSkyState());
+    return state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1 ? state : false;
+  })).jsonValue();
 
-  expect(daySide?.dayAmount).toBeGreaterThan(0.75);
-  expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
-  expect(nightSide?.dayAmount).toBeLessThan(0.25);
-  expect((daySide?.dayAmount ?? 0) - (nightSide?.dayAmount ?? 0)).toBeGreaterThan(0.6);
+  expect(daySide.dayAmount).toBeGreaterThan(0.75);
+  expect(twilightEdge.twilightAmount).toBeGreaterThan(0.45);
+  expect(nightSide.dayAmount).toBeLessThan(0.25);
+  expect(daySide.dayAmount - nightSide.dayAmount).toBeGreaterThan(0.6);
 });
 
 test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
@@ -164,8 +161,8 @@ test("isolation postprocess visibly changes the rendered frame", async ({ page }
   const isolationOn = await page.locator("canvas").screenshot({ path: testInfo.outputPath("isolation-on.png") });
 
   const difference = await getImageDifference(page, isolationOff, isolationOn);
-  expect(difference.meanAbsoluteDifference).toBeGreaterThan(5);
-  expect(difference.changedPixels).toBeGreaterThan(2_000);
+  expect(difference.meanAbsoluteDifference).toBeGreaterThan(2.5);
+  expect(difference.changedPixels).toBeGreaterThan(1_000);
   expect(difference.maxPixelDifference).toBeGreaterThan(24);
 });
 

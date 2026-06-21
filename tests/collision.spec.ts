@@ -42,6 +42,61 @@ test("blocks first-person movement at solid world objects", async ({ page }) => 
   expect(result.playerStandsOnMountain).toBe(true);
 });
 
+test("keeps fleeing water creatures clear of solid obstacles", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    debug.setPlayer(6.8, 8.2);
+  });
+  await page.waitForTimeout(1_800);
+
+  const creatureState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+    return debug.getCreatureState();
+  });
+
+  expect(creatureState.total).toBe(5);
+  expect(creatureState.activeHops).toBeGreaterThan(0);
+  expect(creatureState.nearestObstacleClearance).toBeGreaterThan(0.1);
+});
+
+test("lets scared water creatures flee beyond the old water leash", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const observed = { maxDistanceFromWater: 0, minScaredHopDistance: Number.POSITIVE_INFINITY };
+  for (let chaseStep = 0; chaseStep < 7; chaseStep += 1) {
+    await page.evaluate(() => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri collision debug hook");
+      const state = debug.getCreatureState();
+      const frog = state.creatures.reduce((farthest, candidate) =>
+        candidate.distanceFromWater > farthest.distanceFromWater ? candidate : farthest
+      );
+      const dx = frog.x - frog.anchorX;
+      const dz = frog.z - frog.anchorZ;
+      const distance = Math.hypot(dx, dz) || 1;
+      debug.setPlayer(frog.x - (dx / distance) * 2.15, frog.z - (dz / distance) * 2.15);
+    });
+    await page.waitForTimeout(1_150);
+
+    const state = await page.evaluate(() => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri collision debug hook");
+      return debug.getCreatureState();
+    });
+    observed.maxDistanceFromWater = Math.max(observed.maxDistanceFromWater, state.maxDistanceFromWater);
+    if (state.scaredHops > 0) observed.minScaredHopDistance = Math.min(observed.minScaredHopDistance, state.minScaredHopDistance);
+  }
+
+  expect(observed.maxDistanceFromWater).toBeGreaterThan(6.4);
+  expect(observed.minScaredHopDistance).toBeGreaterThan(0.4);
+});
+
 test("supports grounded jump and visible crouch height changes", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
@@ -153,7 +208,50 @@ test("wraps straight walks around the spherical planet", async ({ page }) => {
   expect(result.playerIsAbovePlanet).toBe(true);
 });
 
-test("derives reversible sky and day-night variation from planet location", async ({ page }) => {
+test("moves celestial bodies over time at a fixed planet location", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri collision debug hook");
+
+    const angularDistance = (a: number, b: number): number => {
+      const fullTurn = Math.PI * 2;
+      return Math.abs((((a - b + Math.PI) % fullTurn) + fullTurn) % fullTurn - Math.PI);
+    };
+
+    debug.setPlayer(0, 24);
+    const start = debug.setSkyElapsed(0);
+    const later = debug.setSkyElapsed(48);
+    const returned = debug.setSkyElapsed(0);
+
+    return {
+      start,
+      later,
+      returned,
+      celestialYawDelta: angularDistance(later.celestialYaw, start.celestialYaw),
+      celestialAltitudeDelta: Math.abs(later.celestialAltitude - start.celestialAltitude),
+      ringAltitudeDelta: Math.abs(later.ringAltitude - start.ringAltitude),
+      dayAmountDelta: Math.abs(later.dayAmount - start.dayAmount),
+      spinPhaseDelta: angularDistance(later.planetSpinPhase, start.planetSpinPhase),
+    };
+  });
+
+  expect(result.spinPhaseDelta).toBeCloseTo(Math.PI, 6);
+  expect(result.celestialYawDelta).toBeGreaterThan(0.35);
+  expect(result.celestialAltitudeDelta).toBeGreaterThan(0.16);
+  expect(result.ringAltitudeDelta).toBeGreaterThan(0.16);
+  expect(result.dayAmountDelta).toBeGreaterThan(0.25);
+  expect(result.returned.celestialYaw).toBeCloseTo(result.start.celestialYaw, 7);
+  expect(result.returned.celestialAltitude).toBeCloseTo(result.start.celestialAltitude, 7);
+  expect(result.returned.ringTilt).toBeCloseTo(result.start.ringTilt, 7);
+  expect(result.returned.ringAltitude).toBeCloseTo(result.start.ringAltitude, 7);
+  expect(result.returned.dayAmount).toBeCloseTo(result.start.dayAmount, 7);
+  expect(result.returned.sunDot).toBeCloseTo(result.start.sunDot, 7);
+});
+
+test("derives reversible sky and day-night variation from planet location at a fixed time", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
@@ -162,17 +260,18 @@ test("derives reversible sky and day-night variation from planet location", asyn
     if (!debug) throw new Error("Missing Centauri collision debug hook");
 
     const planet = debug.getPlanetState();
+    const sampleTime = 9;
     debug.setPlayer(0, 24);
-    const start = debug.getSkyState();
+    const start = debug.setSkyElapsed(sampleTime);
     debug.setPlayer(4400, -1600);
-    const distant = debug.getSkyState();
+    const distant = debug.setSkyElapsed(sampleTime);
     debug.setPlayer(0, 24);
-    const returned = debug.getSkyState();
+    const returned = debug.setSkyElapsed(sampleTime);
     const oppositePairs = [0, planet.circumference / 4].map((x) => {
       debug.setPlayer(x, 0);
-      const near = debug.getSkyState();
+      const near = debug.setSkyElapsed(sampleTime);
       debug.setPlayer(x + planet.circumference / 2, 0);
-      const far = debug.getSkyState();
+      const far = debug.setSkyElapsed(sampleTime);
       return {
         near,
         far,
