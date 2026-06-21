@@ -11,7 +11,7 @@ test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
   await page.goto("/?demo=pr");
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(18_000);
+  await page.waitForTimeout(5_800);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
@@ -56,10 +56,10 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
     return state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1 ? state : false;
   })).jsonValue();
 
-  expect(daySide?.dayAmount).toBeGreaterThan(0.75);
-  expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
-  expect(nightSide?.dayAmount).toBeLessThan(0.25);
-  expect((daySide?.dayAmount ?? 0) - (nightSide?.dayAmount ?? 0)).toBeGreaterThan(0.6);
+  expect(daySide.dayAmount).toBeGreaterThan(0.75);
+  expect(twilightEdge.twilightAmount).toBeGreaterThan(0.45);
+  expect(nightSide.dayAmount).toBeLessThan(0.25);
+  expect(daySide.dayAmount - nightSide.dayAmount).toBeGreaterThan(0.6);
 });
 
 test("starts near a visible beetle in beetle debug mode", async ({ page }) => {

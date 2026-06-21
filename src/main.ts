@@ -97,6 +97,24 @@ declare global {
         fullInfluenceRadius: number;
       };
       getFieldNotesState: () => FieldNotesSnapshot;
+      getCreatureState: () => {
+        total: number;
+        activeHops: number;
+        scaredHops: number;
+        nearestObstacleClearance: number;
+        maxDistanceFromWater: number;
+        minActiveHopDistance: number;
+        minScaredHopDistance: number;
+        creatures: {
+          x: number;
+          z: number;
+          anchorX: number;
+          anchorZ: number;
+          distanceFromWater: number;
+          activeHopKind: "scared" | "return" | null;
+          hopDistance: number;
+        }[];
+      };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
@@ -257,7 +275,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
   collisionWorld.replaceDynamicObstacles,
   [temple.reservedZone]
 );
-const waterCreatures = createAlienWaterCreatures(scene, heightAt);
+const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
@@ -335,6 +353,7 @@ if (enableDebugTools) {
       sky.update(elapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
       return sky.getDebugState();
     },
+    getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
@@ -603,9 +622,9 @@ function animate(): void {
   updateSleepHud(sleepState);
 
   footsteps.update(delta);
-  waterCreatures.update(elapsed);
   temple.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  waterCreatures.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   updateFieldNoteDiscovery(templeFocus, elapsed);
