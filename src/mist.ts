@@ -65,21 +65,23 @@ type MistMaterial = THREE.ShaderMaterial & {
 };
 
 const mistChunkSize = 92;
-const mistChunkRadius = 2;
-const normalPatchLimit = 40;
-const demoPatchLimit = 60;
+const mistChunkRadius = 1;
+const normalPatchLimit = 28;
+const demoPatchLimit = 36;
 const normalCandidatesPerChunk = 3;
 const demoCandidatesPerChunk = 3;
-const normalMistFadeStart = 52;
-const normalMistFadeEnd = 138;
-const demoMistFadeStart = 66;
-const demoMistFadeEnd = 174;
-const normalMistHardCullDistance = 148;
-const demoMistHardCullDistance = 192;
-const normalMistVisibilityCutoff = 0.06;
-const demoMistVisibilityCutoff = 0.05;
-const normalMistDebugFarDistance = 150;
-const demoMistDebugFarDistance = 195;
+const normalMistFadeStart = 32;
+const normalMistFadeEnd = 82;
+const demoMistFadeStart = 40;
+const demoMistFadeEnd = 102;
+const normalMistHardCullDistance = 92;
+const demoMistHardCullDistance = 112;
+const normalMistVisibilityCutoff = 0.075;
+const demoMistVisibilityCutoff = 0.065;
+const normalMistGenerationDistance = 112;
+const demoMistGenerationDistance = 132;
+const normalMistDebugFarDistance = 96;
+const demoMistDebugFarDistance = 116;
 
 export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, isDemo: boolean): MistSystem {
   const group = new THREE.Group();
@@ -103,7 +105,7 @@ export function createMistSystem(scene: THREE.Scene, heightAt: HeightSampler, is
     }
 
     material.uniforms.dayAmount.value = getDayAmount(elapsed, isDemo);
-    material.uniforms.globalOpacity.value = isDemo ? 1.12 : 0.92;
+    material.uniforms.globalOpacity.value = isDemo ? 1.04 : 0.88;
     patches.forEach((patch) => updatePatchGeometry(patch, heightAt, elapsed, normalizedFocus, isDemo));
   };
 
@@ -144,10 +146,14 @@ function rebuildMistPatches(
     for (let candidate = 0; candidate < candidatesPerChunk && patches.length < patchLimit; candidate += 1) {
       const x = (chunkX + random()) * mistChunkSize;
       const z = (chunkZ + random()) * mistChunkSize;
+      const candidateCenter = normalizePlanetCoords(x, z);
+      const candidateDistance = surfaceDistanceBetweenLocal(focus, candidateCenter);
+      if (candidateDistance > (isDemo ? demoMistGenerationDistance : normalMistGenerationDistance)) continue;
+
       const suitability = mistSuitabilityAt(x, z, heightAt);
       const demoAllowance = isDemo ? 0.2 : 0;
-      const chunkFalloff = 1 - THREE.MathUtils.smoothstep(offset.distance, 0.85, mistChunkRadius + 0.35);
-      const chance = suitability * (isDemo ? 1.34 : 1.04) + chunkFalloff * (isDemo ? 0.24 : 0.1);
+      const chunkFalloff = 1 - THREE.MathUtils.smoothstep(offset.distance, 0.5, mistChunkRadius + 0.15);
+      const chance = suitability * (isDemo ? 1.2 : 0.96) + chunkFalloff * (isDemo ? 0.18 : 0.08);
 
       if (suitability + demoAllowance < 0.26 || random() > chance) continue;
 
@@ -304,7 +310,7 @@ function updatePatchGeometry(
   const fadeStart = isDemo ? demoMistFadeStart : normalMistFadeStart;
   const fadeEnd = isDemo ? demoMistFadeEnd : normalMistFadeEnd;
   const rawFocusFade = 1 - THREE.MathUtils.smoothstep(distanceToFocus, fadeStart, fadeEnd);
-  const distanceFade = Math.pow(rawFocusFade, isDemo ? 3.0 : 3.45);
+  const distanceFade = Math.pow(rawFocusFade, isDemo ? 3.4 : 3.8);
   const terrainFade = mistTerrainDistanceFade(center.x, center.z, distanceToFocus, heightAt, isDemo);
   const hardCullDistance = isDemo ? demoMistHardCullDistance : normalMistHardCullDistance;
   const focusFade = distanceToFocus >= hardCullDistance ? 0 : distanceFade * terrainFade;
@@ -410,9 +416,9 @@ function mistTerrainDistanceFade(x: number, z: number, distanceToFocus: number, 
     heightAt(x, z - sampleDistance),
   ];
   const roughness = samples.reduce((highest, height) => Math.max(highest, Math.abs(height - centerHeight)), 0);
-  const distancePressure = THREE.MathUtils.smoothstep(distanceToFocus, isDemo ? 42 : 34, isDemo ? 118 : 92);
-  const quietSlopeFade = 1 - THREE.MathUtils.smoothstep(roughness, 1.15, isDemo ? 3.9 : 3.1);
-  const lowlandFade = 1 - THREE.MathUtils.smoothstep(centerHeight, isDemo ? 7.2 : 5.6, isDemo ? 13.4 : 10.8);
+  const distancePressure = THREE.MathUtils.smoothstep(distanceToFocus, isDemo ? 28 : 24, isDemo ? 82 : 66);
+  const quietSlopeFade = 1 - THREE.MathUtils.smoothstep(roughness, 1.05, isDemo ? 3.4 : 2.8);
+  const lowlandFade = 1 - THREE.MathUtils.smoothstep(centerHeight, isDemo ? 6.6 : 5.1, isDemo ? 12.2 : 9.6);
   const distantTerrainFade = THREE.MathUtils.clamp(quietSlopeFade * 0.72 + lowlandFade * 0.28, 0, 1);
 
   return THREE.MathUtils.lerp(1, distantTerrainFade, distancePressure);
