@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
-import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures";
+import { createAlienWaterCreatures, createMountainBirds, createRareFlyingBeetles, type BirdDebugState } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
@@ -116,6 +116,7 @@ declare global {
         }[];
       };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getBirdState: () => BirdDebugState;
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
@@ -138,10 +139,11 @@ const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
+const isBirdDebug = params.get("debug") === "birds";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || enableSleepDebug || enableIsolationDebug;
+const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || isBirdDebug || enableSleepDebug || enableIsolationDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -157,11 +159,13 @@ const hudBadgeText = isDemo
     ? "temple debug"
       : isBeetleDebug
         ? "beetle debug"
-        : enableSleepDebug
-          ? "sleep debug"
-          : enableIsolationDebug
-            ? "isolation debug"
-            : "exploration mode";
+        : isBirdDebug
+          ? "birds debug"
+          : enableSleepDebug
+            ? "sleep debug"
+            : enableIsolationDebug
+              ? "isolation debug"
+              : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -229,16 +233,24 @@ if (!fieldNotesHeading || !fieldNotesBody) {
   throw new Error("Missing field note HUD");
 }
 const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fieldNotes);
+const mountainBirds = createMountainBirds(scene, heightAt);
+const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
-    : enableIsolationDebug
-      ? new THREE.Vector3(-128, 0, -464)
-      : new THREE.Vector3(0, 0, 24);
+    : isBirdDebug
+      ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
+      : enableIsolationDebug
+        ? new THREE.Vector3(-128, 0, -464)
+        : new THREE.Vector3(0, 0, 24);
+const initialPlayerYaw = isBirdDebug
+  ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
+  : 0;
+const initialPlayerPitch = isBirdDebug ? 0.18 : -0.12;
 const player = {
-  yaw: 0,
-  pitch: -0.12,
+  yaw: initialPlayerYaw,
+  pitch: initialPlayerPitch,
   localPosition: initialPlayerLocalPosition.clone(),
   position: pointOnPlanet(
     initialPlayerLocalPosition.x,
@@ -355,6 +367,7 @@ if (enableDebugTools) {
     },
     getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
+    getBirdState: mountainBirds.getState,
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
       const state = sleep.setAmount(amount);
@@ -637,6 +650,7 @@ function animate(): void {
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
   waterCreatures.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
+  mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   updateFieldNoteDiscovery(templeFocus, elapsed);
   sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
