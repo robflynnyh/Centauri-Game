@@ -579,6 +579,47 @@ test("uses one flat effective terrain surface inside the glass dome", async ({ p
   expect(result.inside).toBe(true);
 });
 
+test("grounds the glass dome rim with a full circumference terrain collar", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const sectors = [
+      { x: dome.entranceDirectionZ, z: -dome.entranceDirectionX },
+      { x: -dome.entranceDirectionX, z: -dome.entranceDirectionZ },
+      { x: -dome.entranceDirectionZ, z: dome.entranceDirectionX },
+    ];
+    const sectorSamples = sectors.map((direction) => {
+      const distances: number[] = [];
+      for (let distance = dome.groundingOuterRadius; distance >= dome.interiorRadius + 0.5; distance -= 1) {
+        distances.push(distance);
+      }
+      const rimHeights = distances.map((distance) => debug.terrainHeightAt(dome.x + direction.x * distance, dome.z + direction.z * distance));
+      const adjacentJumps = rimHeights.slice(1).map((height, index) => Math.abs(height - rimHeights[index]));
+      return {
+        rimHeights,
+        maxJump: Math.max(...adjacentJumps),
+        innerFloorDelta: Math.abs(rimHeights[rimHeights.length - 1] - dome.floorHeight),
+      };
+    });
+
+    return {
+      radius: dome.radius,
+      groundingBandWidth: dome.groundingBandWidth,
+      groundingOuterRadius: dome.groundingOuterRadius,
+      sectorSamples,
+    };
+  });
+
+  expect(result.groundingBandWidth).toBeGreaterThan(8);
+  expect(result.groundingOuterRadius).toBeCloseTo(result.radius + result.groundingBandWidth, 5);
+  expect(result.sectorSamples.every((sample) => sample.maxJump < 1.1)).toBe(true);
+  expect(result.sectorSamples.every((sample) => sample.innerFloorDelta < 0.18)).toBe(true);
+});
+
 test("ramps the glass dome entrance floor without sharp height pops", async ({ page }) => {
   await page.goto("/?debug=dome");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

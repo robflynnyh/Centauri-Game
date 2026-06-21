@@ -116,6 +116,8 @@ declare global {
         noteRadius: number;
         inside: boolean;
         entranceClearance: number;
+        groundingBandWidth: number;
+        groundingOuterRadius: number;
         timeMultiplier: number;
         targetTimeMultiplier: number;
       };
@@ -231,6 +233,7 @@ const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
 const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone]);
 const domeFloorColour = new THREE.Color(0x273c78);
+const domeGroundingBandWidth = 16;
 const fieldNotes = createFieldNotesState();
 const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
 const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
@@ -381,6 +384,8 @@ if (enableDebugTools) {
       noteRadius: dome.noteSource.radius,
       inside: dome.contains(player.localPosition),
       entranceClearance: dome.entranceClearanceAt(player.localPosition),
+      groundingBandWidth: domeGroundingBandWidth,
+      groundingOuterRadius: dome.radius + domeGroundingBandWidth,
       timeMultiplier: domeTimeMultiplier,
       targetTimeMultiplier: domeTargetTimeMultiplier,
     }),
@@ -550,13 +555,23 @@ function updateDomeTimeMultiplier(delta: number, focus: { x: number; z: number }
 
 function effectiveHeightAt(x: number, z: number): number {
   const baseHeight = heightAt(x, z);
-  const rampAmount = domeEntranceRampAmountAt(x, z);
-  if (rampAmount > 0) return THREE.MathUtils.lerp(baseHeight, dome.floorHeight, rampAmount);
-  return dome.contains({ x, z }) ? dome.floorHeight : baseHeight;
+  if (dome.contains({ x, z })) return dome.floorHeight;
+
+  const groundingAmount = Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z));
+  if (groundingAmount > 0) return THREE.MathUtils.lerp(baseHeight, dome.floorHeight, groundingAmount);
+  return baseHeight;
 }
 
 function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | null {
-  return dome.contains({ x, z }) || domeEntranceRampAmountAt(x, z) > 0.35 ? domeFloorColour : null;
+  return dome.contains({ x, z }) || Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z)) > 0.35
+    ? domeFloorColour
+    : null;
+}
+
+function domeRimGroundingAmountAt(x: number, z: number): number {
+  const distance = surfaceDistanceBetweenLocal({ x, z }, dome.position);
+  if (distance <= dome.interiorRadius || distance >= dome.radius + domeGroundingBandWidth) return 0;
+  return 1 - THREE.MathUtils.smoothstep(distance, dome.interiorRadius, dome.radius + domeGroundingBandWidth);
 }
 
 function domeEntranceRampAmountAt(x: number, z: number): number {

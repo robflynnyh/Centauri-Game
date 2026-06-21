@@ -131,3 +131,5 @@ Added one deterministic glass dome landmark with a hollow collision shell, a cle
 Reworked the glass dome follow-up so field-note numbers follow collection order, the interior uses one flat effective terrain surface and colour, and the dome ribs read more continuously in the PR preview.
 
 Smoothed the glass dome entrance with a doorway terrain ramp, restored broader continuous ribs for a cleaner exterior silhouette, and reframed `?debug=dome` with a raised idle inspection camera.
+
+Added a full-circumference glass dome terrain collar that blends the varied outside ground toward the flat interior floor, helping the rim feel seated without removing the smooth entrance ramp.
