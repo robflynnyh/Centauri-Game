@@ -48,6 +48,11 @@ export type OceanDebugRegionState = {
   deepSample: LocalPlanetPoint;
   shoreSample: LocalPlanetPoint;
   outsideShoreSample: LocalPlanetPoint;
+  shorelineSamples: {
+    angle: number;
+    inside: LocalPlanetPoint;
+    outside: LocalPlanetPoint;
+  }[];
 };
 
 export type OceanDebugState = {
@@ -63,6 +68,7 @@ export type OceanSystem = {
 };
 
 const shoreBandWidth = 42;
+const outsideBankBlendDistance = 72;
 const oceanChunkSize = 96;
 const oceanChunkSegments = 32;
 const oceanChunkRadius = 5;
@@ -138,7 +144,7 @@ export function oceanStateAt(x: number, z: number, heightSampler?: HeightSampler
 
 export function oceanTerrainOffsetAt(x: number, z: number, baseHeight: number): number {
   const state = oceanStateAt(x, z);
-  if (!state.isInOcean) return 0;
+  if (!state.isInOcean) return shorelineBankOffsetAt(state, x, z, baseHeight);
 
   const inwardDistance = Math.max(0, -state.signedShoreDistance);
   const shelfAmount = THREE.MathUtils.smoothstep(inwardDistance, 0, 46);
@@ -149,6 +155,16 @@ export function oceanTerrainOffsetAt(x: number, z: number, baseHeight: number): 
   const carveAmount = THREE.MathUtils.smoothstep(inwardDistance, 8, 74);
   const desiredHeight = THREE.MathUtils.lerp(baseHeight, targetHeight, carveAmount);
   return Math.min(0, desiredHeight - baseHeight);
+}
+
+function shorelineBankOffsetAt(state: OceanState, x: number, z: number, baseHeight: number): number {
+  if (state.signedShoreDistance > outsideBankBlendDistance) return 0;
+  if (baseHeight >= state.waterSurfaceHeight + 0.08) return 0;
+
+  const bankAmount = 1 - THREE.MathUtils.smoothstep(state.signedShoreDistance, 18, outsideBankBlendDistance);
+  const bankNoise = Math.sin(x * 0.083 + z * 0.041) * 0.12 + Math.cos(x * 0.037 - z * 0.091) * 0.08;
+  const targetHeight = state.waterSurfaceHeight + 0.12 + bankNoise + state.signedShoreDistance * 0.028;
+  return Math.max(0, targetHeight - baseHeight) * bankAmount;
 }
 
 export function getOceanDebugSpawn(): { x: number; z: number; yaw: number } {
@@ -179,6 +195,7 @@ export function createOceanSystem(): OceanSystem {
     vertexColors: true,
     transparent: true,
     opacity: 0.72,
+    alphaTest: 0.05,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
@@ -257,7 +274,7 @@ function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: numbe
       const point = pointOnPlanet(x, z, waterSurfaceHeightAt(x, z));
       const colour = oceanColourForState(state, x, z);
       positions.push(point.x, point.y, point.z);
-      colours.push(colour.r, colour.g, colour.b);
+      colours.push(colour.r, colour.g, colour.b, waterAlphaForState(state));
     }
   }
 
@@ -279,7 +296,7 @@ function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: numbe
   }
 
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 4));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   return geometry;
@@ -295,8 +312,11 @@ function shouldRenderOceanCell(x0: number, x1: number, z0: number, z1: number): 
     oceanStateAt(x0, z1),
     oceanStateAt(x1, z1),
   ];
-  const insideSamples = samples.filter((state) => state.isInOcean).length;
-  return insideSamples >= 2 || samples[0].signedShoreDistance < 2;
+  return samples.some((state) => waterAlphaForState(state) > 0.05);
+}
+
+function waterAlphaForState(state: OceanState): number {
+  return 1 - THREE.MathUtils.smoothstep(state.signedShoreDistance, -1.5, 5.5);
 }
 
 function waterSurfaceHeightAt(x: number, z: number): number {
@@ -354,6 +374,7 @@ function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler)
 
   const shoreSample = shorePointAt(region, 0);
   const outsideShoreSample = normalizePlanetCoords(region.center.x + maxRadius + 36, region.center.z);
+  const shorelineSamples = Array.from({ length: 12 }, (_, index) => shorelineDebugSampleAt(region, (index / 12) * Math.PI * 2));
 
   return {
     id: region.id,
@@ -369,7 +390,35 @@ function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler)
     deepSample,
     shoreSample,
     outsideShoreSample,
+    shorelineSamples,
   };
+}
+
+function shorelineDebugSampleAt(
+  region: OceanRegion,
+  angle: number
+): { angle: number; inside: LocalPlanetPoint; outside: LocalPlanetPoint } {
+  const radius = shorelineRadiusAtAngle(region, angle);
+  let insideRadius = radius - 24;
+  let outsideRadius = radius + 8;
+  let inside = pointAtPolarOffset(region, angle, insideRadius);
+  let outside = pointAtPolarOffset(region, angle, outsideRadius);
+
+  for (let i = 0; i < 12 && !oceanStateAt(inside.x, inside.z).isInOcean; i += 1) {
+    insideRadius -= 8;
+    inside = pointAtPolarOffset(region, angle, insideRadius);
+  }
+
+  for (let i = 0; i < 12 && oceanStateAt(outside.x, outside.z).isInOcean; i += 1) {
+    outsideRadius += 8;
+    outside = pointAtPolarOffset(region, angle, outsideRadius);
+  }
+
+  return { angle, inside, outside };
+}
+
+function pointAtPolarOffset(region: OceanRegion, angle: number, radius: number): LocalPlanetPoint {
+  return normalizePlanetCoords(region.center.x + Math.cos(angle) * radius, region.center.z + Math.sin(angle) * radius);
 }
 
 function shorePointAt(region: OceanRegion, sampleIndex: number): LocalPlanetPoint {

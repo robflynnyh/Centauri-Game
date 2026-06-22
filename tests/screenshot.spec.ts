@@ -45,6 +45,27 @@ test("ocean debug exposes two large irregular deep oceans", async ({ page }) => 
     expect(deepState?.terrainDepthBelowSurface).toBeGreaterThan(16);
     expect(deepState?.movementSpeedMultiplier).toBeCloseTo(0.5, 2);
     expect(outsideState?.isInOcean).toBe(false);
+
+    for (const sample of ocean.shorelineSamples) {
+      const shorelineState = await page.evaluate(
+        ({ inside, outside }) => {
+          const insideState = window.__centauriDebug?.getOceanStateAt(inside.x, inside.z);
+          const outsideState = window.__centauriDebug?.getOceanStateAt(outside.x, outside.z);
+          return {
+            insideState,
+            outsideState,
+            insideTerrainHeight: window.__centauriDebug?.terrainHeightAt(inside.x, inside.z),
+            outsideTerrainHeight: window.__centauriDebug?.terrainHeightAt(outside.x, outside.z),
+          };
+        },
+        sample
+      );
+
+      expect(shorelineState.insideState?.isInOcean).toBe(true);
+      expect(shorelineState.insideTerrainHeight).toBeGreaterThan((shorelineState.insideState?.waterSurfaceHeight ?? 0) - 5);
+      expect(shorelineState.outsideState?.signedShoreDistance).toBeGreaterThan(-2);
+      expect(shorelineState.outsideTerrainHeight).toBeGreaterThan((shorelineState.outsideState?.waterSurfaceHeight ?? 0) - 0.35);
+    }
   }
 });
 

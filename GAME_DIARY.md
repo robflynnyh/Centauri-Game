@@ -6,6 +6,8 @@ Added two large irregular swimmable oceans to the spherical planet, with carved 
 
 Retuned ocean rendering after review so the water keeps a lo-fi shimmer without obvious large square mesh tiles, using a finer shared vertex grid, per-vertex color, and continuous subtle ripple.
 
+Grounded ocean shorelines after review by blending low outside banks up toward the water surface and fading/clipping shoreline water vertices, preventing partial shoreline cells from reading as floating sheets.
+
 ## 2026-06-21
 
 Removed the hard water-distance cap from scared water-creature flee hops so chased frogs can keep escaping beyond their normal patrol radius, while calm return hops still guide them back toward water once danger passes.
