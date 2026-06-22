@@ -3,6 +3,7 @@ import type { CollisionObstacle } from "./collision";
 import { isInLandmarkZone, type LandmarkZone } from "./landmarks";
 import { normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, surfaceDistanceBetweenLocal, type LocalPlanetPoint } from "./planet";
 import { isInMassiveMountainFootprint } from "./terrain";
+import { oceanStateAt } from "./water";
 
 type HeightSampler = (x: number, z: number) => number;
 type AddCollisionObstacle = (obstacle: CollisionObstacle) => void;
@@ -574,7 +575,11 @@ function pointNear(x: number, z: number, radius: number, random: () => number): 
 }
 
 function isGeneratedNatureExcluded(point: LocalPlanetPoint, landmarkZones: LandmarkZone[]): boolean {
-  return isInLandmarkZone(point, landmarkZones) || isInMassiveMountainFootprint(point.x, point.z, 8);
+  return isInLandmarkZone(point, landmarkZones) || isInMassiveMountainFootprint(point.x, point.z, 8) || isOceanPoint(point.x, point.z);
+}
+
+function isOceanPoint(x: number, z: number): boolean {
+  return oceanStateAt(x, z).isInOcean;
 }
 
 function nearestBiomeEdgeDistanceAt(x: number, z: number, patches: BiomePatch[]): number {

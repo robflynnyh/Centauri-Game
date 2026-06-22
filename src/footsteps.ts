@@ -3,6 +3,7 @@ import { pointOnPlanet, surfaceDistanceBetweenLocal } from "./planet";
 
 type HeightSampler = (x: number, z: number) => number;
 type IsBlockedAt = (x: number, z: number) => boolean;
+type ShouldSkipFootstepsAt = (x: number, z: number) => boolean;
 
 type FootstepMark = {
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
@@ -37,7 +38,8 @@ const streamPoints = [
 export function createFootstepTrail(
   scene: THREE.Scene,
   heightAt: HeightSampler,
-  isBlockedAt: IsBlockedAt
+  isBlockedAt: IsBlockedAt,
+  shouldSkipFootstepsAt: ShouldSkipFootstepsAt = () => false
 ): { walk: (position: THREE.Vector3, delta: number) => void; update: (delta: number) => void } {
   const group = new THREE.Group();
   group.name = "fading-footsteps";
@@ -61,7 +63,7 @@ export function createFootstepTrail(
   };
 
   const addMark = (x: number, z: number, direction: THREE.Vector3): void => {
-    if (isBlockedAt(x, z) || isNearWater(x, z)) return;
+    if (isBlockedAt(x, z) || shouldSkipFootstepsAt(x, z) || isNearWater(x, z)) return;
 
     const side = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
     const sideJitter = (nextRandom() - 0.5) * 0.16;
@@ -69,7 +71,7 @@ export function createFootstepTrail(
     const footX = x + side.x * (footSideOffset * nextFootSide + sideJitter) - direction.x * (footBackOffset + backJitter);
     const footZ = z + side.z * (footSideOffset * nextFootSide + sideJitter) - direction.z * (footBackOffset + backJitter);
 
-    if (isBlockedAt(footX, footZ) || isNearWater(footX, footZ)) return;
+    if (isBlockedAt(footX, footZ) || shouldSkipFootstepsAt(footX, footZ) || isNearWater(footX, footZ)) return;
 
     const radius = 0.22 + nextRandom() * 0.06;
     const geometry = makeGroundColourGeometry(heightAt, footX, footZ, radius);

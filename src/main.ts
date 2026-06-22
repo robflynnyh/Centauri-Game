@@ -31,6 +31,7 @@ import {
   terrainSlipperinessAt,
   terrainSlopeAt,
 } from "./terrain";
+import { createOceanSystem, getOceanDebugSpawn, getOceanDebugState, oceanStateAt, type OceanDebugState, type OceanState } from "./water";
 import "./style.css";
 
 declare global {
@@ -137,6 +138,9 @@ declare global {
         steepFaceSamples: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[];
         reservedZones: { x: number; z: number; radius: number }[];
       };
+      getOceanState: () => OceanState;
+      getOceanStateAt: (x: number, z: number) => OceanState;
+      getOceanDebugState: () => OceanDebugState;
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
@@ -163,10 +167,19 @@ const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
+const enableOceanDebug = params.get("debug") === "ocean";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || isBirdDebug || enableMountainDebug || enableSleepDebug || enableIsolationDebug;
+const enableDebugTools =
+  enableCollisionDebug ||
+  enableTempleDebug ||
+  isBeetleDebug ||
+  isBirdDebug ||
+  enableMountainDebug ||
+  enableOceanDebug ||
+  enableSleepDebug ||
+  enableIsolationDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -188,11 +201,13 @@ const hudBadgeText = isDemo
           ? "birds debug"
           : enableMountainDebug
             ? "mountain debug"
-          : enableSleepDebug
-            ? "sleep debug"
-            : enableIsolationDebug
-              ? "isolation debug"
-              : "exploration mode";
+            : enableOceanDebug
+              ? "ocean debug"
+              : enableSleepDebug
+                ? "sleep debug"
+                : enableIsolationDebug
+                  ? "isolation debug"
+                  : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -237,6 +252,7 @@ app.innerHTML = `
   <div class="blackout" aria-hidden="true">
     <span class="blackout__message">resting in the dark</span>
   </div>
+  <div class="underwater" aria-hidden="true"></div>
 `;
 
 const scene = new THREE.Scene();
@@ -263,6 +279,7 @@ const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fie
 const mountainBirds = createMountainBirds(scene, heightAt);
 const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
+const oceanDebugSpawn = getOceanDebugSpawn();
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
@@ -271,15 +288,19 @@ const initialPlayerLocalPosition = enableTempleDebug
       ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
       : enableMountainDebug
         ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
-      : enableIsolationDebug
-        ? new THREE.Vector3(-128, 0, -464)
-        : new THREE.Vector3(0, 0, 24);
+        : enableOceanDebug
+          ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
+          : enableIsolationDebug
+            ? new THREE.Vector3(-128, 0, -464)
+            : new THREE.Vector3(0, 0, 24);
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
   : enableMountainDebug
     ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
-  : 0;
-const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : -0.12;
+    : enableOceanDebug
+      ? oceanDebugSpawn.yaw
+      : 0;
+const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -302,13 +323,16 @@ const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
 const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
 const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
+const underwaterOverlay = document.querySelector<HTMLDivElement>(".underwater");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
 const terrain = createTerrainSystem();
+const oceans = createOceanSystem();
 const mist = createMistSystem(scene, heightAt, isDemo);
 
 scene.add(terrain.group);
+scene.add(oceans.group);
 scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
 
@@ -321,7 +345,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
-const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt);
+const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const visionState = {
   isolationAmount: 0,
@@ -335,6 +359,7 @@ const prDemo = createPrDemoController(camera, heightAt, resolvePlayerMove, (posi
 }, temple, mountainDebugState);
 
 terrain.update(player.localPosition.x, player.localPosition.z);
+oceans.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
 updatePlayerWorldPosition();
 
@@ -405,6 +430,9 @@ if (enableDebugTools) {
     },
     getBirdState: mountainBirds.getState,
     getMassiveMountainState: getMassiveMountainDebugState,
+    getOceanState: () => oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt),
+    getOceanStateAt: (x: number, z: number) => oceanStateAt(x, z, heightAt),
+    getOceanDebugState: () => getOceanDebugState(heightAt),
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
       const state = sleep.setAmount(amount);
@@ -436,6 +464,7 @@ if (enableDebugTools) {
       player.grounded = true;
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
+      oceans.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
       sky.update(clock.elapsedTime, player.localPosition);
     },
@@ -443,6 +472,7 @@ if (enableDebugTools) {
       resolvePlayerMove(player.localPosition, new THREE.Vector3(x, 0, z));
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
+      oceans.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
       return { x: player.localPosition.x, y: player.position.length() - PLANET_RADIUS, z: player.localPosition.z };
     },
@@ -503,6 +533,16 @@ function updateSleepHud(state: SleepDebugState): void {
   eyelidOverlay?.setAttribute("data-phase", state.eyelidPhase);
   blackoutOverlay?.classList.toggle("blackout--visible", state.blackout);
   blackoutOverlay?.setAttribute("aria-hidden", state.blackout ? "false" : "true");
+}
+
+function updateUnderwaterCue(): void {
+  if (!underwaterOverlay) return;
+  const oceanState = oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt);
+  const cameraAltitude = playerSurfaceAltitude();
+  const belowSurface = oceanState.waterSurfaceHeight - cameraAltitude;
+  const amount = oceanState.isInOcean ? THREE.MathUtils.smoothstep(belowSurface, 0.05, 2.2) : 0;
+  underwaterOverlay.style.opacity = amount.toFixed(3);
+  underwaterOverlay.setAttribute("aria-hidden", amount > 0.02 ? "false" : "true");
 }
 
 updateSleepHud(sleep.getState());
@@ -669,7 +709,8 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
 
   if (wish.lengthSq() > 0) wish.normalize();
   const crouching = isCrouchPressed();
-  const targetSpeed = crouching ? crouchSpeed : walkSpeed;
+  const oceanState = oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt);
+  const targetSpeed = (crouching ? crouchSpeed : walkSpeed) * oceanState.movementSpeedMultiplier;
   const targetVelocity = wish.multiplyScalar(targetSpeed);
   const horizontalRate = targetVelocity.lengthSq() > 0 ? acceleration : braking;
   const maxVelocityDelta = horizontalRate * delta;
@@ -759,10 +800,12 @@ function animate(): void {
   updateFieldNoteDiscovery(templeFocus, elapsed);
   sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
+  oceans.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
   updateVisionState(delta);
   mist.update(elapsed, floraFocus);
+  if (!isDemo) updateUnderwaterCue();
 
   pixelRenderer.render(scene, camera, {
     elapsed,

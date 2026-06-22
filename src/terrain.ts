@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, PLANET_RADIUS } from "./planet";
+import { oceanTerrainOffsetAt } from "./water";
 
 export type MassiveMountainPathSample = {
   x: number;
@@ -60,7 +61,9 @@ function baseTerrainHeightAt(x: number, z: number): number {
   const alienPulse = Math.sin((tileX + tileZ) * 0.07) * 0.85 + Math.sin(Math.hypot(tileX, tileZ) * 0.28) * 0.7;
   const northShoulder = Math.max(0, 1 - Math.abs(tileZ + 55) / 24) * (1 - Math.min(Math.abs(tileX) / 106, 1)) * 3.1;
   const westShelf = Math.max(0, 1 - Math.abs(tileX + 64) / 26) * (1 - Math.min(Math.abs(tileZ) / 96, 1)) * 1.8;
-  return island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(tileX, tileZ) + globeUndulationAt(x, z);
+  const baseHeight =
+    island * (ridges + alienPulse + 8.5) - 3.2 + northShoulder + westShelf + mountainHeightAt(tileX, tileZ) + globeUndulationAt(x, z);
+  return baseHeight + oceanTerrainOffsetAt(x, z, baseHeight);
 }
 
 function globeUndulationAt(x: number, z: number): number {
