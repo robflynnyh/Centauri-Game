@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-22
+
+Added two large irregular swimmable oceans to the spherical planet, with carved deep basins, chunked ocean-surface rendering, slower in-water movement, underwater tinting, and a focused `?debug=ocean` review route.
+
 ## 2026-06-21
 
 Removed the hard water-distance cap from scared water-creature flee hops so chased frogs can keep escaping beyond their normal patrol radius, while calm return hops still guide them back toward water once danger passes.

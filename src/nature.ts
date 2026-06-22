@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { CollisionObstacle } from "./collision";
 import { isInLandmarkZone, type LandmarkZone } from "./landmarks";
 import { normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, surfaceDistanceBetweenLocal, type LocalPlanetPoint } from "./planet";
+import { oceanStateAt } from "./water";
 
 type HeightSampler = (x: number, z: number) => number;
 type AddCollisionObstacle = (obstacle: CollisionObstacle) => void;
@@ -379,6 +380,7 @@ export function populateNature(
         for (let i = 0; i < Math.round((baseTreesPerChunk * 2 + fullness * 5) * nearObjectScale); i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius * 0.68, random);
           if (isInLandmarkZone(point, landmarkZones)) continue;
+          if (isOceanPoint(point.x, point.z)) continue;
           addAlienTree(point.x, point.z, 0.72 + random() * 0.58, random() * Math.PI * 2 - Math.PI, generatedNatureGroup, dynamicObstacles);
           generatedObjectCount += 1;
         }
@@ -386,6 +388,7 @@ export function populateNature(
         for (let i = 0; i < Math.round((baseReactiveFloraPerChunk * 3 + fullness * 24) * complexObjectScale); i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius, random);
           if (isInLandmarkZone(point, landmarkZones)) continue;
+          if (isOceanPoint(point.x, point.z)) continue;
           addReactiveFloraAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
           generatedObjectCount += 1;
           generatedReactiveFloraCount += 1;
@@ -394,6 +397,7 @@ export function populateNature(
         for (let i = 0; i < Math.round((baseSproutsPerChunk * 2 + fullness * 13) * nearObjectScale); i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius * 0.9, random);
           if (isInLandmarkZone(point, landmarkZones)) continue;
+          if (isOceanPoint(point.x, point.z)) continue;
           addSproutAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
           generatedObjectCount += 1;
         }
@@ -401,6 +405,7 @@ export function populateNature(
         for (let i = 0; i < Math.round((baseRocksPerChunk * 2 + fullness * 8) * nearObjectScale); i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius * 1.08, random);
           if (isInLandmarkZone(point, landmarkZones)) continue;
+          if (isOceanPoint(point.x, point.z)) continue;
           addGeneratedRock(
             point.x,
             point.z,
@@ -415,6 +420,7 @@ export function populateNature(
         for (let i = 0; i < poolCount; i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius * 0.42, random);
           if (isInLandmarkZone(point, landmarkZones)) continue;
+          if (isOceanPoint(point.x, point.z)) continue;
           addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, point.x, point.z, 2.5 + random() * 2.4, random() * Math.PI);
           generatedObjectCount += 1;
         }
@@ -423,6 +429,7 @@ export function populateNature(
         for (let i = 0; i < streamCount; i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius * 0.35, random);
           if (isInLandmarkZone(point, landmarkZones)) continue;
+          if (isOceanPoint(point.x, point.z)) continue;
           addGeneratedStream(
             generatedNatureGroup,
             heightAt,
@@ -451,6 +458,7 @@ export function populateNature(
         const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x, z });
         if (distanceToFocus > generatedComplexFadeRadius * 0.95) continue;
         if (isInLandmarkZone({ x, z }, landmarkZones)) continue;
+        if (isOceanPoint(x, z)) continue;
 
         const nearestBiomeEdgeDistance = nearestBiomeEdgeDistanceAt(x, z, visibleBiomePatches);
         if (nearestBiomeEdgeDistance < seaweedBiomeClearance) continue;
@@ -568,6 +576,10 @@ function pointNear(x: number, z: number, radius: number, random: () => number): 
     x: x + Math.cos(angle) * distance,
     z: z + Math.sin(angle) * distance,
   };
+}
+
+function isOceanPoint(x: number, z: number): boolean {
+  return oceanStateAt(x, z).isInOcean;
 }
 
 function nearestBiomeEdgeDistanceAt(x: number, z: number, patches: BiomePatch[]): number {

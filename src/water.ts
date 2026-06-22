@@ -1,0 +1,398 @@
+import * as THREE from "three";
+import {
+  normalizePlanetCoords,
+  PLANET_CIRCUMFERENCE,
+  pointOnPlanet,
+  surfaceDistanceBetweenLocal,
+  type LocalPlanetPoint,
+} from "./planet";
+
+type HeightSampler = (x: number, z: number) => number;
+
+export type OceanRegion = {
+  id: "vermilion" | "lapis";
+  name: string;
+  center: LocalPlanetPoint;
+  baseRadius: number;
+  waterSurfaceHeight: number;
+  maxDepth: number;
+  seed: number;
+};
+
+export type OceanState = {
+  isInOcean: boolean;
+  regionId: OceanRegion["id"] | null;
+  regionName: string | null;
+  centerDistance: number;
+  shorelineRadius: number;
+  signedShoreDistance: number;
+  nearestShoreDistance: number;
+  normalizedShorelineAmount: number;
+  waterSurfaceHeight: number;
+  terrainDepthBelowSurface: number;
+  immersionAmount: number;
+  movementSpeedMultiplier: number;
+};
+
+export type OceanDebugRegionState = {
+  id: OceanRegion["id"];
+  name: string;
+  center: LocalPlanetPoint;
+  waterSurfaceHeight: number;
+  baseRadius: number;
+  minShorelineRadius: number;
+  maxShorelineRadius: number;
+  meanShorelineRadius: number;
+  estimatedShorelineCircumference: number;
+  maxTerrainDepthBelowSurface: number;
+  deepSample: LocalPlanetPoint;
+  shoreSample: LocalPlanetPoint;
+  outsideShoreSample: LocalPlanetPoint;
+};
+
+export type OceanDebugState = {
+  oceanCount: number;
+  movementSpeedMultiplierInOcean: number;
+  regions: OceanDebugRegionState[];
+};
+
+export type OceanSystem = {
+  group: THREE.Group;
+  update: (centerX: number, centerZ: number) => void;
+  getRenderState: () => { centerX: number; centerZ: number; chunkSize: number; chunkCount: number; renderedChunks: number };
+};
+
+const shoreBandWidth = 42;
+const oceanChunkSize = 96;
+const oceanChunkSegments = 12;
+const oceanChunkRadius = 5;
+const oceanColourDeep = new THREE.Color(0x1156b8);
+const oceanColourMid = new THREE.Color(0x1fa6d2);
+const oceanColourShore = new THREE.Color(0x94fff2);
+
+export const OCEAN_REGIONS: OceanRegion[] = [
+  {
+    id: "vermilion",
+    name: "Vermilion Still",
+    center: { x: 870, z: 285 },
+    baseRadius: 305,
+    waterSurfaceHeight: -1.15,
+    maxDepth: 24,
+    seed: 11.7,
+  },
+  {
+    id: "lapis",
+    name: "Lapis Hollow",
+    center: { x: -905, z: -365 },
+    baseRadius: 308,
+    waterSurfaceHeight: -1.85,
+    maxDepth: 27,
+    seed: 29.3,
+  },
+];
+
+export function getOceanRegions(): OceanRegion[] {
+  return OCEAN_REGIONS.map((region) => ({ ...region, center: { ...region.center } }));
+}
+
+export function oceanStateAt(x: number, z: number, heightSampler?: HeightSampler): OceanState {
+  const normalized = normalizePlanetCoords(x, z);
+  let nearestRegion = OCEAN_REGIONS[0];
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  let nearestRadius = nearestRegion.baseRadius;
+  let nearestSignedDistance = Number.POSITIVE_INFINITY;
+
+  OCEAN_REGIONS.forEach((region) => {
+    const centerDistance = surfaceDistanceBetweenLocal(normalized, region.center);
+    const radius = shorelineRadiusAt(region, normalized.x, normalized.z);
+    const signedDistance = centerDistance - radius;
+    const nearestRank = signedDistance <= 0 ? signedDistance : Math.abs(signedDistance);
+    if (nearestRank < nearestDistance) {
+      nearestDistance = nearestRank;
+      nearestRegion = region;
+      nearestRadius = radius;
+      nearestSignedDistance = signedDistance;
+    }
+  });
+
+  const terrainHeight = heightSampler ? heightSampler(normalized.x, normalized.z) : Number.POSITIVE_INFINITY;
+  const terrainDepthBelowSurface = Math.max(0, nearestRegion.waterSurfaceHeight - terrainHeight);
+  const isInOcean = nearestSignedDistance <= 0;
+  const immersionAmount = isInOcean ? THREE.MathUtils.smoothstep(terrainDepthBelowSurface, 0.18, 2.4) : 0;
+
+  return {
+    isInOcean,
+    regionId: isInOcean ? nearestRegion.id : null,
+    regionName: isInOcean ? nearestRegion.name : null,
+    centerDistance: surfaceDistanceBetweenLocal(normalized, nearestRegion.center),
+    shorelineRadius: nearestRadius,
+    signedShoreDistance: nearestSignedDistance,
+    nearestShoreDistance: Math.abs(nearestSignedDistance),
+    normalizedShorelineAmount: 1 - THREE.MathUtils.smoothstep(Math.abs(nearestSignedDistance), 0, shoreBandWidth),
+    waterSurfaceHeight: nearestRegion.waterSurfaceHeight,
+    terrainDepthBelowSurface,
+    immersionAmount,
+    movementSpeedMultiplier: immersionAmount > 0.1 ? 0.5 : 1,
+  };
+}
+
+export function oceanTerrainOffsetAt(x: number, z: number, baseHeight: number): number {
+  const state = oceanStateAt(x, z);
+  if (!state.isInOcean) return 0;
+
+  const inwardDistance = Math.max(0, -state.signedShoreDistance);
+  const shelfAmount = THREE.MathUtils.smoothstep(inwardDistance, 0, 46);
+  const deepAmount = THREE.MathUtils.smoothstep(inwardDistance, 46, state.shorelineRadius * 0.72);
+  const basinFloorNoise = basinNoiseAt(x, z) * 1.45;
+  const targetDepth = 0.25 + shelfAmount * 4.2 + deepAmount * (state.regionId === "lapis" ? 22 : 19);
+  const targetHeight = state.waterSurfaceHeight - targetDepth + basinFloorNoise * (0.25 + deepAmount * 0.75);
+  const carveAmount = THREE.MathUtils.smoothstep(inwardDistance, 8, 74);
+  const desiredHeight = THREE.MathUtils.lerp(baseHeight, targetHeight, carveAmount);
+  return Math.min(0, desiredHeight - baseHeight);
+}
+
+export function getOceanDebugSpawn(): { x: number; z: number; yaw: number } {
+  const region = OCEAN_REGIONS[0];
+  const angle = 0.16;
+  const shoreRadius = shorelineRadiusAtAngle(region, angle);
+  const x = region.center.x + Math.cos(angle) * (shoreRadius + 18);
+  const z = region.center.z + Math.sin(angle) * (shoreRadius + 18);
+  return {
+    x,
+    z,
+    yaw: Math.atan2(x - region.center.x, z - region.center.z),
+  };
+}
+
+export function getOceanDebugState(heightSampler: HeightSampler): OceanDebugState {
+  return {
+    oceanCount: OCEAN_REGIONS.length,
+    movementSpeedMultiplierInOcean: 0.5,
+    regions: OCEAN_REGIONS.map((region) => summarizeOceanRegion(region, heightSampler)),
+  };
+}
+
+export function createOceanSystem(): OceanSystem {
+  const group = new THREE.Group();
+  group.name = "spherical-planet-oceans";
+  const material = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  let centerChunkX = Number.NaN;
+  let centerChunkZ = Number.NaN;
+  let renderedChunks = 0;
+
+  const update = (centerX: number, centerZ: number): void => {
+    const normalized = normalizePlanetCoords(centerX, centerZ);
+    const nextChunkX = Math.floor(normalized.x / oceanChunkSize);
+    const nextChunkZ = Math.floor(normalized.z / oceanChunkSize);
+    if (nextChunkX === centerChunkX && nextChunkZ === centerChunkZ) return;
+
+    centerChunkX = nextChunkX;
+    centerChunkZ = nextChunkZ;
+    renderedChunks = rebuildOceanChunks(group, material, centerChunkX, centerChunkZ);
+  };
+
+  update(0, 0);
+
+  return {
+    group,
+    update,
+    getRenderState: () => ({
+      centerX: centerChunkX * oceanChunkSize,
+      centerZ: centerChunkZ * oceanChunkSize,
+      chunkSize: oceanChunkSize,
+      chunkCount: Math.pow(oceanChunkRadius * 2 + 1, 2),
+      renderedChunks,
+    }),
+  };
+}
+
+function rebuildOceanChunks(group: THREE.Group, material: THREE.MeshBasicMaterial, centerChunkX: number, centerChunkZ: number): number {
+  group.children.forEach((child) => {
+    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+    mesh.geometry.dispose();
+  });
+  group.clear();
+
+  let count = 0;
+  for (let zChunk = centerChunkZ - oceanChunkRadius; zChunk <= centerChunkZ + oceanChunkRadius; zChunk += 1) {
+    for (let xChunk = centerChunkX - oceanChunkRadius; xChunk <= centerChunkX + oceanChunkRadius; xChunk += 1) {
+      const xMin = xChunk * oceanChunkSize;
+      const zMin = zChunk * oceanChunkSize;
+      const geometry = makeOceanGeometry(xMin, xMin + oceanChunkSize, zMin, zMin + oceanChunkSize);
+      if (geometry.getAttribute("position").count === 0) {
+        geometry.dispose();
+        continue;
+      }
+
+      const chunk = new THREE.Mesh(geometry, material);
+      chunk.name = `spherical-ocean-chunk-${xChunk}-${zChunk}`;
+      chunk.renderOrder = 1;
+      group.add(chunk);
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: number): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry();
+  const positions: number[] = [];
+  const colours: number[] = [];
+  const indices: number[] = [];
+  const cellSizeX = (xMax - xMin) / oceanChunkSegments;
+  const cellSizeZ = (zMax - zMin) / oceanChunkSegments;
+
+  for (let zIndex = 0; zIndex < oceanChunkSegments; zIndex += 1) {
+    for (let xIndex = 0; xIndex < oceanChunkSegments; xIndex += 1) {
+      const x0 = xMin + xIndex * cellSizeX;
+      const x1 = x0 + cellSizeX;
+      const z0 = zMin + zIndex * cellSizeZ;
+      const z1 = z0 + cellSizeZ;
+      const centerX = (x0 + x1) * 0.5;
+      const centerZ = (z0 + z1) * 0.5;
+      const state = oceanStateAt(centerX, centerZ);
+      if (!state.isInOcean) continue;
+
+      const vertexIndex = positions.length / 3;
+      const y00 = waterSurfaceHeightAt(x0, z0);
+      const y10 = waterSurfaceHeightAt(x1, z0);
+      const y01 = waterSurfaceHeightAt(x0, z1);
+      const y11 = waterSurfaceHeightAt(x1, z1);
+      const p00 = pointOnPlanet(x0, z0, y00);
+      const p10 = pointOnPlanet(x1, z0, y10);
+      const p01 = pointOnPlanet(x0, z1, y01);
+      const p11 = pointOnPlanet(x1, z1, y11);
+      positions.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
+
+      const colour = oceanColourForState(state);
+      for (let i = 0; i < 4; i += 1) colours.push(colour.r, colour.g, colour.b);
+      indices.push(vertexIndex, vertexIndex + 2, vertexIndex + 1, vertexIndex + 1, vertexIndex + 2, vertexIndex + 3);
+    }
+  }
+
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colours, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function waterSurfaceHeightAt(x: number, z: number): number {
+  const state = oceanStateAt(x, z);
+  const blockX = Math.floor(x / 16);
+  const blockZ = Math.floor(z / 16);
+  const pixelRipple = Math.sin(blockX * 1.31 + blockZ * 0.73) * 0.055 + Math.cos(blockX * 0.47 - blockZ * 1.19) * 0.04;
+  return state.waterSurfaceHeight + pixelRipple * state.normalizedShorelineAmount;
+}
+
+function oceanColourForState(state: OceanState): THREE.Color {
+  const depthAmount = THREE.MathUtils.clamp((-state.signedShoreDistance - 30) / Math.max(1, state.shorelineRadius * 0.55), 0, 1);
+  const shoreAmount = state.normalizedShorelineAmount;
+  return new THREE.Color()
+    .copy(oceanColourMid)
+    .lerp(oceanColourDeep, depthAmount)
+    .lerp(oceanColourShore, shoreAmount * 0.72);
+}
+
+function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler): OceanDebugRegionState {
+  const sampleCount = 96;
+  let minRadius = Number.POSITIVE_INFINITY;
+  let maxRadius = 0;
+  let radiusSum = 0;
+  let circumference = 0;
+  let previous = shorePointAt(region, sampleCount - 1);
+
+  for (let i = 0; i < sampleCount; i += 1) {
+    const angle = (i / sampleCount) * Math.PI * 2;
+    const radius = shorelineRadiusAtAngle(region, angle);
+    const point = shorePointAt(region, i);
+    minRadius = Math.min(minRadius, radius);
+    maxRadius = Math.max(maxRadius, radius);
+    radiusSum += radius;
+    circumference += surfaceDistanceBetweenLocal(previous, point);
+    previous = point;
+  }
+
+  let maxDepth = 0;
+  let deepSample = { ...region.center };
+  for (let ring = 0; ring <= 4; ring += 1) {
+    const ringRadius = region.baseRadius * (ring / 4) * 0.72;
+    for (let i = 0; i < 32; i += 1) {
+      const angle = (i / 32) * Math.PI * 2 + ring * 0.19;
+      const point = normalizePlanetCoords(region.center.x + Math.cos(angle) * ringRadius, region.center.z + Math.sin(angle) * ringRadius);
+      const depth = region.waterSurfaceHeight - heightSampler(point.x, point.z);
+      if (depth > maxDepth) {
+        maxDepth = depth;
+        deepSample = point;
+      }
+    }
+  }
+
+  const shoreSample = shorePointAt(region, 0);
+  const outsideShoreSample = normalizePlanetCoords(region.center.x + maxRadius + 36, region.center.z);
+
+  return {
+    id: region.id,
+    name: region.name,
+    center: { ...region.center },
+    waterSurfaceHeight: region.waterSurfaceHeight,
+    baseRadius: region.baseRadius,
+    minShorelineRadius: minRadius,
+    maxShorelineRadius: maxRadius,
+    meanShorelineRadius: radiusSum / sampleCount,
+    estimatedShorelineCircumference: circumference,
+    maxTerrainDepthBelowSurface: maxDepth,
+    deepSample,
+    shoreSample,
+    outsideShoreSample,
+  };
+}
+
+function shorePointAt(region: OceanRegion, sampleIndex: number): LocalPlanetPoint {
+  const sampleCount = 96;
+  const angle = (sampleIndex / sampleCount) * Math.PI * 2;
+  const radius = shorelineRadiusAtAngle(region, angle);
+  return normalizePlanetCoords(region.center.x + Math.cos(angle) * radius, region.center.z + Math.sin(angle) * radius);
+}
+
+function shorelineRadiusAt(region: OceanRegion, x: number, z: number): number {
+  const delta = localDeltaFromCenter(region.center, x, z);
+  const angle = Math.atan2(delta.z, delta.x);
+  return shorelineRadiusAtAngle(region, angle);
+}
+
+function shorelineRadiusAtAngle(region: OceanRegion, angle: number): number {
+  const sectors = 40;
+  const sector = Math.floor(THREE.MathUtils.euclideanModulo(angle, Math.PI * 2) / (Math.PI * 2) * sectors);
+  const broad =
+    Math.sin(sector * 0.73 + region.seed) * 0.56 +
+    Math.cos(sector * 0.41 - region.seed * 1.7) * 0.34 +
+    Math.sin(sector * 1.17 + region.seed * 0.31) * 0.24;
+  const stepped = Math.round(broad * 3) / 3;
+  return region.baseRadius + stepped * 34 + Math.sin(sector * 2.11 + region.seed) * 9;
+}
+
+function basinNoiseAt(x: number, z: number): number {
+  const blockX = Math.floor(x / 28);
+  const blockZ = Math.floor(z / 28);
+  return (
+    Math.sin(blockX * 0.83 + blockZ * 0.19) * 0.52 +
+    Math.cos(blockZ * 0.71 - blockX * 0.37) * 0.36 +
+    Math.sin((blockX + blockZ) * 0.29) * 0.22
+  );
+}
+
+function localDeltaFromCenter(center: LocalPlanetPoint, x: number, z: number): LocalPlanetPoint {
+  const normalized = normalizePlanetCoords(x, z);
+  let dx = normalized.x - center.x;
+  if (dx > PLANET_CIRCUMFERENCE * 0.5) dx -= PLANET_CIRCUMFERENCE;
+  if (dx < -PLANET_CIRCUMFERENCE * 0.5) dx += PLANET_CIRCUMFERENCE;
+  return { x: dx, z: normalized.z - center.z };
+}
