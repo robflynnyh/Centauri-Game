@@ -64,7 +64,7 @@ export type OceanSystem = {
 
 const shoreBandWidth = 42;
 const oceanChunkSize = 96;
-const oceanChunkSegments = 12;
+const oceanChunkSegments = 32;
 const oceanChunkRadius = 5;
 const oceanColourDeep = new THREE.Color(0x1156b8);
 const oceanColourMid = new THREE.Color(0x1fa6d2);
@@ -249,31 +249,32 @@ function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: numbe
   const cellSizeX = (xMax - xMin) / oceanChunkSegments;
   const cellSizeZ = (zMax - zMin) / oceanChunkSegments;
 
+  for (let zIndex = 0; zIndex <= oceanChunkSegments; zIndex += 1) {
+    for (let xIndex = 0; xIndex <= oceanChunkSegments; xIndex += 1) {
+      const x = xMin + xIndex * cellSizeX;
+      const z = zMin + zIndex * cellSizeZ;
+      const state = oceanStateAt(x, z);
+      const point = pointOnPlanet(x, z, waterSurfaceHeightAt(x, z));
+      const colour = oceanColourForState(state, x, z);
+      positions.push(point.x, point.y, point.z);
+      colours.push(colour.r, colour.g, colour.b);
+    }
+  }
+
   for (let zIndex = 0; zIndex < oceanChunkSegments; zIndex += 1) {
     for (let xIndex = 0; xIndex < oceanChunkSegments; xIndex += 1) {
       const x0 = xMin + xIndex * cellSizeX;
       const x1 = x0 + cellSizeX;
       const z0 = zMin + zIndex * cellSizeZ;
       const z1 = z0 + cellSizeZ;
-      const centerX = (x0 + x1) * 0.5;
-      const centerZ = (z0 + z1) * 0.5;
-      const state = oceanStateAt(centerX, centerZ);
-      if (!state.isInOcean) continue;
+      if (!shouldRenderOceanCell(x0, x1, z0, z1)) continue;
 
-      const vertexIndex = positions.length / 3;
-      const y00 = waterSurfaceHeightAt(x0, z0);
-      const y10 = waterSurfaceHeightAt(x1, z0);
-      const y01 = waterSurfaceHeightAt(x0, z1);
-      const y11 = waterSurfaceHeightAt(x1, z1);
-      const p00 = pointOnPlanet(x0, z0, y00);
-      const p10 = pointOnPlanet(x1, z0, y10);
-      const p01 = pointOnPlanet(x0, z1, y01);
-      const p11 = pointOnPlanet(x1, z1, y11);
-      positions.push(p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p01.x, p01.y, p01.z, p11.x, p11.y, p11.z);
-
-      const colour = oceanColourForState(state);
-      for (let i = 0; i < 4; i += 1) colours.push(colour.r, colour.g, colour.b);
-      indices.push(vertexIndex, vertexIndex + 2, vertexIndex + 1, vertexIndex + 1, vertexIndex + 2, vertexIndex + 3);
+      const row = oceanChunkSegments + 1;
+      const topLeft = zIndex * row + xIndex;
+      const topRight = topLeft + 1;
+      const bottomLeft = topLeft + row;
+      const bottomRight = bottomLeft + 1;
+      indices.push(topLeft, bottomLeft, topRight, topRight, bottomLeft, bottomRight);
     }
   }
 
@@ -284,21 +285,37 @@ function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: numbe
   return geometry;
 }
 
-function waterSurfaceHeightAt(x: number, z: number): number {
-  const state = oceanStateAt(x, z);
-  const blockX = Math.floor(x / 16);
-  const blockZ = Math.floor(z / 16);
-  const pixelRipple = Math.sin(blockX * 1.31 + blockZ * 0.73) * 0.055 + Math.cos(blockX * 0.47 - blockZ * 1.19) * 0.04;
-  return state.waterSurfaceHeight + pixelRipple * state.normalizedShorelineAmount;
+function shouldRenderOceanCell(x0: number, x1: number, z0: number, z1: number): boolean {
+  const centerX = (x0 + x1) * 0.5;
+  const centerZ = (z0 + z1) * 0.5;
+  const samples = [
+    oceanStateAt(centerX, centerZ),
+    oceanStateAt(x0, z0),
+    oceanStateAt(x1, z0),
+    oceanStateAt(x0, z1),
+    oceanStateAt(x1, z1),
+  ];
+  const insideSamples = samples.filter((state) => state.isInOcean).length;
+  return insideSamples >= 2 || samples[0].signedShoreDistance < 2;
 }
 
-function oceanColourForState(state: OceanState): THREE.Color {
+function waterSurfaceHeightAt(x: number, z: number): number {
+  const state = oceanStateAt(x, z);
+  const shoreFade = 1 - THREE.MathUtils.smoothstep(Math.abs(state.signedShoreDistance), 0, 18);
+  const broadRipple = Math.sin(x * 0.065 + z * 0.031) * 0.028 + Math.cos(x * 0.042 - z * 0.057) * 0.021;
+  const fineRipple = Math.sin(x * 0.19 + z * 0.13) * Math.cos(x * 0.11 - z * 0.17) * 0.012;
+  return state.waterSurfaceHeight + (broadRipple + fineRipple) * (0.35 + shoreFade * 0.65);
+}
+
+function oceanColourForState(state: OceanState, x: number, z: number): THREE.Color {
   const depthAmount = THREE.MathUtils.clamp((-state.signedShoreDistance - 30) / Math.max(1, state.shorelineRadius * 0.55), 0, 1);
   const shoreAmount = state.normalizedShorelineAmount;
+  const shimmer = Math.sin(x * 0.047 + z * 0.081) * 0.5 + Math.cos(x * 0.073 - z * 0.039) * 0.5;
   return new THREE.Color()
     .copy(oceanColourMid)
     .lerp(oceanColourDeep, depthAmount)
-    .lerp(oceanColourShore, shoreAmount * 0.72);
+    .lerp(oceanColourShore, shoreAmount * 0.72)
+    .offsetHSL(0, 0, shimmer * 0.025);
 }
 
 function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler): OceanDebugRegionState {
