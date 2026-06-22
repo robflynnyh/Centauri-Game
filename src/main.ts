@@ -143,7 +143,7 @@ declare global {
       getSkyState: () => SkyDebugState;
       setSkyElapsed: (elapsed: number) => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
-      attemptMove: (x: number, z: number) => { x: number; z: number };
+      attemptMove: (x: number, z: number) => { x: number; y: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
       terrainSlopeAt: (x: number, z: number) => number;
       terrainSlipperinessAt: (x: number, z: number) => number;
@@ -176,6 +176,8 @@ const braking = 24;
 const gravity = 17.8;
 const jumpImpulse = 7.2;
 const mouseLookSensitivity = 0.0024;
+const maxGroundedStepDistance = 0.9;
+const maxGroundedStepRise = 0.82;
 const hudBadgeText = isDemo
   ? "PR demo mode"
   : enableTempleDebug
@@ -442,7 +444,7 @@ if (enableDebugTools) {
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
-      return { x: player.localPosition.x, z: player.localPosition.z };
+      return { x: player.localPosition.x, y: player.position.length() - PLANET_RADIUS, z: player.localPosition.z };
     },
     isBlockedAt: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
@@ -586,7 +588,40 @@ function updatePlayerWorldPosition(): void {
 }
 
 function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): void {
-  collisionWorld.resolveMove(position, movementWithTerrainSlip(position, movement));
+  const stepCount = Math.max(1, Math.ceil(movement.length() / maxGroundedStepDistance));
+  const step = movement.clone().multiplyScalar(1 / stepCount);
+  for (let i = 0; i < stepCount; i += 1) {
+    resolvePlayerMoveStep(position, movementWithTerrainSlip(position, step));
+  }
+}
+
+function resolvePlayerMoveStep(position: THREE.Vector3, movement: THREE.Vector3): void {
+  const candidate = position.clone();
+  candidate.x += movement.x;
+  normalizeLocalVector(candidate);
+  if (canMoveAcrossTerrainStep(position, candidate)) {
+    position.x = candidate.x;
+    position.z = candidate.z;
+  }
+
+  candidate.copy(position);
+  candidate.z += movement.z;
+  normalizeLocalVector(candidate);
+  if (canMoveAcrossTerrainStep(position, candidate)) {
+    position.x = candidate.x;
+    position.z = candidate.z;
+  }
+}
+
+function canMoveAcrossTerrainStep(from: THREE.Vector3, to: THREE.Vector3): boolean {
+  if (collisionWorld.isBlockedAt(to.x, to.z)) return false;
+  const rise = heightAt(to.x, to.z) - heightAt(from.x, from.z);
+  if (rise <= maxGroundedStepRise) return true;
+
+  const distance = Math.max(Math.hypot(to.x - from.x, to.z - from.z), 0.001);
+  const slope = rise / distance;
+  const slipperiness = Math.max(terrainSlipperinessAt(from.x, from.z), terrainSlipperinessAt(to.x, to.z));
+  return slope < 0.62 && slipperiness < 0.18;
 }
 
 function movementWithTerrainSlip(position: THREE.Vector3, movement: THREE.Vector3): THREE.Vector3 {
@@ -602,11 +637,11 @@ function movementWithTerrainSlip(position: THREE.Vector3, movement: THREE.Vector
   const uphillDirection = downhillVector.clone().multiplyScalar(-1);
   const uphillAmount = Math.max(0, adjusted.dot(uphillDirection));
   if (uphillAmount > 0) {
-    adjusted.add(downhillVector.clone().multiplyScalar(uphillAmount * slipperiness * 0.62));
+    adjusted.add(downhillVector.clone().multiplyScalar(uphillAmount * slipperiness * 0.82));
   }
 
   const uphillRatio = uphillAmount / movementLength;
-  const tractionLoss = movementLength * slipperiness * (0.04 + uphillRatio * 0.14);
+  const tractionLoss = movementLength * slipperiness * (0.06 + uphillRatio * 0.22);
   adjusted.add(downhillVector.multiplyScalar(tractionLoss));
   return adjusted;
 }

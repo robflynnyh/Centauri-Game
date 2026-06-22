@@ -197,6 +197,7 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
     });
     const steepSlipChecks = steepFaceStates.slice(0, 4).map((sample) => {
       debug.setPlayer(sample.x, sample.z);
+      const beforePlayer = debug.getPlayer();
       const beforeHeight = debug.terrainHeightAt(sample.x, sample.z);
       const uphillX = -sample.downhillX * 8;
       const uphillZ = -sample.downhillZ * 8;
@@ -204,10 +205,20 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
       const afterHeight = debug.terrainHeightAt(after.x, after.z);
       return {
         heightGain: afterHeight - beforeHeight,
+        playerYGain: after.y - beforePlayer.y,
         uphillTravel: -((after.x - sample.x) * sample.downhillX + (after.z - sample.z) * sample.downhillZ),
       };
     });
-    const heightSteps = sampleStates.slice(1).map((sample, index) => sample.actualHeight - sampleStates[index].actualHeight);
+    const pathSteps = sampleStates.slice(1).map((sample, index) => {
+      const previous = sampleStates[index];
+      const distance = Math.hypot(sample.x - previous.x, sample.z - previous.z);
+      const heightDelta = sample.actualHeight - previous.actualHeight;
+      return {
+        distance,
+        heightDelta,
+        slope: Math.abs(heightDelta) / Math.max(distance, 0.001),
+      };
+    });
     const pathLength = sampleStates.slice(1).reduce((length, sample, index) => {
       const previous = sampleStates[index];
       return length + Math.hypot(sample.x - previous.x, sample.z - previous.z);
@@ -234,15 +245,18 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
       peakAbovePathBase: mountain.peak.height > mountain.base.height + 52,
       pathHasEnoughSamples: sampleStates.length >= 10,
       pathIsClear: sampleStates.every((sample) => !sample.blocked),
-      pathIsNotSlippery: sampleStates.every((sample) => sample.slipperiness < 0.08),
+      pathIsSubtlySlippery: sampleStates.every((sample) => sample.slipperiness < 0.2),
+      pathSlipDoesNotMaskSteepSpikes: sampleStates.every((sample) => sample.slope < 0.55 || sample.slipperiness > 0.02),
       pathClimbsReliably: pathClimbChecks.every((check) => check.progressDistance > check.segmentDistance * 0.92),
       pathHeightsMatchTerrain: sampleStates.every((sample) => Math.abs(sample.actualHeight - sample.height) < 0.001),
       pathClimbsToPeak: sampleStates[sampleStates.length - 1].actualHeight > sampleStates[0].actualHeight + 52,
-      pathHeightIsContinuous: heightSteps.every((step) => step > -1.5 && step < 9.5),
+      pathHeightIsContinuous: pathSteps.every((step) => Math.abs(step.heightDelta) < 1.35 && step.slope < 0.56),
       pathIsBendy: pathLength > straightDistance * 1.18 && turns >= 3,
       generalSlopeQuerySeparatesTerrain: lowlandSlope < 0.44 && lowlandSlipperiness === 0 && steepFaceStates.every((sample) => sample.slope > lowlandSlope + 0.3),
-      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.35 && sample.slope > 0.44),
-      steepUphillAttemptsSlip: steepSlipChecks.length >= 3 && steepSlipChecks.every((check) => check.heightGain < 2.8 && check.uphillTravel < 2.2),
+      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.25 && sample.slope > 0.44),
+      steepUphillAttemptsSlip:
+        steepSlipChecks.length >= 3 &&
+        steepSlipChecks.every((check) => check.heightGain < 2.8 && check.playerYGain < 2.8 && (check.uphillTravel < 2.2 || check.heightGain < 0.8)),
       summitBiomeCleared: summitNature.nearestBiomePatchDistance > 120 && summitNature.generatedObstacles < 90,
     };
   });
@@ -254,7 +268,8 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
   expect(result.peakAbovePathBase).toBe(true);
   expect(result.pathHasEnoughSamples).toBe(true);
   expect(result.pathIsClear).toBe(true);
-  expect(result.pathIsNotSlippery).toBe(true);
+  expect(result.pathIsSubtlySlippery).toBe(true);
+  expect(result.pathSlipDoesNotMaskSteepSpikes).toBe(true);
   expect(result.pathClimbsReliably).toBe(true);
   expect(result.pathHeightsMatchTerrain).toBe(true);
   expect(result.pathClimbsToPeak).toBe(true);

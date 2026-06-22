@@ -139,11 +139,9 @@ export function terrainSlopeAt(x: number, z: number): number {
 
 export function terrainSlipperinessAt(x: number, z: number): number {
   const pathInfluence = massiveMountainPathInfluenceAt(x, z);
-  if (pathInfluence > 0.72) return 0;
-
-  const pathDamping = 1 - THREE.MathUtils.smoothstep(pathInfluence, 0.08, 0.72);
+  const pathDamping = THREE.MathUtils.lerp(1, 0.32, THREE.MathUtils.smoothstep(pathInfluence, 0.18, 0.9));
   const steepAmount = THREE.MathUtils.smoothstep(terrainSlopeAt(x, z), terrainSlipSlopeStart, terrainSlipSlopeFull);
-  return THREE.MathUtils.clamp(pathDamping * steepAmount, 0, 1);
+  return THREE.MathUtils.clamp(pathDamping * steepAmount * 0.72, 0, 1);
 }
 
 export function terrainDownhillDirectionAt(x: number, z: number): { x: number; z: number } {
@@ -198,8 +196,9 @@ export function getMassiveMountainDebugState(): MassiveMountainDebugState {
 
 function sampleMassiveMountainPath(): MassiveMountainPathSample[] {
   const samples: MassiveMountainPathSample[] = [];
-  for (let i = 0; i <= 12; i += 1) {
-    const progress = i / 12;
+  const sampleCount = 96;
+  for (let i = 0; i <= sampleCount; i += 1) {
+    const progress = i / sampleCount;
     const point = pointOnMassiveMountainPath(progress);
     samples.push({
       x: point.x,
@@ -231,6 +230,8 @@ function pointOnMassiveMountainPath(progress: number): { x: number; z: number } 
 function nearestMassiveMountainPathSample(x: number, z: number): { distance: number; progress: number } {
   let nearestDistance = Number.POSITIVE_INFINITY;
   let nearestProgress = 0;
+  let weightedProgress = 0;
+  let totalWeight = 0;
 
   for (let i = 0; i < massiveMountainPathWaypoints.length - 1; i += 1) {
     const start = massiveMountainPathWaypoints[i];
@@ -242,14 +243,18 @@ function nearestMassiveMountainPathSample(x: number, z: number): { distance: num
     const nearestX = start.x + segmentX * t;
     const nearestZ = start.z + segmentZ * t;
     const distance = Math.hypot(x - nearestX, z - nearestZ);
+    const progress = THREE.MathUtils.lerp(start.progress, end.progress, t);
+    const weight = 1 / Math.pow(Math.max(distance, 0.65), 4);
+    weightedProgress += progress * weight;
+    totalWeight += weight;
 
     if (distance < nearestDistance) {
       nearestDistance = distance;
-      nearestProgress = THREE.MathUtils.lerp(start.progress, end.progress, t);
+      nearestProgress = progress;
     }
   }
 
-  return { distance: nearestDistance, progress: nearestProgress };
+  return { distance: nearestDistance, progress: totalWeight > 0 ? weightedProgress / totalWeight : nearestProgress };
 }
 
 function massiveMountainRadialAt(x: number, z: number): number {
