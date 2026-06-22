@@ -21,7 +21,15 @@ import {
 import { createPixelRenderPipeline } from "./pixel-renderer";
 import { createSleepController, type SleepDebugState, type SleepUpdateInput } from "./sleep";
 import { createSkySystem, type SkyDebugState } from "./sky";
-import { createTerrainSystem, getMassiveMountainDebugState, heightAt, makeHorizonLandforms, massiveMountainReservedZones } from "./terrain";
+import {
+  createTerrainSystem,
+  getMassiveMountainDebugState,
+  heightAt,
+  makeHorizonLandforms,
+  massiveMountainDownhillDirectionAt,
+  massiveMountainReservedZones,
+  massiveMountainSlipperinessAt,
+} from "./terrain";
 import "./style.css";
 
 declare global {
@@ -125,6 +133,7 @@ declare global {
         normalMountainPeakHeight: number;
         mountainRise: number;
         pathSamples: { x: number; z: number; progress: number; width: number; height: number }[];
+        steepFaceSamples: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[];
         reservedZones: { x: number; z: number; radius: number }[];
       };
       getSleepState: () => SleepDebugState;
@@ -135,6 +144,7 @@ declare global {
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
+      mountainSlipperinessAt: (x: number, z: number) => number;
       terrainHeightAt: (x: number, z: number) => number;
     };
   }
@@ -315,7 +325,7 @@ const visionState = {
   nearestBiomePatchDistance: 0,
 };
 let isolationOverrideAmount: number | null = null;
-const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
+const prDemo = createPrDemoController(camera, heightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
 }, temple, mountainDebugState);
@@ -426,7 +436,7 @@ if (enableDebugTools) {
       sky.update(clock.elapsedTime, player.localPosition);
     },
     attemptMove: (x: number, z: number) => {
-      collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
+      resolvePlayerMove(player.localPosition, new THREE.Vector3(x, 0, z));
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
@@ -435,6 +445,10 @@ if (enableDebugTools) {
     isBlockedAt: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       return collisionWorld.isBlockedAt(normalized.x, normalized.z);
+    },
+    mountainSlipperinessAt: (x: number, z: number) => {
+      const normalized = normalizePlanetCoords(x, z);
+      return massiveMountainSlipperinessAt(normalized.x, normalized.z);
     },
     terrainHeightAt: heightAt,
   };
@@ -565,6 +579,30 @@ function updatePlayerWorldPosition(): void {
   player.position.copy(pointOnPlanet(player.localPosition.x, player.localPosition.z, playerSurfaceAltitude()));
 }
 
+function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): void {
+  collisionWorld.resolveMove(position, movementWithMassiveMountainSlip(position, movement));
+}
+
+function movementWithMassiveMountainSlip(position: THREE.Vector3, movement: THREE.Vector3): THREE.Vector3 {
+  const slipperiness = massiveMountainSlipperinessAt(position.x, position.z);
+  if (slipperiness <= 0) return movement;
+
+  const downhill = massiveMountainDownhillDirectionAt(position.x, position.z);
+  const downhillVector = new THREE.Vector3(downhill.x, 0, downhill.z);
+  if (downhillVector.lengthSq() <= 0.0001) return movement;
+
+  const adjusted = movement.clone();
+  const uphillDirection = downhillVector.clone().multiplyScalar(-1);
+  const uphillAmount = Math.max(0, adjusted.dot(uphillDirection));
+  if (uphillAmount > 0) {
+    adjusted.add(downhillVector.clone().multiplyScalar(uphillAmount * (0.86 + slipperiness * 0.42)));
+  }
+
+  const slipDistance = Math.max(movement.length(), 0.04) * slipperiness * 0.72;
+  adjusted.add(downhillVector.multiplyScalar(slipDistance));
+  return adjusted;
+}
+
 function restPlayerInPlace(delta: number, targetHeight: number): void {
   player.velocity.set(0, 0, 0);
   player.verticalVelocity = 0;
@@ -612,7 +650,7 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
   }
 
   const beforeLocal = { x: player.localPosition.x, z: player.localPosition.z };
-  collisionWorld.resolveMove(player.localPosition, player.velocity.clone().multiplyScalar(delta));
+  resolvePlayerMove(player.localPosition, player.velocity.clone().multiplyScalar(delta));
   const actualHorizontalSpeed = surfaceDistanceBetweenLocal(beforeLocal, player.localPosition) / Math.max(delta, 0.001);
   if (actualHorizontalSpeed < 0.02) {
     player.velocity.x = 0;

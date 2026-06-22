@@ -174,8 +174,37 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
     const sampleStates = mountain.pathSamples.map((sample) => ({
       ...sample,
       blocked: debug.isBlockedAt(sample.x, sample.z),
+      slipperiness: debug.mountainSlipperinessAt(sample.x, sample.z),
       actualHeight: debug.terrainHeightAt(sample.x, sample.z),
     }));
+    const steepFaceStates = mountain.steepFaceSamples.map((sample) => ({
+      ...sample,
+      blocked: debug.isBlockedAt(sample.x, sample.z),
+      slipperiness: debug.mountainSlipperinessAt(sample.x, sample.z),
+    }));
+    const pathClimbChecks = sampleStates.slice(1, 7).map((sample, index) => {
+      const start = sampleStates[index];
+      debug.setPlayer(start.x, start.z);
+      const before = debug.getPlayer();
+      const segmentDistance = Math.hypot(sample.x - start.x, sample.z - start.z);
+      const after = debug.attemptMove(sample.x - start.x, sample.z - start.z);
+      return {
+        progressDistance: Math.hypot(after.x - before.x, after.z - before.z),
+        segmentDistance,
+      };
+    });
+    const steepSlipChecks = steepFaceStates.slice(0, 4).map((sample) => {
+      debug.setPlayer(sample.x, sample.z);
+      const beforeHeight = debug.terrainHeightAt(sample.x, sample.z);
+      const uphillX = -sample.downhillX * 8;
+      const uphillZ = -sample.downhillZ * 8;
+      const after = debug.attemptMove(uphillX, uphillZ);
+      const afterHeight = debug.terrainHeightAt(after.x, after.z);
+      return {
+        heightGain: afterHeight - beforeHeight,
+        downhillTravel: (after.x - sample.x) * sample.downhillX + (after.z - sample.z) * sample.downhillZ,
+      };
+    });
     const heightSteps = sampleStates.slice(1).map((sample, index) => sample.actualHeight - sampleStates[index].actualHeight);
     const pathLength = sampleStates.slice(1).reduce((length, sample, index) => {
       const previous = sampleStates[index];
@@ -190,6 +219,8 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
       const turn = Math.abs((((bc - ab + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI);
       return turn > 0.35;
     }).length;
+    debug.setPlayer(mountain.center.x, mountain.center.z);
+    const summitNature = debug.getNatureState();
 
     return {
       playerStartsAtBase: Math.hypot(player.x - mountain.base.x, player.z - mountain.base.z) < 0.5,
@@ -199,10 +230,15 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
       peakAbovePathBase: mountain.peak.height > mountain.base.height + 52,
       pathHasEnoughSamples: sampleStates.length >= 10,
       pathIsClear: sampleStates.every((sample) => !sample.blocked),
+      pathIsNotSlippery: sampleStates.every((sample) => sample.slipperiness < 0.08),
+      pathClimbsReliably: pathClimbChecks.every((check) => check.progressDistance > check.segmentDistance * 0.92),
       pathHeightsMatchTerrain: sampleStates.every((sample) => Math.abs(sample.actualHeight - sample.height) < 0.001),
       pathClimbsToPeak: sampleStates[sampleStates.length - 1].actualHeight > sampleStates[0].actualHeight + 52,
       pathHeightIsContinuous: heightSteps.every((step) => step > -1.5 && step < 9.5),
       pathIsBendy: pathLength > straightDistance * 1.18 && turns >= 3,
+      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.45 && sample.slope > 0.34),
+      steepUphillAttemptsSlip: steepSlipChecks.length >= 3 && steepSlipChecks.every((check) => check.heightGain < 0.8 && check.downhillTravel > 0.2),
+      summitBiomeCleared: summitNature.nearestBiomePatchDistance > 120 && summitNature.generatedObstacles < 90,
     };
   });
 
@@ -213,10 +249,15 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
   expect(result.peakAbovePathBase).toBe(true);
   expect(result.pathHasEnoughSamples).toBe(true);
   expect(result.pathIsClear).toBe(true);
+  expect(result.pathIsNotSlippery).toBe(true);
+  expect(result.pathClimbsReliably).toBe(true);
   expect(result.pathHeightsMatchTerrain).toBe(true);
   expect(result.pathClimbsToPeak).toBe(true);
   expect(result.pathHeightIsContinuous).toBe(true);
   expect(result.pathIsBendy).toBe(true);
+  expect(result.steepFacesAreSlippery).toBe(true);
+  expect(result.steepUphillAttemptsSlip).toBe(true);
+  expect(result.summitBiomeCleared).toBe(true);
 });
 
 test("isolation debug state rises outside populated biome patches", async ({ page }) => {

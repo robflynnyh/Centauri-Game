@@ -16,6 +16,7 @@ export type MassiveMountainDebugState = {
   normalMountainPeakHeight: number;
   mountainRise: number;
   pathSamples: MassiveMountainPathSample[];
+  steepFaceSamples: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[];
   reservedZones: { x: number; z: number; radius: number }[];
 };
 
@@ -93,6 +94,8 @@ const massiveMountainRadiusZ = 154;
 const massiveMountainPeakRise = 68;
 const massiveMountainPathWidth = 8.4;
 const massiveMountainPathFalloff = 20;
+const massiveMountainSlipSlopeStart = 0.32;
+const massiveMountainSlipSlopeFull = 0.58;
 const massiveMountainPathWaypoints = [
   { x: massiveMountainCenter.x - 142, z: massiveMountainCenter.z + 82, progress: 0 },
   { x: massiveMountainCenter.x - 74, z: massiveMountainCenter.z + 62, progress: 0.14 },
@@ -109,6 +112,52 @@ export const massiveMountainReservedZones = [
   ...massiveMountainPathWaypoints.slice(0, -1).map((point) => ({ x: point.x, z: point.z, radius: massiveMountainPathWidth + 9 })),
   { x: massiveMountainCenter.x, z: massiveMountainCenter.z, radius: 26 },
 ];
+
+export function isInMassiveMountainFootprint(x: number, z: number, padding = 0): boolean {
+  return massiveMountainRadialAt(x, z) <= 1.08 + padding / Math.min(massiveMountainRadiusX, massiveMountainRadiusZ);
+}
+
+export function isOnMassiveMountainPath(x: number, z: number, padding = 0): boolean {
+  const normalized = normalizePlanetCoords(x, z);
+  return nearestMassiveMountainPathSample(normalized.x, normalized.z).distance <= massiveMountainPathWidth + padding;
+}
+
+export function massiveMountainPathInfluenceAt(x: number, z: number): number {
+  const normalized = normalizePlanetCoords(x, z);
+  const path = nearestMassiveMountainPathSample(normalized.x, normalized.z);
+  return 1 - THREE.MathUtils.smoothstep(path.distance, massiveMountainPathWidth, massiveMountainPathWidth + massiveMountainPathFalloff);
+}
+
+export function massiveMountainSlopeAt(x: number, z: number): number {
+  if (!isInMassiveMountainFootprint(x, z, 12)) return 0;
+
+  const sampleDistance = 3.2;
+  const east = Math.abs(heightAt(x + sampleDistance, z) - heightAt(x - sampleDistance, z)) / (sampleDistance * 2);
+  const north = Math.abs(heightAt(x, z + sampleDistance) - heightAt(x, z - sampleDistance)) / (sampleDistance * 2);
+  const diagonalA = Math.abs(heightAt(x + sampleDistance, z + sampleDistance) - heightAt(x - sampleDistance, z - sampleDistance)) / (sampleDistance * Math.SQRT2 * 2);
+  const diagonalB = Math.abs(heightAt(x + sampleDistance, z - sampleDistance) - heightAt(x - sampleDistance, z + sampleDistance)) / (sampleDistance * Math.SQRT2 * 2);
+  return Math.max(east, north, diagonalA, diagonalB);
+}
+
+export function massiveMountainSlipperinessAt(x: number, z: number): number {
+  const radial = massiveMountainRadialAt(x, z);
+  if (radial > 1.06 || radial < 0.18) return 0;
+
+  const pathInfluence = massiveMountainPathInfluenceAt(x, z);
+  const offPathAmount = 1 - THREE.MathUtils.smoothstep(pathInfluence, 0.08, 0.72);
+  const steepAmount = THREE.MathUtils.smoothstep(massiveMountainSlopeAt(x, z), massiveMountainSlipSlopeStart, massiveMountainSlipSlopeFull);
+  const shoulderFade = 1 - THREE.MathUtils.smoothstep(radial, 0.94, 1.08);
+  return THREE.MathUtils.clamp(offPathAmount * steepAmount * shoulderFade, 0, 1);
+}
+
+export function massiveMountainDownhillDirectionAt(x: number, z: number): { x: number; z: number } {
+  const sampleDistance = 3.2;
+  const gradientX = (heightAt(x + sampleDistance, z) - heightAt(x - sampleDistance, z)) / (sampleDistance * 2);
+  const gradientZ = (heightAt(x, z + sampleDistance) - heightAt(x, z - sampleDistance)) / (sampleDistance * 2);
+  const length = Math.hypot(gradientX, gradientZ);
+  if (length < 0.0001) return { x: 0, z: 0 };
+  return { x: -gradientX / length, z: -gradientZ / length };
+}
 
 export function massiveMountainHeightAt(x: number, z: number, baseHeight = baseTerrainHeightAt(x, z)): number {
   const normalized = normalizePlanetCoords(x, z);
@@ -146,6 +195,7 @@ export function getMassiveMountainDebugState(): MassiveMountainDebugState {
     normalMountainPeakHeight,
     mountainRise: peakHeight - baseTerrainHeightAt(massiveMountainCenter.x, massiveMountainCenter.z),
     pathSamples,
+    steepFaceSamples: sampleMassiveMountainSteepFaces(),
     reservedZones: massiveMountainReservedZones.map((zone) => ({ ...zone })),
   };
 }
@@ -204,6 +254,33 @@ function nearestMassiveMountainPathSample(x: number, z: number): { distance: num
   }
 
   return { distance: nearestDistance, progress: nearestProgress };
+}
+
+function massiveMountainRadialAt(x: number, z: number): number {
+  const normalized = normalizePlanetCoords(x, z);
+  const dx = normalized.x - massiveMountainCenter.x;
+  const dz = normalized.z - massiveMountainCenter.z;
+  return Math.sqrt(Math.pow(dx / massiveMountainRadiusX, 2) + Math.pow(dz / massiveMountainRadiusZ, 2));
+}
+
+function sampleMassiveMountainSteepFaces(): { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[] {
+  const candidates: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[] = [];
+  for (let zOffset = -116; zOffset <= 116; zOffset += 16) {
+    for (let xOffset = -140; xOffset <= 140; xOffset += 16) {
+      const x = massiveMountainCenter.x + xOffset;
+      const z = massiveMountainCenter.z + zOffset;
+      if (!isInMassiveMountainFootprint(x, z)) continue;
+      if (isOnMassiveMountainPath(x, z, 15)) continue;
+
+      const slope = massiveMountainSlopeAt(x, z);
+      const slipperiness = massiveMountainSlipperinessAt(x, z);
+      if (slipperiness < 0.45) continue;
+      const downhill = massiveMountainDownhillDirectionAt(x, z);
+      candidates.push({ x, z, height: heightAt(x, z), slope, slipperiness, downhillX: downhill.x, downhillZ: downhill.z });
+    }
+  }
+
+  return candidates.sort((a, b) => b.slope - a.slope).slice(0, 6);
 }
 
 function sampleNormalMountainPeakHeight(): number {
