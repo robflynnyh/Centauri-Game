@@ -158,4 +158,4 @@ Tightened scared water-creature movement so frogs choose obstacle-clear forward 
 
 Added one massive planet-local mountain as terrain height-field geometry, with a broad climbable summit, a switchback-like carved path, a `?debug=mountain` spawn, generated-nature clearance along the route, and PR demo/screenshot coverage focused on the new landmark.
 
-Followed review feedback by keeping normal generated biome clusters off the massive mountain footprint and adding slope-aware slipperiness so steep off-path faces slide the player downhill while the switchback path remains the reliable climb route.
+Followed review feedback by keeping normal generated biome clusters off the massive mountain footprint and adding general terrain-slope slipperiness, with the massive mountain path overriding that slip so it remains the reliable climb route.

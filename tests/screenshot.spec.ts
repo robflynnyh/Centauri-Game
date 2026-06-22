@@ -174,13 +174,15 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
     const sampleStates = mountain.pathSamples.map((sample) => ({
       ...sample,
       blocked: debug.isBlockedAt(sample.x, sample.z),
-      slipperiness: debug.mountainSlipperinessAt(sample.x, sample.z),
+      slope: debug.terrainSlopeAt(sample.x, sample.z),
+      slipperiness: debug.terrainSlipperinessAt(sample.x, sample.z),
       actualHeight: debug.terrainHeightAt(sample.x, sample.z),
     }));
     const steepFaceStates = mountain.steepFaceSamples.map((sample) => ({
       ...sample,
       blocked: debug.isBlockedAt(sample.x, sample.z),
-      slipperiness: debug.mountainSlipperinessAt(sample.x, sample.z),
+      slope: debug.terrainSlopeAt(sample.x, sample.z),
+      slipperiness: debug.terrainSlipperinessAt(sample.x, sample.z),
     }));
     const pathClimbChecks = sampleStates.slice(1, 7).map((sample, index) => {
       const start = sampleStates[index];
@@ -202,7 +204,7 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
       const afterHeight = debug.terrainHeightAt(after.x, after.z);
       return {
         heightGain: afterHeight - beforeHeight,
-        downhillTravel: (after.x - sample.x) * sample.downhillX + (after.z - sample.z) * sample.downhillZ,
+        uphillTravel: -((after.x - sample.x) * sample.downhillX + (after.z - sample.z) * sample.downhillZ),
       };
     });
     const heightSteps = sampleStates.slice(1).map((sample, index) => sample.actualHeight - sampleStates[index].actualHeight);
@@ -221,6 +223,8 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
     }).length;
     debug.setPlayer(mountain.center.x, mountain.center.z);
     const summitNature = debug.getNatureState();
+    const lowlandSlope = debug.terrainSlopeAt(0, 24);
+    const lowlandSlipperiness = debug.terrainSlipperinessAt(0, 24);
 
     return {
       playerStartsAtBase: Math.hypot(player.x - mountain.base.x, player.z - mountain.base.z) < 0.5,
@@ -236,8 +240,9 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
       pathClimbsToPeak: sampleStates[sampleStates.length - 1].actualHeight > sampleStates[0].actualHeight + 52,
       pathHeightIsContinuous: heightSteps.every((step) => step > -1.5 && step < 9.5),
       pathIsBendy: pathLength > straightDistance * 1.18 && turns >= 3,
-      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.45 && sample.slope > 0.34),
-      steepUphillAttemptsSlip: steepSlipChecks.length >= 3 && steepSlipChecks.every((check) => check.heightGain < 0.8 && check.downhillTravel > 0.2),
+      generalSlopeQuerySeparatesTerrain: lowlandSlope < 0.44 && lowlandSlipperiness === 0 && steepFaceStates.every((sample) => sample.slope > lowlandSlope + 0.3),
+      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.35 && sample.slope > 0.44),
+      steepUphillAttemptsSlip: steepSlipChecks.length >= 3 && steepSlipChecks.every((check) => check.heightGain < 2.8 && check.uphillTravel < 2.2),
       summitBiomeCleared: summitNature.nearestBiomePatchDistance > 120 && summitNature.generatedObstacles < 90,
     };
   });
@@ -255,6 +260,7 @@ test("starts at one massive mountain with a clear bendy summit path", async ({ p
   expect(result.pathClimbsToPeak).toBe(true);
   expect(result.pathHeightIsContinuous).toBe(true);
   expect(result.pathIsBendy).toBe(true);
+  expect(result.generalSlopeQuerySeparatesTerrain).toBe(true);
   expect(result.steepFacesAreSlippery).toBe(true);
   expect(result.steepUphillAttemptsSlip).toBe(true);
   expect(result.summitBiomeCleared).toBe(true);

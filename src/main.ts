@@ -26,9 +26,10 @@ import {
   getMassiveMountainDebugState,
   heightAt,
   makeHorizonLandforms,
-  massiveMountainDownhillDirectionAt,
   massiveMountainReservedZones,
-  massiveMountainSlipperinessAt,
+  terrainDownhillDirectionAt,
+  terrainSlipperinessAt,
+  terrainSlopeAt,
 } from "./terrain";
 import "./style.css";
 
@@ -144,7 +145,8 @@ declare global {
       setPlayer: (x: number, z: number) => void;
       attemptMove: (x: number, z: number) => { x: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
-      mountainSlipperinessAt: (x: number, z: number) => number;
+      terrainSlopeAt: (x: number, z: number) => number;
+      terrainSlipperinessAt: (x: number, z: number) => number;
       terrainHeightAt: (x: number, z: number) => number;
     };
   }
@@ -446,9 +448,13 @@ if (enableDebugTools) {
       const normalized = normalizePlanetCoords(x, z);
       return collisionWorld.isBlockedAt(normalized.x, normalized.z);
     },
-    mountainSlipperinessAt: (x: number, z: number) => {
+    terrainSlopeAt: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
-      return massiveMountainSlipperinessAt(normalized.x, normalized.z);
+      return terrainSlopeAt(normalized.x, normalized.z);
+    },
+    terrainSlipperinessAt: (x: number, z: number) => {
+      const normalized = normalizePlanetCoords(x, z);
+      return terrainSlipperinessAt(normalized.x, normalized.z);
     },
     terrainHeightAt: heightAt,
   };
@@ -580,14 +586,15 @@ function updatePlayerWorldPosition(): void {
 }
 
 function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): void {
-  collisionWorld.resolveMove(position, movementWithMassiveMountainSlip(position, movement));
+  collisionWorld.resolveMove(position, movementWithTerrainSlip(position, movement));
 }
 
-function movementWithMassiveMountainSlip(position: THREE.Vector3, movement: THREE.Vector3): THREE.Vector3 {
-  const slipperiness = massiveMountainSlipperinessAt(position.x, position.z);
-  if (slipperiness <= 0) return movement;
+function movementWithTerrainSlip(position: THREE.Vector3, movement: THREE.Vector3): THREE.Vector3 {
+  const slipperiness = terrainSlipperinessAt(position.x, position.z);
+  const movementLength = movement.length();
+  if (slipperiness <= 0 || movementLength < 0.001) return movement;
 
-  const downhill = massiveMountainDownhillDirectionAt(position.x, position.z);
+  const downhill = terrainDownhillDirectionAt(position.x, position.z);
   const downhillVector = new THREE.Vector3(downhill.x, 0, downhill.z);
   if (downhillVector.lengthSq() <= 0.0001) return movement;
 
@@ -595,11 +602,12 @@ function movementWithMassiveMountainSlip(position: THREE.Vector3, movement: THRE
   const uphillDirection = downhillVector.clone().multiplyScalar(-1);
   const uphillAmount = Math.max(0, adjusted.dot(uphillDirection));
   if (uphillAmount > 0) {
-    adjusted.add(downhillVector.clone().multiplyScalar(uphillAmount * (0.86 + slipperiness * 0.42)));
+    adjusted.add(downhillVector.clone().multiplyScalar(uphillAmount * slipperiness * 0.62));
   }
 
-  const slipDistance = Math.max(movement.length(), 0.04) * slipperiness * 0.72;
-  adjusted.add(downhillVector.multiplyScalar(slipDistance));
+  const uphillRatio = uphillAmount / movementLength;
+  const tractionLoss = movementLength * slipperiness * (0.04 + uphillRatio * 0.14);
+  adjusted.add(downhillVector.multiplyScalar(tractionLoss));
   return adjusted;
 }
 

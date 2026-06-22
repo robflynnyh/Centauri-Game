@@ -94,8 +94,8 @@ const massiveMountainRadiusZ = 154;
 const massiveMountainPeakRise = 68;
 const massiveMountainPathWidth = 8.4;
 const massiveMountainPathFalloff = 20;
-const massiveMountainSlipSlopeStart = 0.32;
-const massiveMountainSlipSlopeFull = 0.58;
+const terrainSlipSlopeStart = 0.44;
+const terrainSlipSlopeFull = 0.92;
 const massiveMountainPathWaypoints = [
   { x: massiveMountainCenter.x - 142, z: massiveMountainCenter.z + 82, progress: 0 },
   { x: massiveMountainCenter.x - 74, z: massiveMountainCenter.z + 62, progress: 0.14 },
@@ -128,9 +128,7 @@ export function massiveMountainPathInfluenceAt(x: number, z: number): number {
   return 1 - THREE.MathUtils.smoothstep(path.distance, massiveMountainPathWidth, massiveMountainPathWidth + massiveMountainPathFalloff);
 }
 
-export function massiveMountainSlopeAt(x: number, z: number): number {
-  if (!isInMassiveMountainFootprint(x, z, 12)) return 0;
-
+export function terrainSlopeAt(x: number, z: number): number {
   const sampleDistance = 3.2;
   const east = Math.abs(heightAt(x + sampleDistance, z) - heightAt(x - sampleDistance, z)) / (sampleDistance * 2);
   const north = Math.abs(heightAt(x, z + sampleDistance) - heightAt(x, z - sampleDistance)) / (sampleDistance * 2);
@@ -139,18 +137,16 @@ export function massiveMountainSlopeAt(x: number, z: number): number {
   return Math.max(east, north, diagonalA, diagonalB);
 }
 
-export function massiveMountainSlipperinessAt(x: number, z: number): number {
-  const radial = massiveMountainRadialAt(x, z);
-  if (radial > 1.06 || radial < 0.18) return 0;
-
+export function terrainSlipperinessAt(x: number, z: number): number {
   const pathInfluence = massiveMountainPathInfluenceAt(x, z);
-  const offPathAmount = 1 - THREE.MathUtils.smoothstep(pathInfluence, 0.08, 0.72);
-  const steepAmount = THREE.MathUtils.smoothstep(massiveMountainSlopeAt(x, z), massiveMountainSlipSlopeStart, massiveMountainSlipSlopeFull);
-  const shoulderFade = 1 - THREE.MathUtils.smoothstep(radial, 0.94, 1.08);
-  return THREE.MathUtils.clamp(offPathAmount * steepAmount * shoulderFade, 0, 1);
+  if (pathInfluence > 0.72) return 0;
+
+  const pathDamping = 1 - THREE.MathUtils.smoothstep(pathInfluence, 0.08, 0.72);
+  const steepAmount = THREE.MathUtils.smoothstep(terrainSlopeAt(x, z), terrainSlipSlopeStart, terrainSlipSlopeFull);
+  return THREE.MathUtils.clamp(pathDamping * steepAmount, 0, 1);
 }
 
-export function massiveMountainDownhillDirectionAt(x: number, z: number): { x: number; z: number } {
+export function terrainDownhillDirectionAt(x: number, z: number): { x: number; z: number } {
   const sampleDistance = 3.2;
   const gradientX = (heightAt(x + sampleDistance, z) - heightAt(x - sampleDistance, z)) / (sampleDistance * 2);
   const gradientZ = (heightAt(x, z + sampleDistance) - heightAt(x, z - sampleDistance)) / (sampleDistance * 2);
@@ -272,10 +268,10 @@ function sampleMassiveMountainSteepFaces(): { x: number; z: number; height: numb
       if (!isInMassiveMountainFootprint(x, z)) continue;
       if (isOnMassiveMountainPath(x, z, 15)) continue;
 
-      const slope = massiveMountainSlopeAt(x, z);
-      const slipperiness = massiveMountainSlipperinessAt(x, z);
-      if (slipperiness < 0.45) continue;
-      const downhill = massiveMountainDownhillDirectionAt(x, z);
+      const slope = terrainSlopeAt(x, z);
+      const slipperiness = terrainSlipperinessAt(x, z);
+      if (slipperiness < 0.35) continue;
+      const downhill = terrainDownhillDirectionAt(x, z);
       candidates.push({ x, z, height: heightAt(x, z), slope, slipperiness, downhillX: downhill.x, downhillZ: downhill.z });
     }
   }
