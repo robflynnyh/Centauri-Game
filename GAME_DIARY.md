@@ -12,6 +12,8 @@ Added a large simple camera-anchored sun disc that follows the computed daylight
 
 Reworked the visible sun into the sky shader only so the PR preview reads as one background sky light instead of a foreground disc layered over the mountains.
 
+Retuned the shader sun after visual feedback with a larger creamier disc and a tighter, less dominant halo.
+
 ## 2026-06-20
 
 Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.

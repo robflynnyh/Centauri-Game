@@ -338,14 +338,14 @@ function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color |
 
         float horizonGlow = (1.0 - smoothstep(0.04, 0.28, abs(upDot))) * twilightAmount;
         sky = mix(sky, vec3(1.0, 0.52, 0.82), horizonGlow * 0.22);
-        sky += vec3(1.0, 0.76, 0.42) * pow(sunDot, 10.0) * (0.18 + dayAmount * 0.28);
+        sky += vec3(1.0, 0.82, 0.58) * pow(sunDot, 16.0) * (0.08 + dayAmount * 0.14);
         float sunAboveHorizon = smoothstep(0.1, 0.48, dayAmount);
-        float sunHalo = smoothstep(0.936, 0.982, sunDot) * sunAboveHorizon;
-        float sunDisc = smoothstep(0.976, 0.992, sunDot) * sunAboveHorizon;
-        vec3 sunHaloColour = mix(vec3(1.0, 0.52, 0.22), vec3(0.42, 1.0, 0.86), templeInfluence * 0.22);
-        vec3 sunDiscColour = mix(vec3(1.0, 0.86, 0.36), vec3(1.0, 1.0, 0.62), templeInfluence * 0.18);
-        sky = mix(sky, sunHaloColour, sunHalo * 0.34);
-        sky = mix(sky, sunDiscColour, sunDisc * 0.86);
+        float sunHalo = smoothstep(0.858, 0.902, sunDot) * sunAboveHorizon;
+        float sunDisc = smoothstep(0.895, 0.926, sunDot) * sunAboveHorizon;
+        vec3 sunHaloColour = mix(vec3(1.0, 0.64, 0.38), vec3(0.56, 1.0, 0.9), templeInfluence * 0.2);
+        vec3 sunDiscColour = mix(vec3(1.0, 0.91, 0.68), vec3(1.0, 0.98, 0.82), templeInfluence * 0.16);
+        sky = mix(sky, sunHaloColour, sunHalo * 0.12);
+        sky = mix(sky, sunDiscColour, sunDisc * 0.92);
         sky += vec3(0.42, 1.0, 0.88) * templeInfluence * (0.08 + horizonGlow * 0.16);
 
         float grain = fract(sin(dot(direction.xy + direction.zz, vec2(43.31, 19.17))) * 14758.5453);

@@ -8,10 +8,13 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?demo=pr");
+  await page.goto("/?demo=pr&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.waitForTimeout(9_700);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getSkyState();
+    return Boolean(state && state.dayAmount > 0.54 && state.sunVisualVisible && (state.sunVisualOpacity ?? 0) > 0.4);
+  });
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
