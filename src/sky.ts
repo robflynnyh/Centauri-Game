@@ -56,6 +56,14 @@ export function createSkySystem(
   const templeMiddleColour = new THREE.Color(0x5effd2);
   const templeUpperColour = new THREE.Color(0xba72ff);
   const templeZenithColour = new THREE.Color(0x321066);
+  const locationDayBackgroundAccent = new THREE.Color(0x67ffc1);
+  const locationNightBackgroundAccent = new THREE.Color(0x2a2464);
+  const dayFogLocationAccent = new THREE.Color(0x9bffd5);
+  const nightFogLocationAccent = new THREE.Color(0x5c2b7b);
+  const locationDayBackground = new THREE.Color();
+  const locationNightBackground = new THREE.Color();
+  const dayFog = new THREE.Color();
+  const nightFog = new THREE.Color();
   const worldFog = new THREE.FogExp2(activeFogColour.getHex(), 0.02);
   scene.background = dayBackgroundColour.clone();
   scene.fog = worldFog;
@@ -129,18 +137,18 @@ export function createSkySystem(
       phaseSkyUniform(skyUniforms.dayUpperColour.value, templeUpperColour, phaseAmount);
       phaseSkyUniform(skyUniforms.dayZenithColour.value, templeZenithColour, phaseAmount);
 
-      const locationDayBackground = dayBackgroundColour.clone().lerp(new THREE.Color(0x67ffc1), locationState.horizonTint * 0.14);
-      const locationNightBackground = nightBackgroundColour.clone().lerp(new THREE.Color(0x2a2464), locationState.regionB * 0.22);
+      locationDayBackground.copy(dayBackgroundColour).lerp(locationDayBackgroundAccent, locationState.horizonTint * 0.14);
+      locationNightBackground.copy(nightBackgroundColour).lerp(locationNightBackgroundAccent, locationState.regionB * 0.22);
       (scene.background as THREE.Color).copy(locationNightBackground).lerp(locationDayBackground, dayAmount);
       (scene.background as THREE.Color).lerp(templeBackgroundColour, phaseAmount * 0.38);
       const fogPulse = Math.sin(elapsed * 0.16) * 0.5 + 0.5;
-      const dayFog = dayFogColour
-        .clone()
-        .lerp(new THREE.Color(0x9bffd5), locationState.horizonTint * 0.22)
+      dayFog
+        .copy(dayFogColour)
+        .lerp(dayFogLocationAccent, locationState.horizonTint * 0.22)
         .lerp(dayFogAccentColour, fogPulse * 0.32);
-      const nightFog = nightFogColour
-        .clone()
-        .lerp(new THREE.Color(0x5c2b7b), locationState.regionA * 0.2)
+      nightFog
+        .copy(nightFogColour)
+        .lerp(nightFogLocationAccent, locationState.regionA * 0.2)
         .lerp(nightFogAccentColour, fogPulse * 0.42);
       worldFog.color.copy(nightFog).lerp(dayFog, dayAmount);
       worldFog.color.lerp(templeFogColour, phaseAmount * 0.46);
@@ -174,21 +182,21 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
   const frame = planetFrameAt(normalized.x, normalized.z);
   const spunFrame = planetFrameAt(normalized.x + planetSpinPhase * PLANET_RADIUS, normalized.z);
   const stableSunDirection = getSunDirection();
-  const sunDirection = apparentSkyDirection(stableSunDirection, frame, spunFrame);
+  const sunDirection = apparentSkyDirection(stableSunDirection, frame, spunFrame, skyLocationSunDirection);
   const sunState = getLocationDayState(spunFrame, stableSunDirection);
-  const antiSunDirection = sunDirection.clone().multiplyScalar(-1);
+  const antiSunDirection = skyLocationAntiSunDirection.copy(sunDirection).multiplyScalar(-1);
   const regionA = Math.sin(longitude * 1.35 + latitude * 0.9) * 0.5 + 0.5;
   const regionB = Math.sin(longitude * 0.7 - latitude * 1.6 + Math.cos(longitude * 1.1)) * 0.5 + 0.5;
   const horizonTint = Math.cos(latitude * 2.2 - longitude * 0.45) * 0.5 + 0.5;
-  const firstCelestialDirection = apparentSkyDirection(celestialBodies[0].direction, frame, spunFrame);
+  const firstCelestialDirection = apparentSkyDirection(celestialBodies[0].direction, frame, spunFrame, skyLocationCelestialDirection);
   const celestialAzimuth = localAzimuth(firstCelestialDirection, frame);
   const celestialAltitude = firstCelestialDirection.dot(frame.up);
-  const apparentRingDirection = apparentSkyDirection(ringDirection, frame, spunFrame);
+  const apparentRingDirection = apparentSkyDirection(ringDirection, frame, spunFrame, skyLocationRingDirection);
   const ringAltitude = apparentRingDirection.dot(frame.up);
   const meteorRadiantAltitude = antiSunDirection.dot(frame.up);
 
-  const dayHorizon = new THREE.Color(0xff9fd0).lerp(new THREE.Color(0xffc67a), horizonTint * 0.34);
-  const nightHorizon = new THREE.Color(0x7d55b4).lerp(new THREE.Color(0x4bc4ce), regionB * 0.26);
+  const dayHorizonHex = skyColourScratchA.set(0xff9fd0).lerp(skyPaletteDayHorizonAccent, horizonTint * 0.34).getHex();
+  const nightHorizonHex = skyColourScratchB.set(0x7d55b4).lerp(skyPaletteNightHorizonAccent, regionB * 0.26).getHex();
 
   return {
     longitude,
@@ -213,8 +221,8 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
     ringSpinOffset: THREE.MathUtils.lerp(-0.55, 0.55, regionB),
     meteorYaw: localAzimuth(antiSunDirection, frame),
     meteorRadiantAltitude,
-    dayHorizonHex: dayHorizon.getHex(),
-    nightHorizonHex: nightHorizon.getHex(),
+    dayHorizonHex,
+    nightHorizonHex,
     frame,
     spunFrame,
     sunDirection,
@@ -241,6 +249,34 @@ const fullTurn = Math.PI * 2;
 const spinPhaseOffset = 0.18;
 const stableSunLongitude = spinPhaseOffset * fullTurn * 2;
 const stableSunLatitude = 0.1;
+const stableSunDirectionVector = stableDirection(stableSunLongitude, stableSunLatitude);
+const skyLocationSunDirection = new THREE.Vector3();
+const skyLocationAntiSunDirection = new THREE.Vector3();
+const skyLocationCelestialDirection = new THREE.Vector3();
+const skyLocationRingDirection = new THREE.Vector3();
+const skyColourScratchA = new THREE.Color();
+const skyColourScratchB = new THREE.Color();
+const skyPaletteDayHorizonAccent = new THREE.Color(0xffc67a);
+const skyPaletteDayMiddleAccent = new THREE.Color(0x90ffca);
+const skyPaletteDayUpperAccent = new THREE.Color(0x8f75ff);
+const skyPaletteDayZenithAccent = new THREE.Color(0x4fd0ff);
+const skyPaletteNightHorizonAccent = new THREE.Color(0x4bc4ce);
+const skyPaletteNightMiddleAccent = new THREE.Color(0x572e88);
+const skyPaletteNightUpperAccent = new THREE.Color(0x203c72);
+const skyPaletteNightZenithAccent = new THREE.Color(0x231247);
+const apparentSkySpunBasis = new THREE.Matrix4();
+const apparentSkyFrameBasis = new THREE.Matrix4();
+const apparentSkyQuaternionScratch = new THREE.Quaternion();
+const skyForwardDirection = new THREE.Vector3(0, 0, 1);
+const celestialApparentDirection = new THREE.Vector3();
+const ringApparentDirection = new THREE.Vector3();
+const meteorStartScratch = new THREE.Vector3();
+const meteorEndScratch = new THREE.Vector3();
+const meteorBaseScratch = new THREE.Vector3();
+const meteorTravelScratch = new THREE.Vector3();
+const meteorWorldScratch = new THREE.Vector3();
+const meteorScreenCurrentScratch = new THREE.Vector3();
+const meteorScreenAheadScratch = new THREE.Vector3();
 
 export function getPlanetSpinPhase(elapsed: number, isDemo: boolean): number {
   const cycleLength = isDemo ? 18 : 96;
@@ -252,33 +288,38 @@ export function getSunFacingLongitude(elapsed: number, isDemo: boolean): number 
 }
 
 function getSunDirection(): THREE.Vector3 {
-  return stableDirection(stableSunLongitude, stableSunLatitude);
+  return stableSunDirectionVector;
 }
 
-function apparentSkyDirection(direction: THREE.Vector3, frame: PlanetFrameSnapshot, spunFrame: PlanetFrameSnapshot): THREE.Vector3 {
-  return frame.east
-    .clone()
+function apparentSkyDirection(
+  direction: THREE.Vector3,
+  frame: PlanetFrameSnapshot,
+  spunFrame: PlanetFrameSnapshot,
+  target = new THREE.Vector3()
+): THREE.Vector3 {
+  return target
+    .copy(frame.east)
     .multiplyScalar(direction.dot(spunFrame.east))
-    .add(frame.up.clone().multiplyScalar(direction.dot(spunFrame.up)))
-    .add(frame.localZ.clone().multiplyScalar(direction.dot(spunFrame.localZ)))
+    .addScaledVector(frame.up, direction.dot(spunFrame.up))
+    .addScaledVector(frame.localZ, direction.dot(spunFrame.localZ))
     .normalize();
 }
 
 function apparentSkyQuaternion(state: SkyLocationState): THREE.Quaternion {
-  const spunBasis = new THREE.Matrix4().makeBasis(state.spunFrame.east, state.spunFrame.up, state.spunFrame.localZ);
-  const frameBasis = new THREE.Matrix4().makeBasis(state.frame.east, state.frame.up, state.frame.localZ);
-  return new THREE.Quaternion().setFromRotationMatrix(frameBasis.multiply(spunBasis.invert()));
+  apparentSkySpunBasis.makeBasis(state.spunFrame.east, state.spunFrame.up, state.spunFrame.localZ);
+  apparentSkyFrameBasis.makeBasis(state.frame.east, state.frame.up, state.frame.localZ);
+  return apparentSkyQuaternionScratch.setFromRotationMatrix(apparentSkyFrameBasis.multiply(apparentSkySpunBasis.invert()));
 }
 
 function updateSkyPalette(skyUniforms: Record<string, { value: number | THREE.Color | THREE.Vector3 }>, state: SkyDebugState): void {
-  ((skyUniforms.dayHorizonColour.value as THREE.Color)).set(0xff9fd0).lerp(new THREE.Color(0xffc67a), state.horizonTint * 0.34);
-  ((skyUniforms.dayMiddleColour.value as THREE.Color)).set(0x78d2ff).lerp(new THREE.Color(0x90ffca), state.regionA * 0.2);
-  ((skyUniforms.dayUpperColour.value as THREE.Color)).set(0x6393ff).lerp(new THREE.Color(0x8f75ff), state.regionB * 0.16);
-  ((skyUniforms.dayZenithColour.value as THREE.Color)).set(0x705ed8).lerp(new THREE.Color(0x4fd0ff), state.regionA * 0.14);
-  ((skyUniforms.nightHorizonColour.value as THREE.Color)).set(0x7d55b4).lerp(new THREE.Color(0x4bc4ce), state.regionB * 0.26);
-  ((skyUniforms.nightMiddleColour.value as THREE.Color)).set(0x2d3f9b).lerp(new THREE.Color(0x572e88), state.horizonTint * 0.18);
-  ((skyUniforms.nightUpperColour.value as THREE.Color)).set(0x1d236f).lerp(new THREE.Color(0x203c72), state.regionA * 0.16);
-  ((skyUniforms.nightZenithColour.value as THREE.Color)).set(0x120d35).lerp(new THREE.Color(0x231247), state.regionB * 0.2);
+  (skyUniforms.dayHorizonColour.value as THREE.Color).set(0xff9fd0).lerp(skyPaletteDayHorizonAccent, state.horizonTint * 0.34);
+  (skyUniforms.dayMiddleColour.value as THREE.Color).set(0x78d2ff).lerp(skyPaletteDayMiddleAccent, state.regionA * 0.2);
+  (skyUniforms.dayUpperColour.value as THREE.Color).set(0x6393ff).lerp(skyPaletteDayUpperAccent, state.regionB * 0.16);
+  (skyUniforms.dayZenithColour.value as THREE.Color).set(0x705ed8).lerp(skyPaletteDayZenithAccent, state.regionA * 0.14);
+  (skyUniforms.nightHorizonColour.value as THREE.Color).set(0x7d55b4).lerp(skyPaletteNightHorizonAccent, state.regionB * 0.26);
+  (skyUniforms.nightMiddleColour.value as THREE.Color).set(0x2d3f9b).lerp(skyPaletteNightMiddleAccent, state.horizonTint * 0.18);
+  (skyUniforms.nightUpperColour.value as THREE.Color).set(0x1d236f).lerp(skyPaletteNightUpperAccent, state.regionA * 0.16);
+  (skyUniforms.nightZenithColour.value as THREE.Color).set(0x120d35).lerp(skyPaletteNightZenithAccent, state.regionB * 0.2);
 }
 
 function makeSkyDome(skyUniforms: Record<string, { value: number | THREE.Color | THREE.Vector3 }>): THREE.Mesh {
@@ -446,7 +487,7 @@ function updateCelestialBody(
   state: SkyLocationState,
   elapsed: number
 ): void {
-  const apparentDirection = apparentSkyDirection(body.direction, state.frame, state.spunFrame);
+  const apparentDirection = apparentSkyDirection(body.direction, state.frame, state.spunFrame, celestialApparentDirection);
   const altitudeFade = THREE.MathUtils.smoothstep(apparentDirection.dot(state.frame.up), -0.2, 0.18);
   const prominence = 0.9 + (Math.sin(state.longitude * 1.7 + state.latitude * 1.1 + index * 2.13) * 0.5 + 0.5) * 0.22;
   child.position.copy(apparentDirection).multiplyScalar(skyShellDistance + (index % 3) * 4);
@@ -457,9 +498,9 @@ function updateCelestialBody(
 }
 
 function updateSkyRing(skyRing: THREE.Mesh, state: SkyLocationState, elapsed: number): void {
-  const apparentRingDirection = apparentSkyDirection(ringDirection, state.frame, state.spunFrame);
+  const apparentRingDirection = apparentSkyDirection(ringDirection, state.frame, state.spunFrame, ringApparentDirection);
   skyRing.position.copy(apparentRingDirection).multiplyScalar(150);
-  skyRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), apparentRingDirection);
+  skyRing.quaternion.setFromUnitVectors(skyForwardDirection, apparentRingDirection);
   skyRing.rotateZ(elapsed * 0.035 + state.ringSpinOffset);
   skyRing.visible = apparentRingDirection.dot(state.frame.up) > -0.16;
 }
@@ -555,14 +596,14 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
         const activeAmount = phase <= duration ? 1 : 0;
         const progress = THREE.MathUtils.clamp(phase / duration, 0, 1);
         const easedProgress = THREE.MathUtils.smoothstep(progress, 0, 1);
-        const { start, end } = meteorPathVectors(path, state);
-        const radiantAltitude = start.clone().normalize().dot(state.frame.up);
+        setMeteorPathVectors(path, state, meteorStartScratch, meteorEndScratch);
+        const radiantAltitude = meteorStartScratch.dot(state.frame.up) / skyShellDistance;
         const horizonFade = THREE.MathUtils.smoothstep(radiantAltitude, -0.08, 0.28);
         const fade = activeAmount * nightAmount * horizonFade * Math.sin(progress * Math.PI);
         meteor.visible = fade > 0.015;
-        meteor.position.lerpVectors(start, end, easedProgress);
+        meteor.position.lerpVectors(meteorStartScratch, meteorEndScratch, easedProgress);
         meteor.lookAt(camera.position);
-        alignMeteorToTravel(meteor, start, end, camera);
+        alignMeteorToTravel(meteor, meteorStartScratch, meteorEndScratch, camera);
         meteor.scale.setScalar(path.size * (0.84 + progress * 0.24));
         meteor.children.forEach((child) => {
           const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial;
@@ -573,22 +614,21 @@ function createMeteorField(camera: THREE.Camera, isDemo: boolean): { group: THRE
   };
 }
 
-function meteorPathVectors(path: MeteorPath, state: SkyLocationState): { start: THREE.Vector3; end: THREE.Vector3 } {
+function setMeteorPathVectors(path: MeteorPath, state: SkyLocationState, start: THREE.Vector3, end: THREE.Vector3): void {
   const east = state.frame.east;
   const north = state.frame.localZ;
-  const base = state.antiSunDirection.clone().multiplyScalar(0.92).add(state.frame.up.clone().multiplyScalar(path.lift));
-  const startDirection = base.clone().add(east.clone().multiplyScalar(path.lateral)).add(north.clone().multiplyScalar(path.drift * 0.18)).normalize();
-  const endDirection = base.clone().add(east.clone().multiplyScalar(path.lateral + path.drift)).add(north.clone().multiplyScalar(-0.32)).normalize();
-  return {
-    start: startDirection.multiplyScalar(skyShellDistance),
-    end: endDirection.multiplyScalar(skyShellDistance),
-  };
+  const base = meteorBaseScratch.copy(state.antiSunDirection).multiplyScalar(0.92).addScaledVector(state.frame.up, path.lift);
+  start.copy(base).addScaledVector(east, path.lateral).addScaledVector(north, path.drift * 0.18).normalize().multiplyScalar(skyShellDistance);
+  end.copy(base).addScaledVector(east, path.lateral + path.drift).addScaledVector(north, -0.32).normalize().multiplyScalar(skyShellDistance);
 }
 
 function alignMeteorToTravel(meteor: THREE.Group, start: THREE.Vector3, end: THREE.Vector3, camera: THREE.Camera): void {
-  const currentWorld = meteor.getWorldPosition(new THREE.Vector3());
-  const current = currentWorld.clone().project(camera);
-  const ahead = currentWorld.clone().add(end.clone().sub(start).setLength(6)).project(camera);
+  const currentWorld = meteor.getWorldPosition(meteorWorldScratch);
+  const current = meteorScreenCurrentScratch.copy(currentWorld).project(camera);
+  const ahead = meteorScreenAheadScratch
+    .copy(currentWorld)
+    .add(meteorTravelScratch.copy(end).sub(start).setLength(6))
+    .project(camera);
   const screenTravel = ahead.sub(current);
   if (screenTravel.lengthSq() < 0.000001) return;
   meteor.rotateZ(Math.atan2(screenTravel.y, screenTravel.x));

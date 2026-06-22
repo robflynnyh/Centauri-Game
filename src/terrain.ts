@@ -5,6 +5,7 @@ import { oceanTerrainOffsetAt } from "./water";
 export type TerrainSystem = {
   group: THREE.Group;
   update: (centerX: number, centerZ: number) => void;
+  getTerrainPerfState: () => TerrainPerfState;
   getTerrainState: () => {
     centerX: number;
     centerZ: number;
@@ -16,6 +17,15 @@ export type TerrainSystem = {
     chunkSize: number;
     chunkCount: number;
   };
+};
+
+export type TerrainPerfState = {
+  rebuilds: number;
+  lastRebuildMs: number;
+  maxRebuildMs: number;
+  totalRebuildMs: number;
+  lastChunkX: number;
+  lastChunkZ: number;
 };
 
 const terrainPalette = [
@@ -83,6 +93,14 @@ export function createTerrainSystem(): TerrainSystem {
   const group = new THREE.Group();
   group.name = "spherical-planet-terrain";
   const terrainMaterial = makeTerrainMaterial();
+  const perfState: TerrainPerfState = {
+    rebuilds: 0,
+    lastRebuildMs: 0,
+    maxRebuildMs: 0,
+    totalRebuildMs: 0,
+    lastChunkX: 0,
+    lastChunkZ: 0,
+  };
 
   let centerChunkX = Number.NaN;
   let centerChunkZ = Number.NaN;
@@ -95,7 +113,15 @@ export function createTerrainSystem(): TerrainSystem {
 
     centerChunkX = nextChunkX;
     centerChunkZ = nextChunkZ;
+    const rebuildStart = performance.now();
     rebuildTerrainChunks(group, terrainMaterial, centerChunkX, centerChunkZ);
+    const rebuildMs = performance.now() - rebuildStart;
+    perfState.rebuilds += 1;
+    perfState.lastRebuildMs = rebuildMs;
+    perfState.maxRebuildMs = Math.max(perfState.maxRebuildMs, rebuildMs);
+    perfState.totalRebuildMs += rebuildMs;
+    perfState.lastChunkX = centerChunkX;
+    perfState.lastChunkZ = centerChunkZ;
   };
 
   update(0, 0);
@@ -103,6 +129,7 @@ export function createTerrainSystem(): TerrainSystem {
   return {
     group,
     update,
+    getTerrainPerfState: () => ({ ...perfState }),
     getTerrainState: () => getTerrainState(centerChunkX, centerChunkZ),
   };
 }

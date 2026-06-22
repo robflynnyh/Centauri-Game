@@ -32,6 +32,15 @@ export type NatureState = {
   seaweedSamples: SeaweedSample[];
 };
 
+export type NaturePerfState = {
+  rebuilds: number;
+  lastRebuildMs: number;
+  maxRebuildMs: number;
+  totalRebuildMs: number;
+  lastChunkX: number;
+  lastChunkZ: number;
+};
+
 type ReactiveStalk = {
   x: number;
   z: number;
@@ -110,6 +119,7 @@ export function populateNature(
   updateFloraReactivity: (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void;
   updateNatureChunks: (centerX: number, centerZ: number) => void;
   getNatureState: () => NatureState;
+  getNaturePerfState: () => NaturePerfState;
 } {
   const floraGroup = new THREE.Group();
   scene.add(floraGroup);
@@ -149,6 +159,14 @@ export function populateNature(
   let nearestSeaweedDistance = Number.POSITIVE_INFINITY;
   let nearestSeaweedFreezeAmount = 0;
   let seaweedSamples: SeaweedSample[] = [];
+  const perfState: NaturePerfState = {
+    rebuilds: 0,
+    lastRebuildMs: 0,
+    maxRebuildMs: 0,
+    totalRebuildMs: 0,
+    lastChunkX: 0,
+    lastChunkZ: 0,
+  };
 
   const addReactiveFloraAt = (x: number, z: number, seed: number, angle: number, targetGroup = generatedNatureGroup): void => {
     const y = heightAt(x, z);
@@ -321,6 +339,7 @@ export function populateNature(
     const nextChunkZ = Math.floor(normalized.z / generatedNatureChunkSize);
     if (nextChunkX === generatedCenterChunkX && nextChunkZ === generatedCenterChunkZ) return;
 
+    const rebuildStart = performance.now();
     disposeGeneratedNature(generatedNatureGroup);
     generatedNatureGroup.clear();
     generatedCenterChunkX = nextChunkX;
@@ -474,6 +493,13 @@ export function populateNature(
 
     generatedObstacleCount = dynamicObstacles.length;
     setDynamicCollisionObstacles(dynamicObstacles);
+    const rebuildMs = performance.now() - rebuildStart;
+    perfState.rebuilds += 1;
+    perfState.lastRebuildMs = rebuildMs;
+    perfState.maxRebuildMs = Math.max(perfState.maxRebuildMs, rebuildMs);
+    perfState.totalRebuildMs += rebuildMs;
+    perfState.lastChunkX = generatedCenterChunkX;
+    perfState.lastChunkZ = generatedCenterChunkZ;
   };
 
   rebuildGeneratedNature(0, 0);
@@ -486,6 +512,7 @@ export function populateNature(
       nearestSeaweedFreezeAmount = freezeAmount;
     }),
     updateNatureChunks: rebuildGeneratedNature,
+    getNaturePerfState: () => ({ ...perfState }),
     getNatureState: () =>
       getGeneratedNatureState(
         generatedCenterChunkX,
