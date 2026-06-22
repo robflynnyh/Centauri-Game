@@ -153,3 +153,7 @@ Retuned the wilderness seaweed after review so each flat blade has an organic st
 Reworked scared water-creature hops as per-creature committed state machines on latest main: each scared hop now starts from anticipation at phase zero, drives horizontal travel and vertical arc from the same local progress, and only retargets after landing.
 
 Tightened scared water-creature movement so frogs choose obstacle-clear forward landings, reject hop paths through solid blockers, and return to their patrols via planted hops instead of sliding along the ground.
+
+## 2026-06-22
+
+Added one massive planet-local mountain as terrain height-field geometry, with a broad climbable summit, a switchback-like carved path, a `?debug=mountain` spawn, generated-nature clearance along the route, and PR demo/screenshot coverage focused on the new landmark.

@@ -8,9 +8,9 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?debug=birds&test=collision");
+  await page.goto("/?debug=mountain&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("birds debug")).toBeVisible();
+  await expect(page.getByText("mountain debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
   await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
@@ -154,6 +154,69 @@ test("starts near mountain birds and triggers clear fleeing", async ({ page }) =
   expect(afterStopState?.fleeing).toBeGreaterThan(0);
   expect(postStopMotion).toBeGreaterThan(0.2);
   expect(afterStopState?.maxFrameDisplacement).toBeLessThan(2.5);
+});
+
+test("starts at one massive mountain with a clear bendy summit path", async ({ page }) => {
+  await page.goto("/?debug=mountain&test=collision");
+  await expect(page.getByText("mountain debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMassiveMountainState));
+  await page.waitForTimeout(500);
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mountain debug hook");
+
+    const mountain = debug.getMassiveMountainState();
+    const player = debug.getPlayer();
+    const lowlandHeight = debug.terrainHeightAt(0, 24);
+    const normalMountainRise = mountain.normalMountainPeakHeight - lowlandHeight;
+    const massiveMountainRise = mountain.peak.height - lowlandHeight;
+    const sampleStates = mountain.pathSamples.map((sample) => ({
+      ...sample,
+      blocked: debug.isBlockedAt(sample.x, sample.z),
+      actualHeight: debug.terrainHeightAt(sample.x, sample.z),
+    }));
+    const heightSteps = sampleStates.slice(1).map((sample, index) => sample.actualHeight - sampleStates[index].actualHeight);
+    const pathLength = sampleStates.slice(1).reduce((length, sample, index) => {
+      const previous = sampleStates[index];
+      return length + Math.hypot(sample.x - previous.x, sample.z - previous.z);
+    }, 0);
+    const straightDistance = Math.hypot(mountain.peak.x - mountain.base.x, mountain.peak.z - mountain.base.z);
+    const turns = sampleStates.slice(2).filter((sample, index) => {
+      const a = sampleStates[index];
+      const b = sampleStates[index + 1];
+      const ab = Math.atan2(b.z - a.z, b.x - a.x);
+      const bc = Math.atan2(sample.z - b.z, sample.x - b.x);
+      const turn = Math.abs((((bc - ab + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI);
+      return turn > 0.35;
+    }).length;
+
+    return {
+      playerStartsAtBase: Math.hypot(player.x - mountain.base.x, player.z - mountain.base.z) < 0.5,
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      oneReservedSummit: mountain.reservedZones.filter((zone) => Math.hypot(zone.x - mountain.center.x, zone.z - mountain.center.z) < 0.001).length,
+      peakAroundThreeTimesNormal: massiveMountainRise > normalMountainRise * 2.7,
+      peakAbovePathBase: mountain.peak.height > mountain.base.height + 52,
+      pathHasEnoughSamples: sampleStates.length >= 10,
+      pathIsClear: sampleStates.every((sample) => !sample.blocked),
+      pathHeightsMatchTerrain: sampleStates.every((sample) => Math.abs(sample.actualHeight - sample.height) < 0.001),
+      pathClimbsToPeak: sampleStates[sampleStates.length - 1].actualHeight > sampleStates[0].actualHeight + 52,
+      pathHeightIsContinuous: heightSteps.every((step) => step > -1.5 && step < 9.5),
+      pathIsBendy: pathLength > straightDistance * 1.18 && turns >= 3,
+    };
+  });
+
+  expect(result.playerStartsAtBase).toBe(true);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.oneReservedSummit).toBe(1);
+  expect(result.peakAroundThreeTimesNormal).toBe(true);
+  expect(result.peakAbovePathBase).toBe(true);
+  expect(result.pathHasEnoughSamples).toBe(true);
+  expect(result.pathIsClear).toBe(true);
+  expect(result.pathHeightsMatchTerrain).toBe(true);
+  expect(result.pathClimbsToPeak).toBe(true);
+  expect(result.pathHeightIsContinuous).toBe(true);
+  expect(result.pathIsBendy).toBe(true);
 });
 
 test("isolation debug state rises outside populated biome patches", async ({ page }) => {

@@ -21,7 +21,7 @@ import {
 import { createPixelRenderPipeline } from "./pixel-renderer";
 import { createSleepController, type SleepDebugState, type SleepUpdateInput } from "./sleep";
 import { createSkySystem, type SkyDebugState } from "./sky";
-import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
+import { createTerrainSystem, getMassiveMountainDebugState, heightAt, makeHorizonLandforms, massiveMountainReservedZones } from "./terrain";
 import "./style.css";
 
 declare global {
@@ -118,6 +118,15 @@ declare global {
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getMistState: () => MistDebugState;
       getBirdState: () => BirdDebugState;
+      getMassiveMountainState: () => {
+        center: { x: number; z: number };
+        base: { x: number; z: number; height: number };
+        peak: { x: number; z: number; height: number };
+        normalMountainPeakHeight: number;
+        mountainRise: number;
+        pathSamples: { x: number; z: number; progress: number; width: number; height: number }[];
+        reservedZones: { x: number; z: number; radius: number }[];
+      };
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
@@ -141,10 +150,11 @@ const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
+const enableMountainDebug = params.get("debug") === "mountain";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || isBirdDebug || enableSleepDebug || enableIsolationDebug;
+const enableDebugTools = enableCollisionDebug || enableTempleDebug || isBeetleDebug || isBirdDebug || enableMountainDebug || enableSleepDebug || enableIsolationDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
@@ -162,6 +172,8 @@ const hudBadgeText = isDemo
         ? "beetle debug"
         : isBirdDebug
           ? "birds debug"
+          : enableMountainDebug
+            ? "mountain debug"
           : enableSleepDebug
             ? "sleep debug"
             : enableIsolationDebug
@@ -236,19 +248,24 @@ if (!fieldNotesHeading || !fieldNotesBody) {
 const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fieldNotes);
 const mountainBirds = createMountainBirds(scene, heightAt);
 const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
+const mountainDebugState = getMassiveMountainDebugState();
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
     : isBirdDebug
       ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
+      : enableMountainDebug
+        ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
       : enableIsolationDebug
         ? new THREE.Vector3(-128, 0, -464)
         : new THREE.Vector3(0, 0, 24);
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
+  : enableMountainDebug
+    ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
   : 0;
-const initialPlayerPitch = isBirdDebug ? 0.18 : -0.12;
+const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -286,7 +303,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNa
   heightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
-  [temple.reservedZone]
+  [temple.reservedZone, ...massiveMountainReservedZones]
 );
 const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
@@ -301,7 +318,7 @@ let isolationOverrideAmount: number | null = null;
 const prDemo = createPrDemoController(camera, heightAt, collisionWorld.resolveMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple);
+}, temple, mountainDebugState);
 
 terrain.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
@@ -373,6 +390,7 @@ if (enableDebugTools) {
       return mist.getDebugState();
     },
     getBirdState: mountainBirds.getState,
+    getMassiveMountainState: getMassiveMountainDebugState,
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
       const state = sleep.setAmount(amount);
