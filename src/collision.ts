@@ -6,6 +6,7 @@ export type CollisionObstacle = {
   z: number;
   radius: number;
   dynamic?: boolean;
+  blocksAt?: (x: number, z: number, playerRadius: number) => boolean;
 };
 
 const playerRadius = 0.55;
@@ -23,6 +24,7 @@ export function createCollisionWorld(normalizePosition: NormalizePosition = () =
 
   const isBlockedAt = (x: number, z: number): boolean =>
     obstacles.some((obstacle) => {
+      if (obstacle.blocksAt) return obstacle.blocksAt(x, z, playerRadius);
       const minDistance = playerRadius + obstacle.radius;
       const dx = x - obstacle.x;
       const dz = z - obstacle.z;

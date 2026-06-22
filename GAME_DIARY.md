@@ -4,6 +4,8 @@
 
 Slightly reduced player gravity so jumps and falls feel a touch floatier while keeping the existing movement model intact.
 
+Refined the observatory follow-up with terrain-contact foundation supports, a walkable platform with smaller pier/telescope blockers, hidden telescope geometry during scoped view, and a non-cross astronomical field-note glyph.
+
 ## 2026-06-21
 
 Removed the hard water-distance cap from scared water-creature flee hops so chased frogs can keep escaping beyond their normal patrol radius, while calm return hops still guide them back toward water once danger passes.

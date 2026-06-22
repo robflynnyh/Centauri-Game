@@ -56,6 +56,7 @@ test("telescope mode renders a nonblack scoped canvas", async ({ page }, testInf
   await page.waitForTimeout(500);
 
   expect(viewState.observatory.telescopeActive).toBe(true);
+  expect(viewState.observatory.observatoryVisible).toBe(false);
   expect(viewState.observatory.cameraFov).toBeLessThan(40);
   expect(viewState.viewBlocked).toBe(false);
 

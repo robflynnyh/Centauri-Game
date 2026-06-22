@@ -4,6 +4,15 @@ import { normalizePlanetCoords, placeObjectOnPlanet, surfaceDistanceBetweenLocal
 
 type HeightSampler = (x: number, z: number) => number;
 
+type ObservatoryFoundationSupport = {
+  x: number;
+  z: number;
+  width: number;
+  depth: number;
+  bottomY: number;
+  topY: number;
+};
+
 export type LandmarkZone = LocalPlanetPoint & {
   radius: number;
 };
@@ -43,6 +52,10 @@ export type ObservatoryLandmark = {
     interactionRadius: number;
   };
   collision: CollisionObstacle;
+  collisionSamples: {
+    platform: LocalPlanetPoint[];
+    blockers: Array<{ name: string; position: LocalPlanetPoint }>;
+  };
   reservedZone: LandmarkZone;
   update: (elapsed: number) => void;
 };
@@ -117,7 +130,8 @@ export function createObservatoryLandmark(
   const notePosition = offsetLocal(position, sideSightline, 5.6);
   const altitude = heightAt(position.x, position.z);
   const viewHeight = heightAt(viewPosition.x, viewPosition.z) + 2.65;
-  const group = makeObservatory();
+  const foundationSupports = makeObservatoryFoundationSupports(position, yaw, altitude + 0.04, heightAt);
+  const group = makeObservatory(foundationSupports);
   placeObjectOnPlanet(group, position.x, position.z, altitude + 0.04, new THREE.Euler(0, yaw, 0));
   scene.add(group);
 
@@ -130,6 +144,8 @@ export function createObservatoryLandmark(
     new THREE.Euler(0, yaw + Math.PI * 0.18, 0)
   );
   scene.add(noteMarker);
+
+  const collisionSamples = makeObservatoryCollisionSamples(position, yaw);
 
   return {
     group,
@@ -148,7 +164,8 @@ export function createObservatoryLandmark(
       viewHeight,
       interactionRadius: telescopeInteractionRadius,
     },
-    collision: { kind: "observatory", x: position.x, z: position.z, radius: observatoryCollisionRadius },
+    collision: createObservatoryCollision(position, yaw),
+    collisionSamples,
     reservedZone: { x: position.x, z: position.z, radius: observatoryClearanceRadius },
     update: (elapsed) => {
       const lensGlow = group.userData.lensGlow as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
@@ -229,6 +246,93 @@ function isValidObservatoryTerrain(point: LocalPlanetPoint, heightAt: HeightSamp
     heightAt(point.x - 8, point.z - 8),
   ];
   return samples.every((height) => height > 0.25 && Math.abs(height - centerHeight) < 6.4);
+}
+
+function createObservatoryCollision(position: LocalPlanetPoint, yaw: number): CollisionObstacle {
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  const blockers = [
+    { x: 0, z: 0, radius: 0.74 },
+    { x: 0, z: -1.45, radius: 1.18 },
+    { x: 0, z: -3.75, radius: 0.82 },
+    { x: 0, z: 2.28, radius: 0.62 },
+    { x: -1.35, z: 0.9, radius: 0.42 },
+    { x: 1.28, z: 0.8, radius: 0.42 },
+    { x: 0, z: -1.55, radius: 0.44 },
+  ];
+
+  return {
+    kind: "observatory",
+    x: position.x,
+    z: position.z,
+    radius: observatoryCollisionRadius,
+    blocksAt: (x, z, playerRadius) => {
+      const dx = x - position.x;
+      const dz = z - position.z;
+      const localX = dx * cos - dz * sin;
+      const localZ = dx * sin + dz * cos;
+      return blockers.some((blocker) => {
+        const minDistance = blocker.radius + playerRadius;
+        const blockerDx = localX - blocker.x;
+        const blockerDz = localZ - blocker.z;
+        return blockerDx * blockerDx + blockerDz * blockerDz < minDistance * minDistance;
+      });
+    },
+  };
+}
+
+function makeObservatoryCollisionSamples(
+  position: LocalPlanetPoint,
+  yaw: number
+): { platform: LocalPlanetPoint[]; blockers: Array<{ name: string; position: LocalPlanetPoint }> } {
+  return {
+    platform: [
+      observatoryLocalToWorld(position, yaw, -3.05, -0.35),
+      observatoryLocalToWorld(position, yaw, 3.1, 0.3),
+      observatoryLocalToWorld(position, yaw, -1.95, 2.8),
+      observatoryLocalToWorld(position, yaw, 2.25, 2.55),
+    ],
+    blockers: [
+      { name: "central pier", position: observatoryLocalToWorld(position, yaw, 0, 0) },
+      { name: "telescope tube", position: observatoryLocalToWorld(position, yaw, 0, -1.45) },
+      { name: "front lens", position: observatoryLocalToWorld(position, yaw, 0, -3.75) },
+      { name: "eyepiece", position: observatoryLocalToWorld(position, yaw, 0, 2.28) },
+    ],
+  };
+}
+
+function makeObservatoryFoundationSupports(
+  position: LocalPlanetPoint,
+  yaw: number,
+  anchorAltitude: number,
+  heightAt: HeightSampler
+): ObservatoryFoundationSupport[] {
+  const samples = [
+    { x: -4.45, z: -2.85, width: 0.5, depth: 0.5, topY: 0.74 },
+    { x: 4.45, z: -2.85, width: 0.5, depth: 0.5, topY: 0.74 },
+    { x: -4.55, z: 2.45, width: 0.5, depth: 0.5, topY: 0.72 },
+    { x: 4.55, z: 2.45, width: 0.5, depth: 0.5, topY: 0.72 },
+    { x: -2.4, z: 4.16, width: 0.42, depth: 0.48, topY: 0.58 },
+    { x: 2.4, z: 4.16, width: 0.42, depth: 0.48, topY: 0.58 },
+    { x: 0, z: 4.92, width: 2.7, depth: 0.46, topY: 0.48 },
+  ];
+
+  return samples.map((sample) => {
+    const world = observatoryLocalToWorld(position, yaw, sample.x, sample.z);
+    const terrainY = heightAt(world.x, world.z) - anchorAltitude;
+    const bottomY = Math.min(terrainY - 0.06, sample.topY - 0.24);
+    return {
+      ...sample,
+      bottomY,
+    };
+  });
+}
+
+function observatoryLocalToWorld(position: LocalPlanetPoint, yaw: number, localX: number, localZ: number): LocalPlanetPoint {
+  return normalizePlanetCoords(
+    position.x + localX * Math.cos(yaw) + localZ * Math.sin(yaw),
+    position.z - localX * Math.sin(yaw) + localZ * Math.cos(yaw)
+  );
 }
 
 function templeInfluenceAt(playerPosition: LocalPlanetPoint, templePosition: LocalPlanetPoint, elapsed: number): number {
@@ -372,13 +476,14 @@ function makeTempleNoteMarker(): THREE.Group {
   return group;
 }
 
-function makeObservatory(): THREE.Group {
+function makeObservatory(foundationSupports: ObservatoryFoundationSupport[] = []): THREE.Group {
   const group = new THREE.Group();
   group.name = "single-observatory-telescope-landmark";
 
   const platformMaterial = new THREE.MeshBasicMaterial({ color: 0x202b68 });
   const rimMaterial = new THREE.MeshBasicMaterial({ color: 0x59c1d6 });
   const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x101632 });
+  const skirtMaterial = new THREE.MeshBasicMaterial({ color: 0x172052 });
   const telescopeMaterial = new THREE.MeshBasicMaterial({ color: 0xe46bb9 });
   const lensMaterial = new THREE.MeshBasicMaterial({ color: 0x8dffe0 });
   const glowMaterial = new THREE.MeshBasicMaterial({
@@ -388,6 +493,23 @@ function makeObservatory(): THREE.Group {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
+
+  foundationSupports.forEach((support, index) => {
+    const height = Math.max(0.18, support.topY - support.bottomY);
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(support.width, height, support.depth),
+      index % 2 === 0 ? skirtMaterial : darkMaterial
+    );
+    post.position.set(support.x, support.bottomY + height * 0.5, support.z);
+    post.rotation.y = index % 2 === 0 ? 0.18 : -0.12;
+    group.add(post);
+  });
+
+  const underside = new THREE.Mesh(new THREE.CylinderGeometry(5.18, 5.9, 0.46, 8), skirtMaterial);
+  underside.position.y = 0.12;
+  underside.rotation.y = Math.PI / 8;
+  underside.scale.z = 0.78;
+  group.add(underside);
 
   const base = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 6.4, 0.72, 8), platformMaterial);
   base.position.y = 0.36;
@@ -491,23 +613,29 @@ function makeObservatoryNoteMarker(): THREE.Group {
   base.position.y = 0.14;
   group.add(base);
 
-  const slate = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.42, 0.18), faceMaterial);
-  slate.position.set(0, 1.05, 0);
-  slate.rotation.set(0.08, 0, 0.12);
-  group.add(slate);
+  const shard = new THREE.Mesh(new THREE.ConeGeometry(0.44, 1.32, 3), faceMaterial);
+  shard.position.set(-0.08, 0.98, 0.02);
+  shard.rotation.set(0.18, Math.PI / 3, -0.28);
+  group.add(shard);
 
-  const vertical = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.12), glowMaterial);
-  vertical.position.set(0, 1.12, 0.14);
-  group.add(vertical);
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.42, 8), glowMaterial.clone());
+  lens.position.set(0.12, 1.08, 0.28);
+  lens.rotation.z = 0.24;
+  group.add(lens);
 
-  const horizontal = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.12, 0.12), glowMaterial.clone());
-  horizontal.position.set(0, 1.12, 0.16);
-  horizontal.rotation.z = 0.18;
-  group.add(horizontal);
+  const orbit = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 4, 18), glowMaterial.clone());
+  orbit.position.set(0.08, 1.16, 0.3);
+  orbit.rotation.set(0.26, 0.34, 0.72);
+  group.add(orbit);
 
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.035, 4, 14), glowMaterial.clone());
+  const crescent = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.055, 4, 18, Math.PI * 1.32), glowMaterial.clone());
+  crescent.position.set(-0.06, 1.34, 0.34);
+  crescent.rotation.z = -0.78;
+  group.add(crescent);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.035, 4, 16), glowMaterial.clone());
   halo.position.y = 1.86;
-  halo.rotation.x = Math.PI / 2;
+  halo.rotation.set(Math.PI / 2, 0.18, 0.32);
   group.add(halo);
 
   return group;

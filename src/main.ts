@@ -42,6 +42,9 @@ type ObservatoryDebugState = {
   telescopeBaseYaw: number;
   telescopeBasePitch: number;
   telescopeActive: boolean;
+  observatoryVisible: boolean;
+  platformSamples: Array<{ x: number; z: number }>;
+  blockerSamples: Array<{ name: string; x: number; z: number }>;
   cameraFov: number;
   nearby: boolean;
   obstacleCount: number;
@@ -310,6 +313,7 @@ const telescopeMode = {
   pitch: observatory.telescope.pitch,
   previousYaw: initialPlayerYaw,
   previousPitch: initialPlayerPitch,
+  previousObservatoryVisible: observatory.group.visible,
 };
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
@@ -761,8 +765,10 @@ function enterTelescopeMode(force = false): boolean {
   telescopeMode.active = true;
   telescopeMode.previousYaw = player.yaw;
   telescopeMode.previousPitch = player.pitch;
+  telescopeMode.previousObservatoryVisible = observatory.group.visible;
   telescopeMode.yaw = observatory.telescope.yaw;
   telescopeMode.pitch = observatory.telescope.pitch;
+  observatory.group.visible = false;
   player.velocity.set(0, 0, 0);
   player.verticalVelocity = 0;
   player.verticalOffset = 0;
@@ -782,6 +788,7 @@ function exitTelescopeMode(releasePointerLock: boolean): void {
   telescopeMode.active = false;
   player.yaw = telescopeMode.previousYaw;
   player.pitch = telescopeMode.previousPitch;
+  observatory.group.visible = telescopeMode.previousObservatoryVisible;
   clearTransientInputState();
   telescopeScope?.classList.remove("telescope-scope--active");
   telescopeScope?.setAttribute("aria-hidden", "true");
@@ -856,6 +863,13 @@ function getObservatoryDebugState(): ObservatoryDebugState {
     telescopeBaseYaw: observatory.telescope.yaw,
     telescopeBasePitch: observatory.telescope.pitch,
     telescopeActive: telescopeMode.active,
+    observatoryVisible: observatory.group.visible,
+    platformSamples: observatory.collisionSamples.platform.map((sample) => ({ x: sample.x, z: sample.z })),
+    blockerSamples: observatory.collisionSamples.blockers.map((sample) => ({
+      name: sample.name,
+      x: sample.position.x,
+      z: sample.position.z,
+    })),
     cameraFov: camera.fov,
     nearby: isNearTelescope(),
     obstacleCount: collisionWorld.obstacles.filter((obstacle) => obstacle.kind === "observatory").length,

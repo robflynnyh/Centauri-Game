@@ -620,6 +620,11 @@ test("discovers the observatory as the next collection-order field note", async 
       templeNoteZ: temple.noteZ,
       playerClear: !debug.isBlockedAt(player.x, player.z),
       observatoryBlocked: debug.isBlockedAt(observatory.x, observatory.z),
+      platformBlocked: observatory.platformSamples.map((sample) => debug.isBlockedAt(sample.x, sample.z)),
+      blockerBlocked: observatory.blockerSamples.map((sample) => ({
+        name: sample.name,
+        blocked: debug.isBlockedAt(sample.x, sample.z),
+      })),
       observatoryIsOnLand: debug.terrainHeightAt(observatory.x, observatory.z) > 0.25,
       discoveredCount: notes.discoveredCount,
       total: notes.total,
@@ -631,6 +636,8 @@ test("discovers the observatory as the next collection-order field note", async 
   expect(source.observatory.telescopeInteractionRadius).toBeGreaterThan(5);
   expect(source.playerClear).toBe(true);
   expect(source.observatoryBlocked).toBe(true);
+  expect(source.platformBlocked.every((blocked) => !blocked)).toBe(true);
+  expect(source.blockerBlocked.every((sample) => sample.blocked)).toBe(true);
   expect(source.observatoryIsOnLand).toBe(true);
   expect(source.discoveredCount).toBe(0);
   expect(source.total).toBe(3);
@@ -696,6 +703,7 @@ test("enters and exits telescope mode without moving the player body", async ({ 
   });
 
   expect(entered.observatory.telescopeActive).toBe(true);
+  expect(entered.observatory.observatoryVisible).toBe(false);
   expect(entered.observatory.cameraFov).toBeLessThan(40);
   expect(entered.observatory.nearby).toBe(true);
   await expect(page.getByText(/telescope: E or Esc to exit/)).toBeVisible();
@@ -733,6 +741,7 @@ test("enters and exits telescope mode without moving the player body", async ({ 
   await page.keyboard.up("w");
 
   expect(exited.observatory.telescopeActive).toBe(false);
+  expect(exited.observatory.observatoryVisible).toBe(true);
   expect(exited.observatory.cameraFov).toBeCloseTo(68, 1);
   await expect(page.locator(".hud__look")).toHaveText("E telescope");
 
