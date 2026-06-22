@@ -58,6 +58,8 @@ const observatoryClearanceRadius = 34;
 const observatoryCollisionRadius = 4.8;
 const observatoryNoteRadius = 12;
 const telescopeInteractionRadius = 7.4;
+const telescopeUseDistance = observatoryCollisionRadius + 1.7;
+const telescopeViewDistance = observatoryCollisionRadius + 1.25;
 
 export function createTempleLandmark(scene: THREE.Scene, heightAt: HeightSampler): TempleLandmark {
   const position = chooseTemplePosition(heightAt);
@@ -105,16 +107,16 @@ export function createObservatoryLandmark(
   avoidZones: LandmarkZone[] = []
 ): ObservatoryLandmark {
   const position = chooseObservatoryPosition(heightAt, avoidZones);
-  const yaw = seededUnit(`${observatorySeed}:yaw`) * Math.PI * 2;
+  const yaw = seededUnit(`${observatorySeed}:yaw`) * Math.PI * 2 + 0.55;
   const sightline = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
   const behindSightline = { x: -sightline.x, z: -sightline.z };
   const sideSightline = { x: sightline.z, z: -sightline.x };
   const approachPosition = offsetLocal(position, behindSightline, 17);
-  const usePosition = offsetLocal(position, behindSightline, 3.6);
-  const viewPosition = offsetLocal(position, behindSightline, 2.2);
+  const usePosition = offsetLocal(position, behindSightline, telescopeUseDistance);
+  const viewPosition = offsetLocal(position, behindSightline, telescopeViewDistance);
   const notePosition = offsetLocal(position, sideSightline, 5.6);
   const altitude = heightAt(position.x, position.z);
-  const viewHeight = heightAt(viewPosition.x, viewPosition.z) + 2.35;
+  const viewHeight = heightAt(viewPosition.x, viewPosition.z) + 2.65;
   const group = makeObservatory();
   placeObjectOnPlanet(group, position.x, position.z, altitude + 0.04, new THREE.Euler(0, yaw, 0));
   scene.add(group);
@@ -142,7 +144,7 @@ export function createObservatoryLandmark(
       usePosition,
       viewPosition,
       yaw,
-      pitch: 0.26,
+      pitch: 0.1,
       viewHeight,
       interactionRadius: telescopeInteractionRadius,
     },

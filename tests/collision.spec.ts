@@ -663,6 +663,30 @@ test("enters and exits telescope mode without moving the player body", async ({ 
   await expect(page.getByText("telescope debug")).toBeVisible();
   await expect(page.locator(".hud__look")).toHaveText("E telescope");
 
+  const spawn = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const observatory = debug.getObservatoryState();
+    const before = debug.getPlayer();
+    const awayX = before.x - observatory.x;
+    const awayZ = before.z - observatory.z;
+    const awayLength = Math.hypot(awayX, awayZ) || 1;
+    const moved = debug.attemptMove((awayX / awayLength) * 2, (awayZ / awayLength) * 2);
+    const travel = Math.hypot(moved.x - before.x, moved.z - before.z);
+    debug.setPlayer(observatory.telescopeUseX, observatory.telescopeUseZ);
+    return {
+      observatory,
+      useBlocked: debug.isBlockedAt(observatory.telescopeUseX, observatory.telescopeUseZ),
+      viewBlocked: debug.isBlockedAt(observatory.telescopeViewX, observatory.telescopeViewZ),
+      travel,
+    };
+  });
+
+  expect(spawn.observatory.nearby).toBe(true);
+  expect(spawn.useBlocked).toBe(false);
+  expect(spawn.viewBlocked).toBe(false);
+  expect(spawn.travel).toBeGreaterThan(1.4);
+
   const entered = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri telescope debug hook");
@@ -673,6 +697,7 @@ test("enters and exits telescope mode without moving the player body", async ({ 
 
   expect(entered.observatory.telescopeActive).toBe(true);
   expect(entered.observatory.cameraFov).toBeLessThan(40);
+  expect(entered.observatory.nearby).toBe(true);
   await expect(page.getByText(/telescope: E or Esc to exit/)).toBeVisible();
 
   await page.keyboard.down("w");
@@ -710,6 +735,19 @@ test("enters and exits telescope mode without moving the player body", async ({ 
   expect(exited.observatory.telescopeActive).toBe(false);
   expect(exited.observatory.cameraFov).toBeCloseTo(68, 1);
   await expect(page.locator(".hud__look")).toHaveText("E telescope");
+
+  const afterExitMove = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const observatory = debug.getObservatoryState();
+    const before = debug.getPlayer();
+    const awayX = before.x - observatory.x;
+    const awayZ = before.z - observatory.z;
+    const awayLength = Math.hypot(awayX, awayZ) || 1;
+    const moved = debug.attemptMove((awayX / awayLength) * 2, (awayZ / awayLength) * 2);
+    return Math.hypot(moved.x - before.x, moved.z - before.z);
+  });
+  expect(afterExitMove).toBeGreaterThan(1.4);
 
   await page.keyboard.press("Space");
   await page.waitForFunction(
