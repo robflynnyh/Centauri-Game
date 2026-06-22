@@ -8,12 +8,91 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?debug=birds&test=collision");
+  await page.goto("/?debug=ocean&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("birds debug")).toBeVisible();
+  await expect(page.getByText("ocean debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
   await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+});
+
+test("ocean debug exposes two large irregular deep oceans", async ({ page }) => {
+  await page.goto("/?debug=ocean&test=collision");
+  await expect(page.getByText("ocean debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getOceanDebugState));
+
+  const state = await page.evaluate(() => window.__centauriDebug?.getOceanDebugState());
+  expect(state?.oceanCount).toBe(2);
+  expect(state?.movementSpeedMultiplierInOcean).toBeCloseTo(0.5, 2);
+  expect(state?.regions).toHaveLength(2);
+
+  for (const ocean of state?.regions ?? []) {
+    expect(ocean.estimatedShorelineCircumference).toBeGreaterThan(1_650);
+    expect(ocean.estimatedShorelineCircumference).toBeLessThan(2_250);
+    expect(ocean.maxShorelineRadius - ocean.minShorelineRadius).toBeGreaterThan(42);
+    expect(ocean.maxTerrainDepthBelowSurface).toBeGreaterThan(16);
+
+    const deepState = await page.evaluate(
+      ({ x, z }) => window.__centauriDebug?.getOceanStateAt(x, z),
+      ocean.deepSample
+    );
+    const outsideState = await page.evaluate(
+      ({ x, z }) => window.__centauriDebug?.getOceanStateAt(x, z),
+      ocean.outsideShoreSample
+    );
+
+    expect(deepState?.isInOcean).toBe(true);
+    expect(deepState?.terrainDepthBelowSurface).toBeGreaterThan(16);
+    expect(deepState?.movementSpeedMultiplier).toBeCloseTo(0.5, 2);
+    expect(outsideState?.isInOcean).toBe(false);
+
+    for (const sample of ocean.shorelineSamples) {
+      const shorelineState = await page.evaluate(
+        ({ inside, outside }) => {
+          const insideState = window.__centauriDebug?.getOceanStateAt(inside.x, inside.z);
+          const outsideState = window.__centauriDebug?.getOceanStateAt(outside.x, outside.z);
+          return {
+            insideState,
+            outsideState,
+            insideTerrainHeight: window.__centauriDebug?.terrainHeightAt(inside.x, inside.z),
+            outsideTerrainHeight: window.__centauriDebug?.terrainHeightAt(outside.x, outside.z),
+          };
+        },
+        sample
+      );
+
+      expect(shorelineState.insideState?.isInOcean).toBe(true);
+      expect(shorelineState.insideTerrainHeight).toBeGreaterThan((shorelineState.insideState?.waterSurfaceHeight ?? 0) - 5);
+      expect(shorelineState.outsideState?.signedShoreDistance).toBeGreaterThan(-2);
+      expect(shorelineState.outsideTerrainHeight).toBeGreaterThan((shorelineState.outsideState?.waterSurfaceHeight ?? 0) - 0.35);
+    }
+  }
+});
+
+test("walking through ocean water is about twice as slow", async ({ page }) => {
+  await page.goto("/?debug=ocean&test=collision");
+  await expect(page.getByText("ocean debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getOceanDebugState));
+
+  const ocean = await page.evaluate(() => window.__centauriDebug?.getOceanDebugState().regions[0]);
+  const outside = { x: 1200, z: 500 };
+  const inside = ocean.deepSample;
+
+  const outsideState = await page.evaluate(
+    ({ x, z }) => window.__centauriDebug?.getOceanStateAt(x, z),
+    outside
+  );
+  const outsideDistance = await walkForwardFor(page, outside, 3_200);
+  const insideDistance = await walkForwardFor(page, inside, 3_200);
+  const insideState = await page.evaluate(() => window.__centauriDebug?.getOceanState());
+
+  expect(outsideState?.isInOcean).toBe(false);
+  expect(insideState?.isInOcean).toBe(true);
+  expect(insideState?.movementSpeedMultiplier).toBeCloseTo(0.5, 2);
+  expect(outsideDistance).toBeGreaterThan(14);
+  expect(insideDistance).toBeGreaterThan(7);
+  expect(insideDistance / outsideDistance).toBeGreaterThan(0.45);
+  expect(insideDistance / outsideDistance).toBeLessThan(0.62);
 });
 
 test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ page }, testInfo) => {
@@ -284,6 +363,21 @@ async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
       signature: signature / pixels,
     };
   }, `data:image/png;base64,${screenshot.toString("base64")}`);
+}
+
+async function walkForwardFor(page: Page, position: { x: number; z: number }, milliseconds: number): Promise<number> {
+  await page.evaluate(({ x, z }) => window.__centauriDebug?.setPlayer(x, z), position);
+  await page.focus("canvas");
+  await page.waitForTimeout(100);
+  const before = await page.evaluate(() => window.__centauriDebug?.getPlayer());
+  await page.keyboard.down("KeyW");
+  await page.waitForTimeout(milliseconds);
+  await page.keyboard.up("KeyW");
+  await page.waitForTimeout(100);
+  const after = await page.evaluate(() => window.__centauriDebug?.getPlayer());
+
+  if (!before || !after) throw new Error("Missing player debug state");
+  return Math.hypot(after.x - before.x, after.z - before.z);
 }
 
 async function getImageDifference(

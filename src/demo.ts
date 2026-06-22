@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { lookAtPlanetPoint, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
+import { getOceanRegions } from "./water";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -61,6 +62,25 @@ function showSkyRegionAtLongitude(
     targetX,
     targetZ,
     heightAt(targetX, targetZ) + 16
+  );
+}
+
+function showOceanDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWalk: WalkObserver | undefined, elapsed: number): void {
+  const ocean = getOceanRegions()[0];
+  const orbit = elapsed * 0.18;
+  const x = ocean.center.x + Math.cos(orbit) * 360;
+  const z = ocean.center.z + Math.sin(orbit) * 120;
+  const targetX = ocean.center.x - 60;
+  const targetZ = ocean.center.z + 30;
+  onWalk?.(new THREE.Vector3(ocean.center.x, 0, ocean.center.z), 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + 86,
+    targetX,
+    targetZ,
+    heightAt(targetX, targetZ) + 2
   );
 }
 
@@ -127,22 +147,29 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 10.6) {
-        showSkyRegion(camera, heightAt, onWalk, elapsed, 0, -0.15, 0.18);
+      if (elapsed < 10.4) {
+        showOceanDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
 
-      if (elapsed < 12.6) {
+      const shiftedElapsed = elapsed - 1.6;
+
+      if (shiftedElapsed < 10.6) {
+        showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);
+        return;
+      }
+
+      if (shiftedElapsed < 12.6) {
         showFixedTimeSkyRegion(camera, heightAt, onWalk, 10.6, Math.PI * 0.5, 0.05, -0.22);
         return;
       }
 
-      if (elapsed < 16.0) {
-        showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI, 0.16, -0.18);
+      if (shiftedElapsed < 16.0) {
+        showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, Math.PI, 0.16, -0.18);
         return;
       }
 
-      if (elapsed < 18.2) {
+      if (shiftedElapsed < 18.2) {
         const focus = { x: 12.9, z: -73.4 };
         const x = 23 + Math.sin(elapsed * 0.62) * 1.1;
         const z = -62 + Math.cos(elapsed * 0.54) * 1.1;
@@ -159,7 +186,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 19.8) {
+      if (shiftedElapsed < 19.8) {
         const focus = { x: 12.9, z: -73.4 };
         const x = 27 + Math.sin(elapsed * 0.7) * 1.4;
         const z = -60 + Math.cos(elapsed * 0.6) * 1.4;
@@ -176,7 +203,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 20.6) {
+      if (shiftedElapsed < 20.6) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 44 + Math.sin(elapsed * 0.5) * 3;
         const z = -593 + Math.cos(elapsed * 0.45) * 3;
@@ -193,7 +220,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 21.2) {
+      if (shiftedElapsed < 21.2) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
         const z = -607 + Math.cos(elapsed * 0.48) * 1.2;
