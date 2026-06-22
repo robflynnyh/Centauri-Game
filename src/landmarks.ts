@@ -39,6 +39,7 @@ export type GlassDomeLandmark = {
   floorHeight: number;
   shellThickness: number;
   entranceHalfWidth: number;
+  entranceSillTopHeight: number;
   entranceDirection: LocalPlanetPoint;
   entrancePosition: LocalPlanetPoint;
   approachPosition: LocalPlanetPoint;
@@ -64,6 +65,8 @@ const domeSeed = "centauri-field-note-003-glass-dome";
 const domeRadius = (PLANET_ASSUMED_WALK_SPEED * 60) / (Math.PI * 2);
 const domeShellThickness = 4.4;
 const domeEntranceHalfWidth = 8.4;
+const domeEntranceSillHeight = 0.14;
+const domeEntranceSillCenterY = 0.04;
 const domeClearanceRadius = domeRadius + 24;
 const domeNoteRadius = 10;
 
@@ -150,6 +153,7 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
     floorHeight,
     shellThickness: domeShellThickness,
     entranceHalfWidth: domeEntranceHalfWidth,
+    entranceSillTopHeight: domeEntranceSillCenterY + domeEntranceSillHeight * 0.5,
     entranceDirection,
     entrancePosition,
     approachPosition,
@@ -403,8 +407,8 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
     group.add(ring);
   }
 
-  const threshold = new THREE.Mesh(new THREE.BoxGeometry(entranceHalfWidth * 2.1, 0.62, 3.2), ribMaterial);
-  threshold.position.set(Math.sin(entranceAngle) * radius, 0.38, Math.cos(entranceAngle) * radius);
+  const threshold = new THREE.Mesh(new THREE.BoxGeometry(entranceHalfWidth * 2.1, domeEntranceSillHeight, 3.2), ribMaterial);
+  threshold.position.set(Math.sin(entranceAngle) * radius, domeEntranceSillCenterY, Math.cos(entranceAngle) * radius);
   threshold.rotation.y = entranceAngle;
   threshold.renderOrder = 2;
   group.add(threshold);

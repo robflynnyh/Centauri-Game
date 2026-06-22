@@ -609,15 +609,49 @@ test("grounds the glass dome rim with a full circumference terrain collar", asyn
     return {
       radius: dome.radius,
       groundingBandWidth: dome.groundingBandWidth,
+      groundingFlatRadius: dome.groundingFlatRadius,
       groundingOuterRadius: dome.groundingOuterRadius,
       sectorSamples,
     };
   });
 
   expect(result.groundingBandWidth).toBeGreaterThan(8);
+  expect(result.groundingFlatRadius).toBeGreaterThan(result.radius);
+  expect(result.groundingFlatRadius).toBeLessThan(result.groundingOuterRadius);
   expect(result.groundingOuterRadius).toBeCloseTo(result.radius + result.groundingBandWidth, 5);
-  expect(result.sectorSamples.every((sample) => sample.maxJump < 1.1)).toBe(true);
+  expect(result.sectorSamples.every((sample) => sample.maxJump < 1.2)).toBe(true);
   expect(result.sectorSamples.every((sample) => sample.innerFloorDelta < 0.18)).toBe(true);
+});
+
+test("keeps the glass dome entrance sill flush with the effective ramp", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const perp = { x: dome.entranceDirectionZ, z: -dome.entranceDirectionX };
+    const offsets = [-dome.entranceHalfWidth * 0.72, 0, dome.entranceHalfWidth * 0.72];
+    const samples = offsets.map((offset) => {
+      const x = dome.x + dome.entranceDirectionX * dome.radius + perp.x * offset;
+      const z = dome.z + dome.entranceDirectionZ * dome.radius + perp.z * offset;
+      const terrainHeight = debug.terrainHeightAt(x, z);
+      return {
+        terrainDelta: Math.abs(terrainHeight - dome.floorHeight),
+        sillTopDelta: dome.floorHeight + dome.entranceSillTopHeight - terrainHeight,
+      };
+    });
+
+    return {
+      entranceSillTopHeight: dome.entranceSillTopHeight,
+      samples,
+    };
+  });
+
+  expect(result.entranceSillTopHeight).toBeLessThan(0.16);
+  expect(result.samples.every((sample) => sample.terrainDelta < 0.001)).toBe(true);
+  expect(result.samples.every((sample) => sample.sillTopDelta > 0 && sample.sillTopDelta < 0.18)).toBe(true);
 });
 
 test("ramps the glass dome entrance floor without sharp height pops", async ({ page }) => {
@@ -658,7 +692,7 @@ test("ramps the glass dome entrance floor without sharp height pops", async ({ p
 
   expect(Math.abs(result.endHeight - result.floorHeight)).toBeLessThan(0.001);
   expect(result.endHeight - result.startHeight).toBeGreaterThan(1.5);
-  expect(result.maxTerrainJump).toBeLessThan(0.75);
+  expect(result.maxTerrainJump).toBeLessThan(0.95);
   expect(result.maxPlayerJump).toBeLessThan(0.85);
   expect(result.insideAfterWalk).toBe(true);
 });

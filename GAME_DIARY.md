@@ -135,3 +135,5 @@ Smoothed the glass dome entrance with a doorway terrain ramp, restored broader c
 Added a full-circumference glass dome terrain collar that blends the varied outside ground toward the flat interior floor, helping the rim feel seated without removing the smooth entrance ramp.
 
 Fixed the glass dome entrance arch so it stands upright over the doorway and adjusted the transparent shell rendering to avoid one visibly faded sector.
+
+Embedded the glass dome entrance sill into the ramp surface and flattened a small rim shoulder at the shell footprint so the doorway/base reads as seated instead of floating.

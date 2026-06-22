@@ -105,6 +105,7 @@ declare global {
         floorHeight: number;
         shellThickness: number;
         entranceHalfWidth: number;
+        entranceSillTopHeight: number;
         entranceDirectionX: number;
         entranceDirectionZ: number;
         entranceX: number;
@@ -117,6 +118,7 @@ declare global {
         inside: boolean;
         entranceClearance: number;
         groundingBandWidth: number;
+        groundingFlatRadius: number;
         groundingOuterRadius: number;
         timeMultiplier: number;
         targetTimeMultiplier: number;
@@ -234,6 +236,7 @@ const temple = createTempleLandmark(scene, heightAt);
 const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone]);
 const domeFloorColour = new THREE.Color(0x273c78);
 const domeGroundingBandWidth = 16;
+const domeGroundingFlatShoulder = 0.25;
 const fieldNotes = createFieldNotesState();
 const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
 const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
@@ -373,6 +376,7 @@ if (enableDebugTools) {
       floorHeight: dome.floorHeight,
       shellThickness: dome.shellThickness,
       entranceHalfWidth: dome.entranceHalfWidth,
+      entranceSillTopHeight: dome.entranceSillTopHeight,
       entranceDirectionX: dome.entranceDirection.x,
       entranceDirectionZ: dome.entranceDirection.z,
       entranceX: dome.entrancePosition.x,
@@ -385,6 +389,7 @@ if (enableDebugTools) {
       inside: dome.contains(player.localPosition),
       entranceClearance: dome.entranceClearanceAt(player.localPosition),
       groundingBandWidth: domeGroundingBandWidth,
+      groundingFlatRadius: dome.radius + domeGroundingFlatShoulder,
       groundingOuterRadius: dome.radius + domeGroundingBandWidth,
       timeMultiplier: domeTimeMultiplier,
       targetTimeMultiplier: domeTargetTimeMultiplier,
@@ -571,7 +576,8 @@ function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | 
 function domeRimGroundingAmountAt(x: number, z: number): number {
   const distance = surfaceDistanceBetweenLocal({ x, z }, dome.position);
   if (distance <= dome.interiorRadius || distance >= dome.radius + domeGroundingBandWidth) return 0;
-  return 1 - THREE.MathUtils.smoothstep(distance, dome.interiorRadius, dome.radius + domeGroundingBandWidth);
+  if (distance <= dome.radius + domeGroundingFlatShoulder) return 1;
+  return 1 - THREE.MathUtils.smoothstep(distance, dome.radius + domeGroundingFlatShoulder, dome.radius + domeGroundingBandWidth);
 }
 
 function domeEntranceRampAmountAt(x: number, z: number): number {
@@ -582,9 +588,9 @@ function domeEntranceRampAmountAt(x: number, z: number): number {
   const corridorHalfWidth = dome.entranceHalfWidth + 4.5;
   if (crossEntrance > corridorHalfWidth) return 0;
 
-  const outerRamp = dome.radius + 10;
-  const innerRamp = dome.interiorRadius - 8;
-  const alongAmount = 1 - THREE.MathUtils.smoothstep(alongEntrance, innerRamp, outerRamp);
+  const outerRamp = dome.radius + 18;
+  const flatRamp = dome.radius + domeGroundingFlatShoulder;
+  const alongAmount = alongEntrance <= flatRamp ? 1 : 1 - THREE.MathUtils.smoothstep(alongEntrance, flatRamp, outerRamp);
   const widthAmount = 1 - THREE.MathUtils.smoothstep(crossEntrance, dome.entranceHalfWidth, corridorHalfWidth);
   return THREE.MathUtils.clamp(alongAmount * widthAmount, 0, 1);
 }
