@@ -316,13 +316,13 @@ test("keeps chunked spherical terrain under the player beyond the starting field
     debug.setPlayer(0, 24);
     const spawnNature = debug.getNatureState();
     const spawnIsClear = !debug.isBlockedAt(0, 24);
-    debug.setPlayer(420, -360);
+    debug.setPlayer(-420, 360);
     const player = debug.getPlayer();
     const terrain = debug.getTerrainState();
     const nature = debug.getNatureState();
     const standingHeight = debug.getMovementState().cameraHeight;
     const sampledHeight = debug.terrainHeightAt(player.x, player.z);
-    debug.setPlayer(470, -390);
+    debug.setPlayer(-470, 390);
     const movedTerrain = debug.getTerrainState();
     const movedNature = debug.getNatureState();
 
@@ -621,6 +621,16 @@ test("discovers the observatory as the next collection-order field note", async 
       playerClear: !debug.isBlockedAt(player.x, player.z),
       observatoryBlocked: debug.isBlockedAt(observatory.x, observatory.z),
       platformBlocked: observatory.platformSamples.map((sample) => debug.isBlockedAt(sample.x, sample.z)),
+      platformStanding: observatory.platformSurfaceSamples.map((sample) => {
+        debug.setPlayer(sample.x, sample.z);
+        const playerOnDeck = debug.getPlayer();
+        return {
+          surfaceY: sample.surfaceY,
+          deckAboveTerrain: sample.surfaceY - sample.terrainY,
+          cameraOffsetFromSurface: playerOnDeck.y - sample.surfaceY,
+          debugSurfaceY: debug.surfaceHeightAt(sample.x, sample.z),
+        };
+      }),
       blockerBlocked: observatory.blockerSamples.map((sample) => ({
         name: sample.name,
         blocked: debug.isBlockedAt(sample.x, sample.z),
@@ -637,6 +647,9 @@ test("discovers the observatory as the next collection-order field note", async 
   expect(source.playerClear).toBe(true);
   expect(source.observatoryBlocked).toBe(true);
   expect(source.platformBlocked.every((blocked) => !blocked)).toBe(true);
+  expect(source.platformStanding.every((sample) => sample.deckAboveTerrain > 0.2)).toBe(true);
+  expect(source.platformStanding.every((sample) => sample.cameraOffsetFromSurface > 1.5 && sample.cameraOffsetFromSurface < 1.8)).toBe(true);
+  expect(source.platformStanding.every((sample) => Math.abs(sample.debugSurfaceY - sample.surfaceY) < 0.001)).toBe(true);
   expect(source.blockerBlocked.every((sample) => sample.blocked)).toBe(true);
   expect(source.observatoryIsOnLand).toBe(true);
   expect(source.discoveredCount).toBe(0);

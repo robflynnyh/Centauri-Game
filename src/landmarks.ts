@@ -56,6 +56,7 @@ export type ObservatoryLandmark = {
     platform: LocalPlanetPoint[];
     blockers: Array<{ name: string; position: LocalPlanetPoint }>;
   };
+  platformSurfaceHeightAt: (x: number, z: number) => number | null;
   reservedZone: LandmarkZone;
   update: (elapsed: number) => void;
 };
@@ -73,6 +74,9 @@ const observatoryNoteRadius = 12;
 const telescopeInteractionRadius = 7.4;
 const telescopeUseDistance = observatoryCollisionRadius + 1.7;
 const telescopeViewDistance = observatoryCollisionRadius + 1.25;
+const observatoryAnchorOffset = 0.04;
+const observatoryDeckTopLocalY = 0.78;
+const observatoryStepTopLocalY = 0.5;
 
 export function createTempleLandmark(scene: THREE.Scene, heightAt: HeightSampler): TempleLandmark {
   const position = chooseTemplePosition(heightAt);
@@ -130,9 +134,10 @@ export function createObservatoryLandmark(
   const notePosition = offsetLocal(position, sideSightline, 5.6);
   const altitude = heightAt(position.x, position.z);
   const viewHeight = heightAt(viewPosition.x, viewPosition.z) + 2.65;
-  const foundationSupports = makeObservatoryFoundationSupports(position, yaw, altitude + 0.04, heightAt);
+  const anchorAltitude = altitude + observatoryAnchorOffset;
+  const foundationSupports = makeObservatoryFoundationSupports(position, yaw, anchorAltitude, heightAt);
   const group = makeObservatory(foundationSupports);
-  placeObjectOnPlanet(group, position.x, position.z, altitude + 0.04, new THREE.Euler(0, yaw, 0));
+  placeObjectOnPlanet(group, position.x, position.z, anchorAltitude, new THREE.Euler(0, yaw, 0));
   scene.add(group);
 
   const noteMarker = makeObservatoryNoteMarker();
@@ -166,6 +171,7 @@ export function createObservatoryLandmark(
     },
     collision: createObservatoryCollision(position, yaw),
     collisionSamples,
+    platformSurfaceHeightAt: (x, z) => observatoryPlatformSurfaceHeightAt(position, yaw, anchorAltitude, x, z),
     reservedZone: { x: position.x, z: position.z, radius: observatoryClearanceRadius },
     update: (elapsed) => {
       const lensGlow = group.userData.lensGlow as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
@@ -333,6 +339,31 @@ function observatoryLocalToWorld(position: LocalPlanetPoint, yaw: number, localX
     position.x + localX * Math.cos(yaw) + localZ * Math.sin(yaw),
     position.z - localX * Math.sin(yaw) + localZ * Math.cos(yaw)
   );
+}
+
+function observatoryWorldToLocal(position: LocalPlanetPoint, yaw: number, x: number, z: number): { x: number; z: number } {
+  const dx = x - position.x;
+  const dz = z - position.z;
+  return {
+    x: dx * Math.cos(yaw) - dz * Math.sin(yaw),
+    z: dx * Math.sin(yaw) + dz * Math.cos(yaw),
+  };
+}
+
+function observatoryPlatformSurfaceHeightAt(
+  position: LocalPlanetPoint,
+  yaw: number,
+  anchorAltitude: number,
+  x: number,
+  z: number
+): number | null {
+  const local = observatoryWorldToLocal(position, yaw, x, z);
+  const deckX = local.x / 5.05;
+  const deckZ = local.z / 4.05;
+  if (deckX * deckX + deckZ * deckZ <= 1) return anchorAltitude + observatoryDeckTopLocalY;
+
+  const onSteps = Math.abs(local.x) <= 1.55 && local.z >= 3.75 && local.z <= 5.35;
+  return onSteps ? anchorAltitude + observatoryStepTopLocalY : null;
 }
 
 function templeInfluenceAt(playerPosition: LocalPlanetPoint, templePosition: LocalPlanetPoint, elapsed: number): number {
@@ -579,11 +610,6 @@ function makeObservatory(foundationSupports: ObservatoryFoundationSupport[] = []
   sightFin.rotation.set(0.36, Math.PI, 0);
   group.add(sightFin);
 
-  const backFlag = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.8, 0.72), rimMaterial);
-  backFlag.position.set(-1.2, 2.15, 2.65);
-  backFlag.rotation.set(0.05, -0.16, -0.12);
-  group.add(backFlag);
-
   group.userData = { lensGlow, reticle };
   return group;
 }
@@ -600,11 +626,11 @@ function makeObservatoryNoteMarker(): THREE.Group {
   group.name = "observatory-field-note-star-marker";
 
   const plinthMaterial = new THREE.MeshBasicMaterial({ color: 0x101632 });
-  const faceMaterial = new THREE.MeshBasicMaterial({ color: 0xffd36a });
+  const shardMaterial = new THREE.MeshBasicMaterial({ color: 0xffd36a });
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0x82ffea,
     transparent: true,
-    opacity: 0.3,
+    opacity: 0.34,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
@@ -613,30 +639,15 @@ function makeObservatoryNoteMarker(): THREE.Group {
   base.position.y = 0.14;
   group.add(base);
 
-  const shard = new THREE.Mesh(new THREE.ConeGeometry(0.44, 1.32, 3), faceMaterial);
-  shard.position.set(-0.08, 0.98, 0.02);
-  shard.rotation.set(0.18, Math.PI / 3, -0.28);
+  const shard = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1.6, 3), shardMaterial);
+  shard.position.set(0, 1.02, 0.02);
+  shard.rotation.set(0.14, Math.PI / 3, -0.18);
   group.add(shard);
 
-  const lens = new THREE.Mesh(new THREE.CircleGeometry(0.42, 8), glowMaterial.clone());
-  lens.position.set(0.12, 1.08, 0.28);
-  lens.rotation.z = 0.24;
-  group.add(lens);
-
-  const orbit = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.035, 4, 18), glowMaterial.clone());
-  orbit.position.set(0.08, 1.16, 0.3);
-  orbit.rotation.set(0.26, 0.34, 0.72);
-  group.add(orbit);
-
-  const crescent = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.055, 4, 18, Math.PI * 1.32), glowMaterial.clone());
-  crescent.position.set(-0.06, 1.34, 0.34);
-  crescent.rotation.z = -0.78;
-  group.add(crescent);
-
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.035, 4, 16), glowMaterial.clone());
-  halo.position.y = 1.86;
-  halo.rotation.set(Math.PI / 2, 0.18, 0.32);
-  group.add(halo);
+  const glyph = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.86, 0.1), glowMaterial);
+  glyph.position.set(0.12, 1.14, 0.34);
+  glyph.rotation.set(0.04, 0.1, -0.62);
+  group.add(glyph);
 
   return group;
 }

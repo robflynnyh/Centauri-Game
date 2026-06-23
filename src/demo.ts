@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
+import { getOceanRegions } from "./water";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -13,7 +14,7 @@ function intervalPulse(value: number, start: number, peak: number, end: number):
 }
 
 function showSkyRegion(
-  camera: THREE.PerspectiveCamera,
+  camera: THREE.Camera,
   heightAt: HeightSampler,
   onWalk: WalkObserver | undefined,
   elapsed: number,
@@ -26,7 +27,7 @@ function showSkyRegion(
 }
 
 function showFixedTimeSkyRegion(
-  camera: THREE.PerspectiveCamera,
+  camera: THREE.Camera,
   heightAt: HeightSampler,
   onWalk: WalkObserver | undefined,
   anchorElapsed: number,
@@ -39,7 +40,7 @@ function showFixedTimeSkyRegion(
 }
 
 function showSkyRegionAtLongitude(
-  camera: THREE.PerspectiveCamera,
+  camera: THREE.Camera,
   heightAt: HeightSampler,
   onWalk: WalkObserver | undefined,
   sunLongitude: number,
@@ -53,21 +54,24 @@ function showSkyRegionAtLongitude(
   const targetZ = (latitude * 0.72 + 0.08) * PLANET_RADIUS;
   const position = new THREE.Vector3(x, 0, z);
   onWalk?.(position, 0);
-  lookAtPlanetPoint(
-    camera,
-    x,
-    z,
-    heightAt(x, z) + 36,
-    targetX,
-    targetZ,
-    heightAt(targetX, targetZ) + 16
-  );
+  lookAtPlanetPoint(camera, x, z, heightAt(x, z) + 36, targetX, targetZ, heightAt(targetX, targetZ) + 16);
 }
 
 function setDemoFov(camera: THREE.PerspectiveCamera, fov: number): void {
   if (Math.abs(camera.fov - fov) < 0.01) return;
   camera.fov = fov;
   camera.updateProjectionMatrix();
+}
+
+function showOceanDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWalk: WalkObserver | undefined, elapsed: number): void {
+  const ocean = getOceanRegions()[0];
+  const orbit = elapsed * 0.18;
+  const x = ocean.center.x + Math.cos(orbit) * 360;
+  const z = ocean.center.z + Math.sin(orbit) * 120;
+  const targetX = ocean.center.x - 60;
+  const targetZ = ocean.center.z + 30;
+  onWalk?.(new THREE.Vector3(ocean.center.x, 0, ocean.center.z), 0);
+  lookAtPlanetPoint(camera, x, z, heightAt(x, z) + 86, targetX, targetZ, heightAt(targetX, targetZ) + 2);
 }
 
 export function createPrDemoController(
@@ -85,7 +89,8 @@ export function createPrDemoController(
       yaw: number;
       pitch: number;
     };
-  }
+  },
+  mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -116,15 +121,7 @@ export function createPrDemoController(
         } else {
           onWalk?.(demoPlayer, 0);
         }
-        lookAtPlanetPoint(
-          camera,
-          demoPlayer.x,
-          demoPlayer.z,
-          heightAt(demoPlayer.x, demoPlayer.z) + 3.15,
-          6.7,
-          10.2,
-          heightAt(6.7, 10.2) + 1.85
-        );
+        lookAtPlanetPoint(camera, demoPlayer.x, demoPlayer.z, heightAt(demoPlayer.x, demoPlayer.z) + 3.15, 6.7, 10.2, heightAt(6.7, 10.2) + 1.85);
         return;
       }
 
@@ -144,7 +141,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 10.6) {
+      if (elapsed < 10.4) {
         const observatoryPosition = observatory?.position ?? { x: -430, z: 312 };
         const approach = observatory?.approachPosition ?? { x: -442, z: 324 };
         onWalk?.(new THREE.Vector3(observatoryPosition.x, 0, observatoryPosition.z), 0);
@@ -160,7 +157,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 12.3) {
+      if (elapsed < 11.8) {
         const telescope = observatory?.telescope;
         const viewPosition = telescope?.viewPosition ?? { x: -432, z: 316 };
         setDemoFov(camera, 26);
@@ -176,86 +173,64 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 14.0) {
-        showSkyRegion(camera, heightAt, onWalk, elapsed, 0, -0.15, 0.18);
+      if (elapsed < 13.0) {
+        showOceanDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
 
-      if (elapsed < 15.7) {
+      const shiftedElapsed = elapsed - 2.4;
+
+      if (shiftedElapsed < 12.0) {
+        showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);
+        return;
+      }
+
+      if (shiftedElapsed < 13.4) {
         showFixedTimeSkyRegion(camera, heightAt, onWalk, 10.6, Math.PI * 0.5, 0.05, -0.22);
         return;
       }
 
-      if (elapsed < 18.4) {
-        showSkyRegion(camera, heightAt, onWalk, elapsed, Math.PI, 0.16, -0.18);
+      if (shiftedElapsed < 16.0) {
+        showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, Math.PI, 0.16, -0.18);
         return;
       }
 
-      if (elapsed < 20.0) {
+      if (shiftedElapsed < 17.6) {
         const focus = { x: 12.9, z: -73.4 };
         const x = 23 + Math.sin(elapsed * 0.62) * 1.1;
         const z = -62 + Math.cos(elapsed * 0.54) * 1.1;
         onWalk?.(new THREE.Vector3(focus.x + 70, 0, focus.z + 70), 0);
-        lookAtPlanetPoint(
-          camera,
-          x,
-          z,
-          heightAt(x, z) + 7.8,
-          focus.x,
-          focus.z,
-          heightAt(focus.x, focus.z) + 3.5
-        );
+        lookAtPlanetPoint(camera, x, z, heightAt(x, z) + 7.8, focus.x, focus.z, heightAt(focus.x, focus.z) + 3.5);
         return;
       }
 
-      if (elapsed < 21.4) {
-        const focus = { x: 12.9, z: -73.4 };
-        const x = 27 + Math.sin(elapsed * 0.7) * 1.4;
-        const z = -60 + Math.cos(elapsed * 0.6) * 1.4;
-        onWalk?.(new THREE.Vector3(focus.x + 1.5, 0, focus.z + 1.5), 0);
-        lookAtPlanetPoint(
-          camera,
-          x,
-          z,
-          heightAt(x, z) + 8.4,
-          focus.x + 22,
-          focus.z - 10,
-          heightAt(focus.x, focus.z) + 31
-        );
+      if (shiftedElapsed < 19.2) {
+        const base = mountain?.base ?? { x: 470, z: -446 };
+        const center = mountain?.center ?? { x: 612, z: -528 };
+        const x = base.x - 12 + Math.sin(elapsed * 0.45) * 2.4;
+        const z = base.z + 13 + Math.cos(elapsed * 0.38) * 2.4;
+        onWalk?.(new THREE.Vector3(base.x, 0, base.z), 0);
+        lookAtPlanetPoint(camera, x, z, heightAt(x, z) + 8.8, center.x, center.z, heightAt(center.x, center.z) + 22);
         return;
       }
 
-      if (elapsed < 22.2) {
-        const focus = { x: 25.0, z: -614.0 };
-        const x = 44 + Math.sin(elapsed * 0.5) * 3;
-        const z = -593 + Math.cos(elapsed * 0.45) * 3;
-        onWalk?.(new THREE.Vector3(x, 0, z), 0);
-        lookAtPlanetPoint(
-          camera,
-          x,
-          z,
-          heightAt(x, z) + 5.6,
-          focus.x,
-          focus.z,
-          heightAt(focus.x, focus.z) + 1.3
-        );
+      if (shiftedElapsed < 20.4) {
+        const samples = mountain?.pathSamples ?? [];
+        const middle = samples[Math.floor(samples.length * 0.56)] ?? { x: 500, z: -560 };
+        const summit = mountain?.center ?? { x: 612, z: -528 };
+        const x = middle.x + 24 + Math.sin(elapsed * 0.52) * 2.4;
+        const z = middle.z + 18 + Math.cos(elapsed * 0.44) * 2.4;
+        onWalk?.(new THREE.Vector3(middle.x, 0, middle.z), 0);
+        lookAtPlanetPoint(camera, x, z, heightAt(x, z) + 15, summit.x, summit.z, heightAt(summit.x, summit.z) + 7);
         return;
       }
 
-      if (elapsed < 22.8) {
+      if (shiftedElapsed < 21.2) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
         const z = -607 + Math.cos(elapsed * 0.48) * 1.2;
         onWalk?.(new THREE.Vector3(x, 0, z), 0);
-        lookAtPlanetPoint(
-          camera,
-          x,
-          z,
-          heightAt(x, z) + 3.6,
-          focus.x,
-          focus.z,
-          heightAt(focus.x, focus.z) + 1.2
-        );
+        lookAtPlanetPoint(camera, x, z, heightAt(x, z) + 3.6, focus.x, focus.z, heightAt(focus.x, focus.z) + 1.2);
         return;
       }
 

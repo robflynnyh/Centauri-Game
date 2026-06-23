@@ -233,6 +233,25 @@ canvas {
   text-transform: uppercase;
 }
 
+.underwater {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(30, 206, 220, 0.18), rgba(18, 61, 160, 0.28)),
+    repeating-linear-gradient(
+      0deg,
+      rgba(169, 255, 244, 0.08) 0,
+      rgba(169, 255, 244, 0.08) 4px,
+      rgba(9, 31, 105, 0.04) 4px,
+      rgba(9, 31, 105, 0.04) 12px
+    );
+  mix-blend-mode: screen;
+  opacity: 0;
+  transition: opacity 0.24s linear;
+}
+
 @media (max-width: 560px) {
   .hud {
     padding: 12px;
