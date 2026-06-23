@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { diamondTerrainColourAt, diamondTerrainOffsetAt } from "./diamond-biome";
 import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, PLANET_RADIUS } from "./planet";
 import { oceanTerrainOffsetAt } from "./water";
 
@@ -71,7 +72,7 @@ const terrainPalette = [
 
 export function heightAt(x: number, z: number): number {
   const baseHeight = baseTerrainHeightAt(x, z);
-  return baseHeight + massiveMountainHeightAt(x, z, baseHeight);
+  return baseHeight + massiveMountainHeightAt(x, z, baseHeight) + diamondTerrainOffsetAt(x, z);
 }
 
 function baseTerrainHeightAt(x: number, z: number): number {
@@ -481,7 +482,7 @@ function terrainColourForCell(centerX: number, centerZ: number, centerY: number)
     Math.sin((blockX + blockZ) * 0.27) * 0.22;
   const palettePosition = THREE.MathUtils.clamp(altitude * 0.68 + broadMineral * 0.18 + steppedBoundary * 0.14, 0, 0.999);
   const band = Math.floor(palettePosition * terrainPalette.length);
-  return terrainPalette[band];
+  return diamondTerrainColourAt(centerX, centerZ, terrainPalette[band]);
 }
 
 function makeTerrainGeometry(

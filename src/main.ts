@@ -2,6 +2,15 @@ import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
 import { createAlienWaterCreatures, createMountainBirds, createRareFlyingBeetles, type BirdDebugState } from "./creatures";
 import { createPrDemoController } from "./demo";
+import {
+  createDiamondCrystalSystem,
+  diamondBiomeStateAt,
+  diamondGravityMultiplierAt,
+  getDiamondBiomeDebugState,
+  getDiamondDebugSpawn,
+  type DiamondBiomeDebugState,
+  type DiamondBiomeState,
+} from "./diamond-biome";
 import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import { createTempleLandmark } from "./landmarks";
@@ -56,7 +65,7 @@ declare global {
         radialDistance: number;
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
-      getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
+      getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number; gravityMultiplier: number };
       getPerfState: () => {
         frameMs: number;
         fps: number;
@@ -115,6 +124,8 @@ declare global {
         isolationAmount: number;
         targetIsolationAmount: number;
         nearestBiomePatchDistance: number;
+        prismAmount: number;
+        targetPrismAmount: number;
       };
       setIsolationOverride: (amount: number | null) => void;
       getTempleState: () => {
@@ -163,6 +174,9 @@ declare global {
       getOceanState: () => OceanState;
       getOceanStateAt: (x: number, z: number) => OceanState;
       getOceanDebugState: () => OceanDebugState;
+      getDiamondBiomeState: () => DiamondBiomeDebugState;
+      getDiamondBiomeStateAt: (x: number, z: number) => DiamondBiomeState;
+      gravityMultiplierAt: (x: number, z: number) => number;
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
@@ -190,6 +204,7 @@ const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
 const enableOceanDebug = params.get("debug") === "ocean";
+const enableDiamondDebug = params.get("debug") === "diamond" || params.get("debug") === "crystals";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
@@ -201,6 +216,7 @@ const enableDebugTools =
   isBirdDebug ||
   enableMountainDebug ||
   enableOceanDebug ||
+  enableDiamondDebug ||
   enableSleepDebug ||
   enableIsolationDebug ||
   enablePerfDebug;
@@ -227,13 +243,15 @@ const hudBadgeText = isDemo
             ? "mountain debug"
             : enableOceanDebug
               ? "ocean debug"
-              : enableSleepDebug
-                ? "sleep debug"
-                : enableIsolationDebug
-                  ? "isolation debug"
-                  : enablePerfDebug
-                    ? "perf debug"
-                    : "exploration mode";
+              : enableDiamondDebug
+                ? "diamond debug"
+                : enableSleepDebug
+                  ? "sleep debug"
+                  : enableIsolationDebug
+                    ? "isolation debug"
+                    : enablePerfDebug
+                      ? "perf debug"
+                      : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -307,6 +325,7 @@ const mountainBirds = createMountainBirds(scene, heightAt);
 const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
 const oceanDebugSpawn = getOceanDebugSpawn();
+const diamondDebugSpawn = getDiamondDebugSpawn();
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
@@ -317,17 +336,21 @@ const initialPlayerLocalPosition = enableTempleDebug
         ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
         : enableOceanDebug
           ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
-          : enableIsolationDebug
-            ? new THREE.Vector3(-128, 0, -464)
-            : new THREE.Vector3(0, 0, 24);
+          : enableDiamondDebug
+            ? new THREE.Vector3(diamondDebugSpawn.x, 0, diamondDebugSpawn.z)
+            : enableIsolationDebug
+              ? new THREE.Vector3(-128, 0, -464)
+              : new THREE.Vector3(0, 0, 24);
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
   : enableMountainDebug
     ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
     : enableOceanDebug
       ? oceanDebugSpawn.yaw
-      : 0;
-const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
+      : enableDiamondDebug
+        ? diamondDebugSpawn.yaw
+        : 0;
+const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : enableDiamondDebug ? 0.2 : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -356,10 +379,12 @@ const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
 const terrain = createTerrainSystem();
 const oceans = createOceanSystem();
+const diamondCrystals = createDiamondCrystalSystem(heightAt);
 const mist = createMistSystem(scene, heightAt, isDemo);
 
 scene.add(terrain.group);
 scene.add(oceans.group);
+scene.add(diamondCrystals.group);
 scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
 
@@ -378,6 +403,8 @@ const visionState = {
   isolationAmount: 0,
   targetIsolationAmount: 0,
   nearestBiomePatchDistance: 0,
+  prismAmount: 0,
+  targetPrismAmount: 0,
 };
 const perfState = {
   smoothedFrameMs: 0,
@@ -421,6 +448,7 @@ if (enableDebugTools) {
       grounded: player.grounded,
       crouching: isCrouchPressed(),
       cameraHeight: player.cameraHeight,
+      gravityMultiplier: diamondGravityMultiplierAt(player.localPosition.x, player.localPosition.z),
     }),
     getPerfState: () => {
       let sceneObjects = 0;
@@ -484,6 +512,9 @@ if (enableDebugTools) {
     getOceanState: () => oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt),
     getOceanStateAt: (x: number, z: number) => oceanStateAt(x, z, heightAt),
     getOceanDebugState: () => getOceanDebugState(heightAt),
+    getDiamondBiomeState: () => getDiamondBiomeDebugState(diamondCrystals.getRenderState(), player.localPosition),
+    getDiamondBiomeStateAt: (x: number, z: number) => diamondBiomeStateAt(x, z),
+    gravityMultiplierAt: (x: number, z: number) => diamondGravityMultiplierAt(x, z),
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
       const state = sleep.setAmount(amount);
@@ -516,6 +547,7 @@ if (enableDebugTools) {
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
       oceans.update(player.localPosition.x, player.localPosition.z);
+      diamondCrystals.update(player.localPosition.x, player.localPosition.z, clock.elapsedTime);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
       sky.update(clock.elapsedTime, player.localPosition);
     },
@@ -524,6 +556,7 @@ if (enableDebugTools) {
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
       oceans.update(player.localPosition.x, player.localPosition.z);
+      diamondCrystals.update(player.localPosition.x, player.localPosition.z, clock.elapsedTime);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
       return { x: player.localPosition.x, y: player.position.length() - PLANET_RADIUS, z: player.localPosition.z };
     },
@@ -666,13 +699,17 @@ function isolationTargetForDistance(distance: number): number {
   return THREE.MathUtils.smoothstep(distance, 70, 132);
 }
 
-function updateVisionState(delta: number): void {
+function updateVisionState(delta: number, focus: { x: number; z: number }): void {
   const natureState = getNatureState();
   const targetIsolationAmount = isolationOverrideAmount ?? isolationTargetForDistance(natureState.nearestBiomePatchDistance);
+  const targetPrismAmount = diamondBiomeStateAt(focus.x, focus.z).activeAmount;
   const fade = 1 - Math.exp(-delta * 0.92);
+  const prismFade = 1 - Math.exp(-delta * 2.4);
   visionState.targetIsolationAmount = targetIsolationAmount;
+  visionState.targetPrismAmount = targetPrismAmount;
   visionState.nearestBiomePatchDistance = natureState.nearestBiomePatchDistance;
   visionState.isolationAmount = THREE.MathUtils.lerp(visionState.isolationAmount, targetIsolationAmount, fade);
+  visionState.prismAmount = THREE.MathUtils.lerp(visionState.prismAmount, targetPrismAmount, prismFade);
 }
 
 function playerSurfaceAltitude(): number {
@@ -786,7 +823,7 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
   player.jumpQueued = false;
 
   if (!player.grounded) {
-    player.verticalVelocity -= gravity * delta;
+    player.verticalVelocity -= gravity * diamondGravityMultiplierAt(player.localPosition.x, player.localPosition.z) * delta;
     player.verticalOffset += player.verticalVelocity * delta;
     if (player.verticalOffset <= 0) {
       player.verticalOffset = 0;
@@ -872,9 +909,10 @@ function animate(): void {
   sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   oceans.update(floraFocus.x, floraFocus.z);
+  diamondCrystals.update(floraFocus.x, floraFocus.z, elapsed);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
-  updateVisionState(delta);
+  updateVisionState(delta, floraFocus);
   mist.update(elapsed, floraFocus);
   if (!isDemo) updateUnderwaterCue();
 
@@ -882,6 +920,7 @@ function animate(): void {
   pixelRenderer.render(scene, camera, {
     elapsed,
     isolationAmount: visionState.isolationAmount,
+    prismAmount: visionState.prismAmount,
   });
   requestAnimationFrame(animate);
 }
