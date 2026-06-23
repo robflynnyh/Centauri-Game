@@ -639,7 +639,7 @@ test("keeps the glass dome entrance sill flush with the effective ramp", async (
       const terrainHeight = debug.terrainHeightAt(x, z);
       return {
         terrainDelta: Math.abs(terrainHeight - dome.floorHeight),
-        sillTopDelta: dome.floorHeight + dome.entranceSillTopHeight - terrainHeight,
+        raisedSillDelta: dome.floorHeight + dome.entranceSillTopHeight - terrainHeight,
       };
     });
 
@@ -649,9 +649,9 @@ test("keeps the glass dome entrance sill flush with the effective ramp", async (
     };
   });
 
-  expect(result.entranceSillTopHeight).toBeLessThan(0.16);
+  expect(result.entranceSillTopHeight).toBeLessThan(0.01);
   expect(result.samples.every((sample) => sample.terrainDelta < 0.001)).toBe(true);
-  expect(result.samples.every((sample) => sample.sillTopDelta > 0 && sample.sillTopDelta < 0.18)).toBe(true);
+  expect(result.samples.every((sample) => Math.abs(sample.raisedSillDelta) < 0.01)).toBe(true);
 });
 
 test("ramps the glass dome entrance floor without sharp height pops", async ({ page }) => {

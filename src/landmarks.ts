@@ -65,8 +65,7 @@ const domeSeed = "centauri-field-note-003-glass-dome";
 const domeRadius = (PLANET_ASSUMED_WALK_SPEED * 60) / (Math.PI * 2);
 const domeShellThickness = 4.4;
 const domeEntranceHalfWidth = 8.4;
-const domeEntranceSillHeight = 0.14;
-const domeEntranceSillCenterY = 0.04;
+const domeEntranceSillTopHeight = 0;
 const domeClearanceRadius = domeRadius + 24;
 const domeNoteRadius = 10;
 
@@ -153,7 +152,7 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
     floorHeight,
     shellThickness: domeShellThickness,
     entranceHalfWidth: domeEntranceHalfWidth,
-    entranceSillTopHeight: domeEntranceSillCenterY + domeEntranceSillHeight * 0.5,
+    entranceSillTopHeight: domeEntranceSillTopHeight,
     entranceDirection,
     entrancePosition,
     approachPosition,
@@ -378,6 +377,7 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   });
   const ribMaterial = new THREE.MeshBasicMaterial({ color: 0xd8fbff });
   const shadowRibMaterial = new THREE.MeshBasicMaterial({ color: 0x4b6eb9 });
+  const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x273c78 });
   const glowMaterial = new THREE.MeshBasicMaterial({
     color: 0xff8fe9,
     transparent: true,
@@ -391,6 +391,8 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   glass.rotation.y = entranceAngle;
   glass.renderOrder = 1;
   group.add(glass);
+
+  addDomeBaseCollar(group, radius, entranceAngle, entranceGapAngle, baseMaterial);
 
   for (let i = 0; i < 7; i += 1) {
     const angle = entranceAngle + entranceGapAngle * 0.72 + ((Math.PI * 2 - entranceGapAngle * 1.44) * i) / 6;
@@ -407,12 +409,6 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
     group.add(ring);
   }
 
-  const threshold = new THREE.Mesh(new THREE.BoxGeometry(entranceHalfWidth * 2.1, domeEntranceSillHeight, 3.2), ribMaterial);
-  threshold.position.set(Math.sin(entranceAngle) * radius, domeEntranceSillCenterY, Math.cos(entranceAngle) * radius);
-  threshold.rotation.y = entranceAngle;
-  threshold.renderOrder = 2;
-  group.add(threshold);
-
   const arch = new THREE.Mesh(new THREE.TorusGeometry(entranceHalfWidth, 0.34, 5, 24, Math.PI), ribMaterial);
   arch.position.set(Math.sin(entranceAngle) * (radius - 0.35), 0.96, Math.cos(entranceAngle) * (radius - 0.35));
   arch.rotation.set(0, entranceAngle, 0);
@@ -426,6 +422,24 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
 
   group.userData = { glass, innerGlow };
   return group;
+}
+
+function addDomeBaseCollar(group: THREE.Group, radius: number, entranceAngle: number, entranceGapAngle: number, material: THREE.Material): void {
+  const segmentCount = 56;
+  const step = (Math.PI * 2) / segmentCount;
+  const gapHalfAngle = entranceGapAngle * 0.95;
+
+  for (let i = 0; i < segmentCount; i += 1) {
+    const angle = i * step;
+    const deltaFromEntrance = Math.atan2(Math.sin(angle - entranceAngle), Math.cos(angle - entranceAngle));
+    if (Math.abs(deltaFromEntrance) < gapHalfAngle) continue;
+
+    const segment = new THREE.Mesh(new THREE.BoxGeometry(radius * step * 0.92, 0.08, 2.6), material);
+    segment.position.set(Math.sin(angle) * radius, 0, Math.cos(angle) * radius);
+    segment.rotation.y = angle;
+    segment.renderOrder = 2;
+    group.add(segment);
+  }
 }
 
 function addDomeRib(group: THREE.Group, radius: number, angle: number, material: THREE.Material): void {

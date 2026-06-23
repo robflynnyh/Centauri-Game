@@ -137,3 +137,5 @@ Added a full-circumference glass dome terrain collar that blends the varied outs
 Fixed the glass dome entrance arch so it stands upright over the doorway and adjusted the transparent shell rendering to avoid one visibly faded sector.
 
 Embedded the glass dome entrance sill into the ramp surface and flattened a small rim shoulder at the shell footprint so the doorway/base reads as seated instead of floating.
+
+Removed the raised glass dome threshold from the passable doorway and replaced the rim treatment with a low segmented base collar that leaves the entrance path clear.
