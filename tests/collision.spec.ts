@@ -316,13 +316,13 @@ test("keeps chunked spherical terrain under the player beyond the starting field
     debug.setPlayer(0, 24);
     const spawnNature = debug.getNatureState();
     const spawnIsClear = !debug.isBlockedAt(0, 24);
-    debug.setPlayer(420, -360);
+    debug.setPlayer(-420, 360);
     const player = debug.getPlayer();
     const terrain = debug.getTerrainState();
     const nature = debug.getNatureState();
     const standingHeight = debug.getMovementState().cameraHeight;
     const sampledHeight = debug.terrainHeightAt(player.x, player.z);
-    debug.setPlayer(470, -390);
+    debug.setPlayer(-470, 390);
     const movedTerrain = debug.getTerrainState();
     const movedNature = debug.getNatureState();
 

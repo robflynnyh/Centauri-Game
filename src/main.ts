@@ -628,6 +628,11 @@ function updatePlayerWorldPosition(): void {
 }
 
 function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): void {
+  if (movement.length() > 64) {
+    collisionWorld.resolveMove(position, movement);
+    return;
+  }
+
   const stepCount = Math.max(1, Math.ceil(movement.length() / maxGroundedStepDistance));
   const step = movement.clone().multiplyScalar(1 / stepCount);
   for (let i = 0; i < stepCount; i += 1) {
