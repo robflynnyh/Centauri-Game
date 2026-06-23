@@ -65,6 +65,31 @@ export type OceanSystem = {
   group: THREE.Group;
   update: (centerX: number, centerZ: number) => void;
   getRenderState: () => { centerX: number; centerZ: number; chunkSize: number; chunkCount: number; renderedChunks: number };
+  getOceanPerfState: () => OceanPerfState;
+};
+
+export type OceanPerfState = {
+  rebuilds: number;
+  lastRebuildMs: number;
+  maxRebuildMs: number;
+  totalRebuildMs: number;
+  lastCreatedChunks: number;
+  lastDisposedChunks: number;
+  cachedChunks: number;
+  visibleChunks: number;
+  lastChunkX: number;
+  lastChunkZ: number;
+};
+
+type OceanChunk = {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null;
+};
+
+type OceanChunkSyncStats = {
+  createdChunks: number;
+  disposedChunks: number;
+  cachedChunks: number;
+  visibleChunks: number;
 };
 
 const shoreBandWidth = 42;
@@ -72,9 +97,12 @@ const outsideBankBlendDistance = 72;
 const oceanChunkSize = 96;
 const oceanChunkSegments = 32;
 const oceanChunkRadius = 5;
+const oceanChunkHalfDiagonal = Math.SQRT2 * oceanChunkSize * 0.5;
+const oceanChunkCullPadding = 150;
 const oceanColourDeep = new THREE.Color(0x1156b8);
 const oceanColourMid = new THREE.Color(0x1fa6d2);
 const oceanColourShore = new THREE.Color(0x94fff2);
+const oceanColourScratch = new THREE.Color();
 
 export const OCEAN_REGIONS: OceanRegion[] = [
   {
@@ -203,6 +231,19 @@ export function createOceanSystem(): OceanSystem {
   let centerChunkX = Number.NaN;
   let centerChunkZ = Number.NaN;
   let renderedChunks = 0;
+  const chunks = new Map<string, OceanChunk>();
+  const perfState: OceanPerfState = {
+    rebuilds: 0,
+    lastRebuildMs: 0,
+    maxRebuildMs: 0,
+    totalRebuildMs: 0,
+    lastCreatedChunks: 0,
+    lastDisposedChunks: 0,
+    cachedChunks: 0,
+    visibleChunks: 0,
+    lastChunkX: 0,
+    lastChunkZ: 0,
+  };
 
   const update = (centerX: number, centerZ: number): void => {
     const normalized = normalizePlanetCoords(centerX, centerZ);
@@ -212,7 +253,20 @@ export function createOceanSystem(): OceanSystem {
 
     centerChunkX = nextChunkX;
     centerChunkZ = nextChunkZ;
-    renderedChunks = rebuildOceanChunks(group, material, centerChunkX, centerChunkZ);
+    const rebuildStart = performance.now();
+    const stats = syncOceanChunks(group, material, chunks, centerChunkX, centerChunkZ);
+    const rebuildMs = performance.now() - rebuildStart;
+    renderedChunks = stats.visibleChunks;
+    perfState.rebuilds += 1;
+    perfState.lastRebuildMs = rebuildMs;
+    perfState.maxRebuildMs = Math.max(perfState.maxRebuildMs, rebuildMs);
+    perfState.totalRebuildMs += rebuildMs;
+    perfState.lastCreatedChunks = stats.createdChunks;
+    perfState.lastDisposedChunks = stats.disposedChunks;
+    perfState.cachedChunks = stats.cachedChunks;
+    perfState.visibleChunks = stats.visibleChunks;
+    perfState.lastChunkX = centerChunkX;
+    perfState.lastChunkZ = centerChunkZ;
   };
 
   update(0, 0);
@@ -227,35 +281,85 @@ export function createOceanSystem(): OceanSystem {
       chunkCount: Math.pow(oceanChunkRadius * 2 + 1, 2),
       renderedChunks,
     }),
+    getOceanPerfState: () => ({ ...perfState }),
   };
 }
 
-function rebuildOceanChunks(group: THREE.Group, material: THREE.MeshBasicMaterial, centerChunkX: number, centerChunkZ: number): number {
-  group.children.forEach((child) => {
-    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-    mesh.geometry.dispose();
-  });
-  group.clear();
+function syncOceanChunks(
+  group: THREE.Group,
+  material: THREE.MeshBasicMaterial,
+  chunks: Map<string, OceanChunk>,
+  centerChunkX: number,
+  centerChunkZ: number
+): OceanChunkSyncStats {
+  const desiredKeys = new Set<string>();
+  const orderedMeshes: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>[] = [];
+  let createdChunks = 0;
 
-  let count = 0;
   for (let zChunk = centerChunkZ - oceanChunkRadius; zChunk <= centerChunkZ + oceanChunkRadius; zChunk += 1) {
     for (let xChunk = centerChunkX - oceanChunkRadius; xChunk <= centerChunkX + oceanChunkRadius; xChunk += 1) {
-      const xMin = xChunk * oceanChunkSize;
-      const zMin = zChunk * oceanChunkSize;
-      const geometry = makeOceanGeometry(xMin, xMin + oceanChunkSize, zMin, zMin + oceanChunkSize);
-      if (geometry.getAttribute("position").count === 0) {
-        geometry.dispose();
-        continue;
+      const key = oceanChunkKey(xChunk, zChunk);
+      desiredKeys.add(key);
+      let chunk = chunks.get(key);
+      if (!chunk) {
+        chunk = makeOceanChunk(material, xChunk, zChunk);
+        chunks.set(key, chunk);
+        createdChunks += 1;
       }
-
-      const chunk = new THREE.Mesh(geometry, material);
-      chunk.name = `spherical-ocean-chunk-${xChunk}-${zChunk}`;
-      chunk.renderOrder = 1;
-      group.add(chunk);
-      count += 1;
+      if (chunk.mesh) orderedMeshes.push(chunk.mesh);
     }
   }
-  return count;
+
+  let disposedChunks = 0;
+  chunks.forEach((chunk, key) => {
+    if (desiredKeys.has(key)) return;
+    if (chunk.mesh) {
+      group.remove(chunk.mesh);
+      chunk.mesh.geometry.dispose();
+    }
+    chunks.delete(key);
+    disposedChunks += 1;
+  });
+
+  orderedMeshes.forEach((mesh) => group.add(mesh));
+
+  return {
+    createdChunks,
+    disposedChunks,
+    cachedChunks: chunks.size,
+    visibleChunks: orderedMeshes.length,
+  };
+}
+
+function makeOceanChunk(material: THREE.MeshBasicMaterial, xChunk: number, zChunk: number): OceanChunk {
+  const xMin = xChunk * oceanChunkSize;
+  const zMin = zChunk * oceanChunkSize;
+  if (!chunkMayContainOcean(xMin, xMin + oceanChunkSize, zMin, zMin + oceanChunkSize)) {
+    return { mesh: null };
+  }
+
+  const geometry = makeOceanGeometry(xMin, xMin + oceanChunkSize, zMin, zMin + oceanChunkSize);
+  if (geometry.getAttribute("position").count === 0) {
+    geometry.dispose();
+    return { mesh: null };
+  }
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = `spherical-ocean-chunk-${xChunk}-${zChunk}`;
+  mesh.renderOrder = 1;
+  return { mesh };
+}
+
+function oceanChunkKey(xChunk: number, zChunk: number): string {
+  return `${xChunk}:${zChunk}`;
+}
+
+function chunkMayContainOcean(xMin: number, xMax: number, zMin: number, zMax: number): boolean {
+  const center = { x: (xMin + xMax) * 0.5, z: (zMin + zMax) * 0.5 };
+  return OCEAN_REGIONS.some((region) => {
+    const conservativeRadius = region.baseRadius + oceanChunkCullPadding + oceanChunkHalfDiagonal;
+    return surfaceDistanceBetweenLocal(center, region.center) <= conservativeRadius;
+  });
 }
 
 function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: number): THREE.BufferGeometry {
@@ -272,7 +376,7 @@ function makeOceanGeometry(xMin: number, xMax: number, zMin: number, zMax: numbe
       const z = zMin + zIndex * cellSizeZ;
       const state = oceanStateAt(x, z);
       const point = pointOnPlanet(x, z, waterSurfaceHeightAt(x, z));
-      const colour = oceanColourForState(state, x, z);
+      const colour = setOceanColourForState(state, x, z, oceanColourScratch);
       positions.push(point.x, point.y, point.z);
       colours.push(colour.r, colour.g, colour.b, waterAlphaForState(state));
     }
@@ -327,15 +431,11 @@ function waterSurfaceHeightAt(x: number, z: number): number {
   return state.waterSurfaceHeight + (broadRipple + fineRipple) * (0.35 + shoreFade * 0.65);
 }
 
-function oceanColourForState(state: OceanState, x: number, z: number): THREE.Color {
+function setOceanColourForState(state: OceanState, x: number, z: number, target: THREE.Color): THREE.Color {
   const depthAmount = THREE.MathUtils.clamp((-state.signedShoreDistance - 30) / Math.max(1, state.shorelineRadius * 0.55), 0, 1);
   const shoreAmount = state.normalizedShorelineAmount;
   const shimmer = Math.sin(x * 0.047 + z * 0.081) * 0.5 + Math.cos(x * 0.073 - z * 0.039) * 0.5;
-  return new THREE.Color()
-    .copy(oceanColourMid)
-    .lerp(oceanColourDeep, depthAmount)
-    .lerp(oceanColourShore, shoreAmount * 0.72)
-    .offsetHSL(0, 0, shimmer * 0.025);
+  return target.copy(oceanColourMid).lerp(oceanColourDeep, depthAmount).lerp(oceanColourShore, shoreAmount * 0.72).offsetHSL(0, 0, shimmer * 0.025);
 }
 
 function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler): OceanDebugRegionState {
