@@ -89,7 +89,8 @@ export function createPrDemoController(
   heightAt: HeightSampler,
   resolveMove: ResolveMove,
   onWalk?: WalkObserver,
-  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint }
+  temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
+  mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -187,35 +188,38 @@ export function createPrDemoController(
       }
 
       if (shiftedElapsed < 19.8) {
-        const focus = { x: 12.9, z: -73.4 };
-        const x = 27 + Math.sin(elapsed * 0.7) * 1.4;
-        const z = -60 + Math.cos(elapsed * 0.6) * 1.4;
-        onWalk?.(new THREE.Vector3(focus.x + 1.5, 0, focus.z + 1.5), 0);
+        const base = mountain?.base ?? { x: 470, z: -446 };
+        const center = mountain?.center ?? { x: 612, z: -528 };
+        const x = base.x - 12 + Math.sin(elapsed * 0.45) * 2.4;
+        const z = base.z + 13 + Math.cos(elapsed * 0.38) * 2.4;
+        onWalk?.(new THREE.Vector3(base.x, 0, base.z), 0);
         lookAtPlanetPoint(
           camera,
           x,
           z,
-          heightAt(x, z) + 8.4,
-          focus.x + 22,
-          focus.z - 10,
-          heightAt(focus.x, focus.z) + 31
+          heightAt(x, z) + 8.8,
+          center.x,
+          center.z,
+          heightAt(center.x, center.z) + 22
         );
         return;
       }
 
-      if (shiftedElapsed < 20.6) {
-        const focus = { x: 25.0, z: -614.0 };
-        const x = 44 + Math.sin(elapsed * 0.5) * 3;
-        const z = -593 + Math.cos(elapsed * 0.45) * 3;
-        onWalk?.(new THREE.Vector3(x, 0, z), 0);
+      if (shiftedElapsed < 20.8) {
+        const samples = mountain?.pathSamples ?? [];
+        const middle = samples[Math.floor(samples.length * 0.56)] ?? { x: 500, z: -560 };
+        const summit = mountain?.center ?? { x: 612, z: -528 };
+        const x = middle.x + 24 + Math.sin(elapsed * 0.52) * 2.4;
+        const z = middle.z + 18 + Math.cos(elapsed * 0.44) * 2.4;
+        onWalk?.(new THREE.Vector3(middle.x, 0, middle.z), 0);
         lookAtPlanetPoint(
           camera,
           x,
           z,
-          heightAt(x, z) + 5.6,
-          focus.x,
-          focus.z,
-          heightAt(focus.x, focus.z) + 1.3
+          heightAt(x, z) + 15,
+          summit.x,
+          summit.z,
+          heightAt(summit.x, summit.z) + 7
         );
         return;
       }

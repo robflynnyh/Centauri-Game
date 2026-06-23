@@ -8,9 +8,9 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?debug=ocean&test=collision");
+  await page.goto("/?debug=mountain&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("ocean debug")).toBeVisible();
+  await expect(page.getByText("mountain debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
   await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
@@ -233,6 +233,131 @@ test("starts near mountain birds and triggers clear fleeing", async ({ page }) =
   expect(afterStopState?.fleeing).toBeGreaterThan(0);
   expect(postStopMotion).toBeGreaterThan(0.2);
   expect(afterStopState?.maxFrameDisplacement).toBeLessThan(2.5);
+});
+
+test("starts at one massive mountain with a clear bendy summit path", async ({ page }) => {
+  await page.goto("/?debug=mountain&test=collision");
+  await expect(page.getByText("mountain debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMassiveMountainState));
+  await page.waitForTimeout(500);
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mountain debug hook");
+
+    const mountain = debug.getMassiveMountainState();
+    const player = debug.getPlayer();
+    const lowlandHeight = debug.terrainHeightAt(0, 24);
+    const normalMountainRise = mountain.normalMountainPeakHeight - lowlandHeight;
+    const massiveMountainRise = mountain.peak.height - lowlandHeight;
+    const sampleStates = mountain.pathSamples.map((sample) => ({
+      ...sample,
+      blocked: debug.isBlockedAt(sample.x, sample.z),
+      slope: debug.terrainSlopeAt(sample.x, sample.z),
+      slipperiness: debug.terrainSlipperinessAt(sample.x, sample.z),
+      actualHeight: debug.terrainHeightAt(sample.x, sample.z),
+    }));
+    const steepFaceStates = mountain.steepFaceSamples.map((sample) => ({
+      ...sample,
+      blocked: debug.isBlockedAt(sample.x, sample.z),
+      slope: debug.terrainSlopeAt(sample.x, sample.z),
+      slipperiness: debug.terrainSlipperinessAt(sample.x, sample.z),
+    }));
+    const pathClimbChecks = sampleStates.slice(1, 7).map((sample, index) => {
+      const start = sampleStates[index];
+      debug.setPlayer(start.x, start.z);
+      const before = debug.getPlayer();
+      const segmentDistance = Math.hypot(sample.x - start.x, sample.z - start.z);
+      const after = debug.attemptMove(sample.x - start.x, sample.z - start.z);
+      return {
+        progressDistance: Math.hypot(after.x - before.x, after.z - before.z),
+        segmentDistance,
+      };
+    });
+    const steepSlipChecks = steepFaceStates.slice(0, 4).map((sample) => {
+      debug.setPlayer(sample.x, sample.z);
+      const beforePlayer = debug.getPlayer();
+      const beforeHeight = debug.terrainHeightAt(sample.x, sample.z);
+      const uphillX = -sample.downhillX * 8;
+      const uphillZ = -sample.downhillZ * 8;
+      const after = debug.attemptMove(uphillX, uphillZ);
+      const afterHeight = debug.terrainHeightAt(after.x, after.z);
+      return {
+        heightGain: afterHeight - beforeHeight,
+        playerYGain: after.y - beforePlayer.y,
+        uphillTravel: -((after.x - sample.x) * sample.downhillX + (after.z - sample.z) * sample.downhillZ),
+      };
+    });
+    const pathSteps = sampleStates.slice(1).map((sample, index) => {
+      const previous = sampleStates[index];
+      const distance = Math.hypot(sample.x - previous.x, sample.z - previous.z);
+      const heightDelta = sample.actualHeight - previous.actualHeight;
+      return {
+        distance,
+        heightDelta,
+        slope: Math.abs(heightDelta) / Math.max(distance, 0.001),
+      };
+    });
+    const pathLength = sampleStates.slice(1).reduce((length, sample, index) => {
+      const previous = sampleStates[index];
+      return length + Math.hypot(sample.x - previous.x, sample.z - previous.z);
+    }, 0);
+    const straightDistance = Math.hypot(mountain.peak.x - mountain.base.x, mountain.peak.z - mountain.base.z);
+    const turns = sampleStates.slice(2).filter((sample, index) => {
+      const a = sampleStates[index];
+      const b = sampleStates[index + 1];
+      const ab = Math.atan2(b.z - a.z, b.x - a.x);
+      const bc = Math.atan2(sample.z - b.z, sample.x - b.x);
+      const turn = Math.abs((((bc - ab + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI);
+      return turn > 0.35;
+    }).length;
+    debug.setPlayer(mountain.center.x, mountain.center.z);
+    const summitNature = debug.getNatureState();
+    const lowlandSlope = debug.terrainSlopeAt(0, 24);
+    const lowlandSlipperiness = debug.terrainSlipperinessAt(0, 24);
+
+    return {
+      playerStartsAtBase: Math.hypot(player.x - mountain.base.x, player.z - mountain.base.z) < 0.5,
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      oneReservedSummit: mountain.reservedZones.filter((zone) => Math.hypot(zone.x - mountain.center.x, zone.z - mountain.center.z) < 0.001).length,
+      peakAroundThreeTimesNormal: massiveMountainRise > normalMountainRise * 2.7,
+      peakAbovePathBase: mountain.peak.height > mountain.base.height + 52,
+      pathHasEnoughSamples: sampleStates.length >= 10,
+      pathIsClear: sampleStates.every((sample) => !sample.blocked),
+      pathIsSubtlySlippery: sampleStates.every((sample) => sample.slipperiness < 0.2),
+      pathSlipDoesNotMaskSteepSpikes: sampleStates.every((sample) => sample.slope < 0.55 || sample.slipperiness > 0.02),
+      pathClimbsReliably: pathClimbChecks.every((check) => check.progressDistance > check.segmentDistance * 0.92),
+      pathHeightsMatchTerrain: sampleStates.every((sample) => Math.abs(sample.actualHeight - sample.height) < 0.001),
+      pathClimbsToPeak: sampleStates[sampleStates.length - 1].actualHeight > sampleStates[0].actualHeight + 52,
+      pathHeightIsContinuous: pathSteps.every((step) => Math.abs(step.heightDelta) < 1.35 && step.slope < 0.56),
+      pathIsBendy: pathLength > straightDistance * 1.18 && turns >= 3,
+      generalSlopeQuerySeparatesTerrain: lowlandSlope < 0.44 && lowlandSlipperiness === 0 && steepFaceStates.every((sample) => sample.slope > lowlandSlope + 0.3),
+      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.25 && sample.slope > 0.44),
+      steepUphillAttemptsSlip:
+        steepSlipChecks.length >= 3 &&
+        steepSlipChecks.every((check) => check.heightGain < 2.8 && check.playerYGain < 2.8 && (check.uphillTravel < 2.2 || check.heightGain < 0.8)),
+      summitBiomeCleared: summitNature.nearestBiomePatchDistance > 120 && summitNature.generatedObstacles < 90,
+    };
+  });
+
+  expect(result.playerStartsAtBase).toBe(true);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.oneReservedSummit).toBe(1);
+  expect(result.peakAroundThreeTimesNormal).toBe(true);
+  expect(result.peakAbovePathBase).toBe(true);
+  expect(result.pathHasEnoughSamples).toBe(true);
+  expect(result.pathIsClear).toBe(true);
+  expect(result.pathIsSubtlySlippery).toBe(true);
+  expect(result.pathSlipDoesNotMaskSteepSpikes).toBe(true);
+  expect(result.pathClimbsReliably).toBe(true);
+  expect(result.pathHeightsMatchTerrain).toBe(true);
+  expect(result.pathClimbsToPeak).toBe(true);
+  expect(result.pathHeightIsContinuous).toBe(true);
+  expect(result.pathIsBendy).toBe(true);
+  expect(result.generalSlopeQuerySeparatesTerrain).toBe(true);
+  expect(result.steepFacesAreSlippery).toBe(true);
+  expect(result.steepUphillAttemptsSlip).toBe(true);
+  expect(result.summitBiomeCleared).toBe(true);
 });
 
 test("isolation debug state rises outside populated biome patches", async ({ page }) => {

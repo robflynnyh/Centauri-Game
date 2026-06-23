@@ -2,6 +2,25 @@ import * as THREE from "three";
 import { detailCoordinatesAt, normalizePlanetCoords, placeObjectOnPlanet, pointOnPlanet, PLANET_RADIUS } from "./planet";
 import { oceanTerrainOffsetAt } from "./water";
 
+export type MassiveMountainPathSample = {
+  x: number;
+  z: number;
+  progress: number;
+  width: number;
+  height: number;
+};
+
+export type MassiveMountainDebugState = {
+  center: { x: number; z: number };
+  base: { x: number; z: number; height: number };
+  peak: { x: number; z: number; height: number };
+  normalMountainPeakHeight: number;
+  mountainRise: number;
+  pathSamples: MassiveMountainPathSample[];
+  steepFaceSamples: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[];
+  reservedZones: { x: number; z: number; radius: number }[];
+};
+
 export type TerrainSystem = {
   group: THREE.Group;
   update: (centerX: number, centerZ: number) => void;
@@ -28,6 +47,11 @@ const terrainPalette = [
 ];
 
 export function heightAt(x: number, z: number): number {
+  const baseHeight = baseTerrainHeightAt(x, z);
+  return baseHeight + massiveMountainHeightAt(x, z, baseHeight);
+}
+
+function baseTerrainHeightAt(x: number, z: number): number {
   const detail = detailCoordinatesAt(x, z);
   const tileX = detail.x;
   const tileZ = detail.z;
@@ -65,6 +89,212 @@ function mountainHeightAt(x: number, z: number): number {
     mound(x, z, 74, 34, 18, 22, 6.5);
 
   return northCrests * serration * 14.5 + sideMasses;
+}
+
+const massiveMountainCenter = normalizePlanetCoords(612, -528);
+const massiveMountainRadiusX = 188;
+const massiveMountainRadiusZ = 154;
+const massiveMountainPeakRise = 68;
+const massiveMountainPathWidth = 8.4;
+const massiveMountainPathFalloff = 20;
+const terrainSlipSlopeStart = 0.44;
+const terrainSlipSlopeFull = 0.92;
+const massiveMountainPathWaypoints = [
+  { x: massiveMountainCenter.x - 142, z: massiveMountainCenter.z + 82, progress: 0 },
+  { x: massiveMountainCenter.x - 74, z: massiveMountainCenter.z + 62, progress: 0.14 },
+  { x: massiveMountainCenter.x - 130, z: massiveMountainCenter.z + 23, progress: 0.28 },
+  { x: massiveMountainCenter.x - 54, z: massiveMountainCenter.z - 12, progress: 0.43 },
+  { x: massiveMountainCenter.x - 112, z: massiveMountainCenter.z - 55, progress: 0.58 },
+  { x: massiveMountainCenter.x - 22, z: massiveMountainCenter.z - 83, progress: 0.72 },
+  { x: massiveMountainCenter.x + 44, z: massiveMountainCenter.z - 38, progress: 0.84 },
+  { x: massiveMountainCenter.x + 18, z: massiveMountainCenter.z + 10, progress: 0.94 },
+  { x: massiveMountainCenter.x, z: massiveMountainCenter.z, progress: 1 },
+];
+
+export const massiveMountainReservedZones = [
+  ...massiveMountainPathWaypoints.slice(0, -1).map((point) => ({ x: point.x, z: point.z, radius: massiveMountainPathWidth + 9 })),
+  { x: massiveMountainCenter.x, z: massiveMountainCenter.z, radius: 26 },
+];
+
+export function isInMassiveMountainFootprint(x: number, z: number, padding = 0): boolean {
+  return massiveMountainRadialAt(x, z) <= 1.08 + padding / Math.min(massiveMountainRadiusX, massiveMountainRadiusZ);
+}
+
+export function isOnMassiveMountainPath(x: number, z: number, padding = 0): boolean {
+  const normalized = normalizePlanetCoords(x, z);
+  return nearestMassiveMountainPathSample(normalized.x, normalized.z).distance <= massiveMountainPathWidth + padding;
+}
+
+export function massiveMountainPathInfluenceAt(x: number, z: number): number {
+  const normalized = normalizePlanetCoords(x, z);
+  const path = nearestMassiveMountainPathSample(normalized.x, normalized.z);
+  return 1 - THREE.MathUtils.smoothstep(path.distance, massiveMountainPathWidth, massiveMountainPathWidth + massiveMountainPathFalloff);
+}
+
+export function terrainSlopeAt(x: number, z: number): number {
+  const sampleDistance = 3.2;
+  const east = Math.abs(heightAt(x + sampleDistance, z) - heightAt(x - sampleDistance, z)) / (sampleDistance * 2);
+  const north = Math.abs(heightAt(x, z + sampleDistance) - heightAt(x, z - sampleDistance)) / (sampleDistance * 2);
+  const diagonalA = Math.abs(heightAt(x + sampleDistance, z + sampleDistance) - heightAt(x - sampleDistance, z - sampleDistance)) / (sampleDistance * Math.SQRT2 * 2);
+  const diagonalB = Math.abs(heightAt(x + sampleDistance, z - sampleDistance) - heightAt(x - sampleDistance, z + sampleDistance)) / (sampleDistance * Math.SQRT2 * 2);
+  return Math.max(east, north, diagonalA, diagonalB);
+}
+
+export function terrainSlipperinessAt(x: number, z: number): number {
+  const pathInfluence = massiveMountainPathInfluenceAt(x, z);
+  const pathDamping = THREE.MathUtils.lerp(1, 0.32, THREE.MathUtils.smoothstep(pathInfluence, 0.18, 0.9));
+  const steepAmount = THREE.MathUtils.smoothstep(terrainSlopeAt(x, z), terrainSlipSlopeStart, terrainSlipSlopeFull);
+  return THREE.MathUtils.clamp(pathDamping * steepAmount * 0.72, 0, 1);
+}
+
+export function terrainDownhillDirectionAt(x: number, z: number): { x: number; z: number } {
+  const sampleDistance = 3.2;
+  const gradientX = (heightAt(x + sampleDistance, z) - heightAt(x - sampleDistance, z)) / (sampleDistance * 2);
+  const gradientZ = (heightAt(x, z + sampleDistance) - heightAt(x, z - sampleDistance)) / (sampleDistance * 2);
+  const length = Math.hypot(gradientX, gradientZ);
+  if (length < 0.0001) return { x: 0, z: 0 };
+  return { x: -gradientX / length, z: -gradientZ / length };
+}
+
+export function massiveMountainHeightAt(x: number, z: number, baseHeight = baseTerrainHeightAt(x, z)): number {
+  const normalized = normalizePlanetCoords(x, z);
+  const dx = normalized.x - massiveMountainCenter.x;
+  const dz = normalized.z - massiveMountainCenter.z;
+  const radial = Math.sqrt(Math.pow(dx / massiveMountainRadiusX, 2) + Math.pow(dz / massiveMountainRadiusZ, 2));
+  const broadShoulder = (1 - THREE.MathUtils.smoothstep(radial, 0.62, 1.18)) * 10;
+  const mainMass = Math.pow(1 - THREE.MathUtils.smoothstep(radial, 0.05, 1), 0.92) * massiveMountainPeakRise;
+  const summitPlateau = (1 - THREE.MathUtils.smoothstep(radial, 0.05, 0.17)) * 3.8;
+  const naturalMountainHeight = baseHeight + broadShoulder + mainMass + summitPlateau;
+  const path = nearestMassiveMountainPathSample(normalized.x, normalized.z);
+  const pathInfluence = 1 - THREE.MathUtils.smoothstep(path.distance, massiveMountainPathWidth, massiveMountainPathWidth + massiveMountainPathFalloff);
+
+  if (pathInfluence <= 0) {
+    return naturalMountainHeight - baseHeight;
+  }
+
+  const startHeight = baseTerrainHeightAt(massiveMountainPathWaypoints[0].x, massiveMountainPathWaypoints[0].z) + 1.2;
+  const summitHeight = baseTerrainHeightAt(massiveMountainCenter.x, massiveMountainCenter.z) + massiveMountainPeakRise + 2.4;
+  const climb = THREE.MathUtils.smoothstep(path.progress, 0, 1);
+  const pathHeight = THREE.MathUtils.lerp(startHeight, summitHeight, climb) + Math.sin(path.progress * Math.PI * 6) * 0.55;
+  const shelfHeight = THREE.MathUtils.lerp(pathHeight, naturalMountainHeight, 0.08);
+  return THREE.MathUtils.lerp(naturalMountainHeight, shelfHeight, pathInfluence) - baseHeight;
+}
+
+export function getMassiveMountainDebugState(): MassiveMountainDebugState {
+  const base = massiveMountainPathWaypoints[0];
+  const pathSamples = sampleMassiveMountainPath();
+  const normalMountainPeakHeight = sampleNormalMountainPeakHeight();
+  const peakHeight = heightAt(massiveMountainCenter.x, massiveMountainCenter.z);
+  return {
+    center: { ...massiveMountainCenter },
+    base: { x: base.x, z: base.z, height: heightAt(base.x, base.z) },
+    peak: { x: massiveMountainCenter.x, z: massiveMountainCenter.z, height: peakHeight },
+    normalMountainPeakHeight,
+    mountainRise: peakHeight - baseTerrainHeightAt(massiveMountainCenter.x, massiveMountainCenter.z),
+    pathSamples,
+    steepFaceSamples: sampleMassiveMountainSteepFaces(),
+    reservedZones: massiveMountainReservedZones.map((zone) => ({ ...zone })),
+  };
+}
+
+function sampleMassiveMountainPath(): MassiveMountainPathSample[] {
+  const samples: MassiveMountainPathSample[] = [];
+  const sampleCount = 96;
+  for (let i = 0; i <= sampleCount; i += 1) {
+    const progress = i / sampleCount;
+    const point = pointOnMassiveMountainPath(progress);
+    samples.push({
+      x: point.x,
+      z: point.z,
+      progress,
+      width: massiveMountainPathWidth,
+      height: heightAt(point.x, point.z),
+    });
+  }
+  return samples;
+}
+
+function pointOnMassiveMountainPath(progress: number): { x: number; z: number } {
+  const clamped = THREE.MathUtils.clamp(progress, 0, 1);
+  for (let i = 0; i < massiveMountainPathWaypoints.length - 1; i += 1) {
+    const start = massiveMountainPathWaypoints[i];
+    const end = massiveMountainPathWaypoints[i + 1];
+    if (clamped < start.progress || clamped > end.progress) continue;
+    const localT = (clamped - start.progress) / Math.max(end.progress - start.progress, 0.001);
+    return {
+      x: THREE.MathUtils.lerp(start.x, end.x, localT),
+      z: THREE.MathUtils.lerp(start.z, end.z, localT),
+    };
+  }
+  const last = massiveMountainPathWaypoints[massiveMountainPathWaypoints.length - 1];
+  return { x: last.x, z: last.z };
+}
+
+function nearestMassiveMountainPathSample(x: number, z: number): { distance: number; progress: number } {
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  let nearestProgress = 0;
+  let weightedProgress = 0;
+  let totalWeight = 0;
+
+  for (let i = 0; i < massiveMountainPathWaypoints.length - 1; i += 1) {
+    const start = massiveMountainPathWaypoints[i];
+    const end = massiveMountainPathWaypoints[i + 1];
+    const segmentX = end.x - start.x;
+    const segmentZ = end.z - start.z;
+    const segmentLengthSq = segmentX * segmentX + segmentZ * segmentZ;
+    const t = THREE.MathUtils.clamp(((x - start.x) * segmentX + (z - start.z) * segmentZ) / segmentLengthSq, 0, 1);
+    const nearestX = start.x + segmentX * t;
+    const nearestZ = start.z + segmentZ * t;
+    const distance = Math.hypot(x - nearestX, z - nearestZ);
+    const progress = THREE.MathUtils.lerp(start.progress, end.progress, t);
+    const weight = 1 / Math.pow(Math.max(distance, 0.65), 4);
+    weightedProgress += progress * weight;
+    totalWeight += weight;
+
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestProgress = progress;
+    }
+  }
+
+  return { distance: nearestDistance, progress: totalWeight > 0 ? weightedProgress / totalWeight : nearestProgress };
+}
+
+function massiveMountainRadialAt(x: number, z: number): number {
+  const normalized = normalizePlanetCoords(x, z);
+  const dx = normalized.x - massiveMountainCenter.x;
+  const dz = normalized.z - massiveMountainCenter.z;
+  return Math.sqrt(Math.pow(dx / massiveMountainRadiusX, 2) + Math.pow(dz / massiveMountainRadiusZ, 2));
+}
+
+function sampleMassiveMountainSteepFaces(): { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[] {
+  const candidates: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[] = [];
+  for (let zOffset = -116; zOffset <= 116; zOffset += 16) {
+    for (let xOffset = -140; xOffset <= 140; xOffset += 16) {
+      const x = massiveMountainCenter.x + xOffset;
+      const z = massiveMountainCenter.z + zOffset;
+      if (!isInMassiveMountainFootprint(x, z)) continue;
+      if (isOnMassiveMountainPath(x, z, 15)) continue;
+
+      const slope = terrainSlopeAt(x, z);
+      const slipperiness = terrainSlipperinessAt(x, z);
+      if (slipperiness < 0.35) continue;
+      const downhill = terrainDownhillDirectionAt(x, z);
+      candidates.push({ x, z, height: heightAt(x, z), slope, slipperiness, downhillX: downhill.x, downhillZ: downhill.z });
+    }
+  }
+
+  return candidates.sort((a, b) => b.slope - a.slope).slice(0, 6);
+}
+
+function sampleNormalMountainPeakHeight(): number {
+  let peak = Number.NEGATIVE_INFINITY;
+  for (let z = -100; z <= -38; z += 4) {
+    for (let x = -96; x <= 96; x += 4) {
+      peak = Math.max(peak, baseTerrainHeightAt(x, z));
+    }
+  }
+  return peak;
 }
 
 function mound(x: number, z: number, centerX: number, centerZ: number, radiusX: number, radiusZ: number, height: number): number {
