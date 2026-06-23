@@ -36,12 +36,14 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          cat > /tmp/pr-demo-assets-comment.md <<EOF
-          PR demo assets generated.
-
-          Download the pr-demo-assets artifact from this workflow run:
-          $RUN_URL
-
-          The artifact contains the generated screenshot and video. Generated media is intentionally kept out of the repository.
-          EOF
-          gh pr comment "$PR_NUMBER" --body-file /tmp/pr-demo-assets-comment.md
+          {
+            echo "PR demo assets generated."
+            echo
+            echo "Download the pr-demo-assets artifact from this workflow run:"
+            echo "$RUN_URL"
+            echo
+            echo "The artifact contains the generated screenshot and video. Generated media is intentionally kept out of the repository."
+          } > /tmp/pr-demo-assets-comment.md
+          gh pr comment "$PR_NUMBER" --body-file /tmp/pr-demo-assets-comment.md || {
+            echo "::warning::Could not comment with demo artifact link. The artifact upload still completed; see $RUN_URL"
+          }
