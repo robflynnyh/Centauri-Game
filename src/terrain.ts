@@ -24,8 +24,21 @@ export type TerrainPerfState = {
   lastRebuildMs: number;
   maxRebuildMs: number;
   totalRebuildMs: number;
+  lastCreatedChunks: number;
+  lastDisposedChunks: number;
+  cachedChunks: number;
+  visibleChunks: number;
   lastChunkX: number;
   lastChunkZ: number;
+};
+
+type TerrainChunk = THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+
+type TerrainChunkSyncStats = {
+  createdChunks: number;
+  disposedChunks: number;
+  cachedChunks: number;
+  visibleChunks: number;
 };
 
 const terrainPalette = [
@@ -98,9 +111,14 @@ export function createTerrainSystem(): TerrainSystem {
     lastRebuildMs: 0,
     maxRebuildMs: 0,
     totalRebuildMs: 0,
+    lastCreatedChunks: 0,
+    lastDisposedChunks: 0,
+    cachedChunks: 0,
+    visibleChunks: 0,
     lastChunkX: 0,
     lastChunkZ: 0,
   };
+  const chunks = new Map<string, TerrainChunk>();
 
   let centerChunkX = Number.NaN;
   let centerChunkZ = Number.NaN;
@@ -114,12 +132,16 @@ export function createTerrainSystem(): TerrainSystem {
     centerChunkX = nextChunkX;
     centerChunkZ = nextChunkZ;
     const rebuildStart = performance.now();
-    rebuildTerrainChunks(group, terrainMaterial, centerChunkX, centerChunkZ);
+    const stats = syncTerrainChunks(group, terrainMaterial, chunks, centerChunkX, centerChunkZ);
     const rebuildMs = performance.now() - rebuildStart;
     perfState.rebuilds += 1;
     perfState.lastRebuildMs = rebuildMs;
     perfState.maxRebuildMs = Math.max(perfState.maxRebuildMs, rebuildMs);
     perfState.totalRebuildMs += rebuildMs;
+    perfState.lastCreatedChunks = stats.createdChunks;
+    perfState.lastDisposedChunks = stats.disposedChunks;
+    perfState.cachedChunks = stats.cachedChunks;
+    perfState.visibleChunks = stats.visibleChunks;
     perfState.lastChunkX = centerChunkX;
     perfState.lastChunkZ = centerChunkZ;
   };
@@ -134,25 +156,63 @@ export function createTerrainSystem(): TerrainSystem {
   };
 }
 
-function rebuildTerrainChunks(group: THREE.Group, terrainMaterial: THREE.MeshBasicMaterial, centerChunkX: number, centerChunkZ: number): void {
-  group.children.forEach((child) => {
-    const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-    mesh.geometry.dispose();
-  });
-  group.clear();
+function syncTerrainChunks(
+  group: THREE.Group,
+  terrainMaterial: THREE.MeshBasicMaterial,
+  chunks: Map<string, TerrainChunk>,
+  centerChunkX: number,
+  centerChunkZ: number
+): TerrainChunkSyncStats {
+  const desiredKeys = new Set<string>();
+  const orderedChunks: TerrainChunk[] = [];
+  let createdChunks = 0;
 
   for (let zChunk = centerChunkZ - terrainChunkRadius; zChunk <= centerChunkZ + terrainChunkRadius; zChunk += 1) {
     for (let xChunk = centerChunkX - terrainChunkRadius; xChunk <= centerChunkX + terrainChunkRadius; xChunk += 1) {
-      const xMin = xChunk * terrainChunkSize;
-      const zMin = zChunk * terrainChunkSize;
-      const chunk = new THREE.Mesh(
-        makeTerrainGeometry(xMin, xMin + terrainChunkSize, zMin, zMin + terrainChunkSize, terrainChunkSegments, terrainChunkSegments),
-        terrainMaterial
-      );
-      chunk.name = `spherical-terrain-chunk-${xChunk}-${zChunk}`;
-      group.add(chunk);
+      const key = terrainChunkKey(xChunk, zChunk);
+      desiredKeys.add(key);
+      let chunk = chunks.get(key);
+      if (!chunk) {
+        chunk = makeTerrainChunk(terrainMaterial, xChunk, zChunk);
+        chunks.set(key, chunk);
+        createdChunks += 1;
+      }
+      orderedChunks.push(chunk);
     }
   }
+
+  let disposedChunks = 0;
+  chunks.forEach((chunk, key) => {
+    if (desiredKeys.has(key)) return;
+    group.remove(chunk);
+    chunk.geometry.dispose();
+    chunks.delete(key);
+    disposedChunks += 1;
+  });
+
+  orderedChunks.forEach((chunk) => group.add(chunk));
+
+  return {
+    createdChunks,
+    disposedChunks,
+    cachedChunks: chunks.size,
+    visibleChunks: orderedChunks.length,
+  };
+}
+
+function makeTerrainChunk(terrainMaterial: THREE.MeshBasicMaterial, xChunk: number, zChunk: number): TerrainChunk {
+  const xMin = xChunk * terrainChunkSize;
+  const zMin = zChunk * terrainChunkSize;
+  const chunk = new THREE.Mesh(
+    makeTerrainGeometry(xMin, xMin + terrainChunkSize, zMin, zMin + terrainChunkSize, terrainChunkSegments, terrainChunkSegments),
+    terrainMaterial
+  );
+  chunk.name = `spherical-terrain-chunk-${xChunk}-${zChunk}`;
+  return chunk;
+}
+
+function terrainChunkKey(xChunk: number, zChunk: number): string {
+  return `${xChunk}:${zChunk}`;
 }
 
 function getTerrainState(

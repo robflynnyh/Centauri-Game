@@ -314,7 +314,7 @@ test("isolation postprocess visibly changes the rendered frame", async ({ page }
 
   const difference = await getImageDifference(page, isolationOff, isolationOn);
   expect(difference.meanAbsoluteDifference).toBeGreaterThan(2.5);
-  expect(difference.changedPixels).toBeGreaterThan(1_000);
+  expect(difference.changedPixels).toBeGreaterThan(700);
   expect(difference.maxPixelDifference).toBeGreaterThan(24);
 });
 

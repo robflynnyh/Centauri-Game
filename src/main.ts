@@ -22,7 +22,15 @@ import { createPixelRenderPipeline } from "./pixel-renderer";
 import { createSleepController, type SleepDebugState, type SleepUpdateInput } from "./sleep";
 import { createSkySystem, type SkyDebugState } from "./sky";
 import { createTerrainSystem, heightAt, makeHorizonLandforms, type TerrainPerfState } from "./terrain";
-import { createOceanSystem, getOceanDebugSpawn, getOceanDebugState, oceanStateAt, type OceanDebugState, type OceanState } from "./water";
+import {
+  createOceanSystem,
+  getOceanDebugSpawn,
+  getOceanDebugState,
+  oceanStateAt,
+  type OceanDebugState,
+  type OceanPerfState,
+  type OceanState,
+} from "./water";
 import "./style.css";
 
 declare global {
@@ -50,6 +58,7 @@ declare global {
         sceneObjects: number;
         terrain: TerrainPerfState;
         nature: NaturePerfState;
+        ocean: OceanPerfState;
       };
       getTerrainState: () => {
         centerX: number;
@@ -397,6 +406,7 @@ if (enableDebugTools) {
         sceneObjects,
         terrain: terrain.getTerrainPerfState(),
         nature: getNaturePerfState(),
+        ocean: oceans.getOceanPerfState(),
       };
     },
     getTerrainState: terrain.getTerrainState,
