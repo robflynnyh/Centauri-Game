@@ -654,6 +654,28 @@ test("keeps the glass dome entrance sill flush with the effective ramp", async (
   expect(result.samples.every((sample) => Math.abs(sample.raisedSillDelta) < 0.01)).toBe(true);
 });
 
+test("keeps visual ring and collar gaps clear of the glass dome doorway", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+
+    return {
+      entranceHalfWidth: dome.entranceHalfWidth,
+      visualEntranceGapHalfWidth: dome.visualEntranceGapHalfWidth,
+      visualRingGapHalfWidth: dome.visualRingGapHalfWidth,
+      baseCollarGapHalfWidth: dome.baseCollarGapHalfWidth,
+    };
+  });
+
+  expect(result.visualEntranceGapHalfWidth).toBeGreaterThan(result.entranceHalfWidth + 1);
+  expect(result.visualRingGapHalfWidth).toBeGreaterThan(result.entranceHalfWidth + 1);
+  expect(result.baseCollarGapHalfWidth).toBeGreaterThan(result.entranceHalfWidth + 1);
+});
+
 test("ramps the glass dome entrance floor without sharp height pops", async ({ page }) => {
   await page.goto("/?debug=dome");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));

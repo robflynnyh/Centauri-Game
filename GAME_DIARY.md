@@ -139,3 +139,5 @@ Fixed the glass dome entrance arch so it stands upright over the doorway and adj
 Embedded the glass dome entrance sill into the ramp surface and flattened a small rim shoulder at the shell footprint so the doorway/base reads as seated instead of floating.
 
 Removed the raised glass dome threshold from the passable doorway and replaced the rim treatment with a low segmented base collar that leaves the entrance path clear.
+
+Cut the glass dome latitude rings out of the same shared doorway aperture as the shell and collar, keeping the entrance walk-through visually open while preserving the current arch and grounded rim.

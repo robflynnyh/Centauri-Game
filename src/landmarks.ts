@@ -40,6 +40,9 @@ export type GlassDomeLandmark = {
   shellThickness: number;
   entranceHalfWidth: number;
   entranceSillTopHeight: number;
+  visualEntranceGapHalfWidth: number;
+  visualRingGapHalfWidth: number;
+  baseCollarGapHalfWidth: number;
   entranceDirection: LocalPlanetPoint;
   entrancePosition: LocalPlanetPoint;
   approachPosition: LocalPlanetPoint;
@@ -68,6 +71,15 @@ const domeEntranceHalfWidth = 8.4;
 const domeEntranceSillTopHeight = 0;
 const domeClearanceRadius = domeRadius + 24;
 const domeNoteRadius = 10;
+const domeLowestLatitudeRingScale = Math.cos((3 / 5) * Math.PI * 0.5);
+
+type DomeDoorwayAperture = {
+  shellGapAngle: number;
+  visualGapHalfAngle: number;
+  baseCollarGapHalfWidth: number;
+  visualEntranceGapHalfWidth: number;
+  visualRingGapHalfWidth: number;
+};
 
 export function createTempleLandmark(scene: THREE.Scene, heightAt: HeightSampler): TempleLandmark {
   const position = chooseTemplePosition(heightAt);
@@ -118,6 +130,7 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
   const notePosition = offsetLocal(position, entranceDirection, domeRadius - 8);
   const floorHeight = heightAt(position.x, position.z) + 0.08;
   const interiorRadius = domeRadius - domeShellThickness * 0.85;
+  const doorwayAperture = getDomeDoorwayAperture(domeRadius, domeEntranceHalfWidth);
   const group = makeGlassDome(domeRadius, domeEntranceHalfWidth, entranceAngle);
   placeObjectOnPlanet(group, position.x, position.z, floorHeight);
   scene.add(group);
@@ -153,6 +166,9 @@ export function createGlassDomeLandmark(scene: THREE.Scene, heightAt: HeightSamp
     shellThickness: domeShellThickness,
     entranceHalfWidth: domeEntranceHalfWidth,
     entranceSillTopHeight: domeEntranceSillTopHeight,
+    visualEntranceGapHalfWidth: doorwayAperture.visualEntranceGapHalfWidth,
+    visualRingGapHalfWidth: doorwayAperture.visualRingGapHalfWidth,
+    baseCollarGapHalfWidth: doorwayAperture.baseCollarGapHalfWidth,
     entranceDirection,
     entrancePosition,
     approachPosition,
@@ -366,7 +382,7 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   const group = new THREE.Group();
   group.name = "single-glass-dome-landmark";
 
-  const entranceGapAngle = Math.asin(THREE.MathUtils.clamp(entranceHalfWidth / radius, 0.04, 0.4)) * 2.25;
+  const doorwayAperture = getDomeDoorwayAperture(radius, entranceHalfWidth);
   const glassMaterial = new THREE.MeshBasicMaterial({
     color: 0x92f7ff,
     transparent: true,
@@ -387,26 +403,36 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
     side: THREE.DoubleSide,
   });
 
-  const glass = new THREE.Mesh(new THREE.SphereGeometry(radius, 28, 8, entranceGapAngle * 0.5, Math.PI * 2 - entranceGapAngle, 0, Math.PI * 0.5), glassMaterial);
+  const glass = new THREE.Mesh(
+    new THREE.SphereGeometry(
+      radius,
+      28,
+      8,
+      doorwayAperture.shellGapAngle * 0.5,
+      Math.PI * 2 - doorwayAperture.shellGapAngle,
+      0,
+      Math.PI * 0.5
+    ),
+    glassMaterial
+  );
   glass.rotation.y = entranceAngle;
   glass.renderOrder = 1;
   group.add(glass);
 
-  addDomeBaseCollar(group, radius, entranceAngle, entranceGapAngle, baseMaterial);
+  addDomeBaseCollar(group, radius, entranceAngle, doorwayAperture.visualGapHalfAngle, baseMaterial);
 
   for (let i = 0; i < 7; i += 1) {
-    const angle = entranceAngle + entranceGapAngle * 0.72 + ((Math.PI * 2 - entranceGapAngle * 1.44) * i) / 6;
+    const angle =
+      entranceAngle +
+      doorwayAperture.visualGapHalfAngle * 1.08 +
+      ((Math.PI * 2 - doorwayAperture.visualGapHalfAngle * 2.16) * i) / 6;
     addDomeRib(group, radius, angle, i % 2 === 0 ? ribMaterial : shadowRibMaterial);
   }
 
   for (let i = 1; i <= 3; i += 1) {
     const ringRadius = radius * Math.cos((i / 5) * Math.PI * 0.5);
     const y = radius * Math.sin((i / 5) * Math.PI * 0.5);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(ringRadius, 0.24, 5, 112), i % 2 === 0 ? ribMaterial : shadowRibMaterial);
-    ring.position.y = y;
-    ring.rotation.x = Math.PI / 2;
-    ring.renderOrder = 2;
-    group.add(ring);
+    addDomeLatitudeRing(group, ringRadius, y, entranceAngle, doorwayAperture.visualGapHalfAngle, i % 2 === 0 ? ribMaterial : shadowRibMaterial);
   }
 
   const arch = new THREE.Mesh(new THREE.TorusGeometry(entranceHalfWidth, 0.34, 5, 24, Math.PI), ribMaterial);
@@ -424,10 +450,21 @@ function makeGlassDome(radius: number, entranceHalfWidth: number, entranceAngle:
   return group;
 }
 
-function addDomeBaseCollar(group: THREE.Group, radius: number, entranceAngle: number, entranceGapAngle: number, material: THREE.Material): void {
+function getDomeDoorwayAperture(radius: number, entranceHalfWidth: number): DomeDoorwayAperture {
+  const shellGapAngle = Math.asin(THREE.MathUtils.clamp(entranceHalfWidth / radius, 0.04, 0.4)) * 2.25;
+  const visualGapHalfAngle = shellGapAngle * 0.95;
+  return {
+    shellGapAngle,
+    visualGapHalfAngle,
+    visualEntranceGapHalfWidth: Math.sin(visualGapHalfAngle) * radius,
+    baseCollarGapHalfWidth: Math.sin(visualGapHalfAngle) * radius,
+    visualRingGapHalfWidth: Math.sin(visualGapHalfAngle) * radius * domeLowestLatitudeRingScale,
+  };
+}
+
+function addDomeBaseCollar(group: THREE.Group, radius: number, entranceAngle: number, gapHalfAngle: number, material: THREE.Material): void {
   const segmentCount = 56;
   const step = (Math.PI * 2) / segmentCount;
-  const gapHalfAngle = entranceGapAngle * 0.95;
 
   for (let i = 0; i < segmentCount; i += 1) {
     const angle = i * step;
@@ -440,6 +477,24 @@ function addDomeBaseCollar(group: THREE.Group, radius: number, entranceAngle: nu
     segment.renderOrder = 2;
     group.add(segment);
   }
+}
+
+function addDomeLatitudeRing(
+  group: THREE.Group,
+  ringRadius: number,
+  y: number,
+  entranceAngle: number,
+  gapHalfAngle: number,
+  material: THREE.Material
+): void {
+  const arc = Math.PI * 2 - gapHalfAngle * 2;
+  const geometry = new THREE.TorusGeometry(ringRadius, 0.24, 5, 112, arc);
+  geometry.rotateZ(Math.PI * 0.5 - entranceAngle + gapHalfAngle);
+  const ring = new THREE.Mesh(geometry, material);
+  ring.position.y = y;
+  ring.rotation.x = Math.PI / 2;
+  ring.renderOrder = 2;
+  group.add(ring);
 }
 
 function addDomeRib(group: THREE.Group, radius: number, angle: number, material: THREE.Material): void {

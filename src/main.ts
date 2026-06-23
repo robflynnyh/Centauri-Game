@@ -106,6 +106,9 @@ declare global {
         shellThickness: number;
         entranceHalfWidth: number;
         entranceSillTopHeight: number;
+        visualEntranceGapHalfWidth: number;
+        visualRingGapHalfWidth: number;
+        baseCollarGapHalfWidth: number;
         entranceDirectionX: number;
         entranceDirectionZ: number;
         entranceX: number;
@@ -377,6 +380,9 @@ if (enableDebugTools) {
       shellThickness: dome.shellThickness,
       entranceHalfWidth: dome.entranceHalfWidth,
       entranceSillTopHeight: dome.entranceSillTopHeight,
+      visualEntranceGapHalfWidth: dome.visualEntranceGapHalfWidth,
+      visualRingGapHalfWidth: dome.visualRingGapHalfWidth,
+      baseCollarGapHalfWidth: dome.baseCollarGapHalfWidth,
       entranceDirectionX: dome.entranceDirection.x,
       entranceDirectionZ: dome.entranceDirection.z,
       entranceX: dome.entrancePosition.x,
