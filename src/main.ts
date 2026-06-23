@@ -78,8 +78,12 @@ declare global {
         generatedReactiveFlora: number;
         generatedSeaweedPatches: number;
         generatedSeaweedBlades: number;
+        generatedBushClumps: number;
+        generatedBushCards: number;
         nearestSeaweedDistance: number;
         nearestSeaweedFreezeAmount: number;
+        nearestBushDistance: number;
+        nearestBushWobbleAmount: number;
         seaweedSamples: {
           x: number;
           z: number;
@@ -87,6 +91,13 @@ declare global {
           nearestBiomeEdgeDistance: number;
           flatness: number;
           staticBend: number;
+        }[];
+        bushSamples: {
+          x: number;
+          z: number;
+          cardCount: number;
+          flatness: number;
+          nearestBiomeEdgeDistance: number;
         }[];
       };
       getVisionState: () => {
@@ -166,6 +177,7 @@ const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
+const enableBushDebug = params.get("debug") === "bushes";
 const enableMountainDebug = params.get("debug") === "mountain";
 const enableOceanDebug = params.get("debug") === "ocean";
 const enableCollisionDebug = params.get("test") === "collision";
@@ -176,6 +188,7 @@ const enableDebugTools =
   enableTempleDebug ||
   isBeetleDebug ||
   isBirdDebug ||
+  enableBushDebug ||
   enableMountainDebug ||
   enableOceanDebug ||
   enableSleepDebug ||
@@ -199,15 +212,17 @@ const hudBadgeText = isDemo
         ? "beetle debug"
         : isBirdDebug
           ? "birds debug"
-          : enableMountainDebug
-            ? "mountain debug"
-            : enableOceanDebug
-              ? "ocean debug"
-              : enableSleepDebug
-                ? "sleep debug"
-                : enableIsolationDebug
-                  ? "isolation debug"
-                  : "exploration mode";
+          : enableBushDebug
+            ? "bushes debug"
+            : enableMountainDebug
+              ? "mountain debug"
+              : enableOceanDebug
+                ? "ocean debug"
+                : enableSleepDebug
+                  ? "sleep debug"
+                  : enableIsolationDebug
+                    ? "isolation debug"
+                    : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -286,21 +301,25 @@ const initialPlayerLocalPosition = enableTempleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
     : isBirdDebug
       ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
-      : enableMountainDebug
-        ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
-        : enableOceanDebug
-          ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
-          : enableIsolationDebug
-            ? new THREE.Vector3(-128, 0, -464)
-            : new THREE.Vector3(0, 0, 24);
+      : enableBushDebug
+        ? new THREE.Vector3(7.2, 0, 15.4)
+        : enableMountainDebug
+          ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
+          : enableOceanDebug
+            ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
+            : enableIsolationDebug
+              ? new THREE.Vector3(-128, 0, -464)
+              : new THREE.Vector3(0, 0, 24);
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
-  : enableMountainDebug
-    ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
-    : enableOceanDebug
-      ? oceanDebugSpawn.yaw
-      : 0;
-const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
+  : enableBushDebug
+    ? Math.atan2(initialPlayerLocalPosition.x - 7.2, initialPlayerLocalPosition.z - 10.4)
+    : enableMountainDebug
+      ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
+      : enableOceanDebug
+        ? oceanDebugSpawn.yaw
+        : 0;
+const initialPlayerPitch = isBirdDebug ? 0.18 : enableBushDebug ? -0.08 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,

@@ -171,3 +171,7 @@ Added one massive planet-local mountain as terrain height-field geometry, with a
 Followed review feedback by keeping normal generated biome clusters off the massive mountain footprint and adding general terrain-slope slipperiness, with the massive mountain path overriding that slip so it remains the reliable climb route.
 
 Retuned the slope slipperiness so the mountain path is smooth enough to climb without a hard zero-slip exemption, and added a general grounded step-rise guard to avoid sudden camera pops on steep terrain discontinuities.
+
+## 2026-06-23
+
+Added grouped flat-card alien bushes to generated nature chunks, with passable clumps, proximity wobble reactions, a `?debug=bushes` review spawn, PR-demo visibility near the starter route, and focused generation/passability/reaction coverage.

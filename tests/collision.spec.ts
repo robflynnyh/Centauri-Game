@@ -442,6 +442,70 @@ test("generates reactive seaweed only in sparse flat wilderness", async ({ page 
   expect(nearSeaweedState?.nearestSeaweedFreezeAmount).toBeGreaterThan(0.72);
 });
 
+test("generates passable reactive bush clumps that wobble near the player", async ({ page }) => {
+  await page.goto("/?test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const spawnState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri debug hook");
+    debug.setPlayer(0, 24);
+    return debug.getNatureState();
+  });
+
+  expect(spawnState.generatedBushClumps).toBeGreaterThan(20);
+  expect(spawnState.generatedBushCards).toBeGreaterThan(spawnState.generatedBushClumps * 3);
+  expect(spawnState.bushSamples.length).toBeGreaterThan(0);
+  expect(spawnState.bushSamples.every((sample) => sample.cardCount >= 3 && sample.cardCount <= 8)).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.flatness <= 0.86)).toBe(true);
+
+  const bush = spawnState.bushSamples.find((sample) => sample.x > 5 && sample.x < 9 && sample.z > 8 && sample.z < 13) ?? spawnState.bushSamples[0];
+  expect(bush).toBeTruthy();
+
+  const passable = await page.evaluate((sample) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri debug hook");
+    const centerClear = !debug.isBlockedAt(sample.x, sample.z);
+    debug.setPlayer(sample.x - 3, sample.z);
+    const before = debug.getPlayer();
+    const after = debug.attemptMove(3, 0);
+    return {
+      centerClear,
+      crossedTowardCenter: after.x > before.x + 2.5,
+    };
+  }, bush);
+
+  expect(passable.centerClear).toBe(true);
+  expect(passable.crossedTowardCenter).toBe(true);
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), bush);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestBushDistance > 14 && state.nearestBushWobbleAmount < 0.08);
+  });
+  const farBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 1.2, sample.z + 1.1), bush);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestBushDistance < 5.5 && state.nearestBushWobbleAmount > 0.72);
+  });
+  const nearBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), bush);
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestBushDistance > 14 && state.nearestBushWobbleAmount < 0.16);
+  });
+  const settledBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  expect(farBushState?.nearestBushDistance).toBeGreaterThan(14);
+  expect(farBushState?.nearestBushWobbleAmount).toBeLessThan(0.08);
+  expect(nearBushState?.nearestBushDistance).toBeLessThan(5.5);
+  expect(nearBushState?.nearestBushWobbleAmount).toBeGreaterThan(0.72);
+  expect(settledBushState?.nearestBushWobbleAmount).toBeLessThan(0.16);
+});
+
 test("culls far mist patches in normal debug walking views", async ({ page }) => {
   await page.goto("/?test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMistState));
