@@ -29,7 +29,8 @@ export type NatureState = {
   generatedSeaweedPatches: number;
   generatedSeaweedBlades: number;
   generatedBushClumps: number;
-  generatedBushCards: number;
+  generatedBushForms: number;
+  generatedBushLumps: number;
   nearestSeaweedDistance: number;
   nearestSeaweedFreezeAmount: number;
   nearestBushDistance: number;
@@ -73,8 +74,10 @@ type SeaweedSample = {
   staticBend: number;
 };
 
-type BushCard = {
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+type BushForm = {
+  root: THREE.Group;
+  lumpCount: number;
+  restPosition: THREE.Vector3;
   restRotation: THREE.Euler;
   restScale: THREE.Vector3;
   phase: number;
@@ -84,7 +87,7 @@ type BushCard = {
 type ReactiveBushClump = {
   x: number;
   z: number;
-  cards: BushCard[];
+  bushes: BushForm[];
   reaction: number;
   flatness: number;
 };
@@ -92,7 +95,9 @@ type ReactiveBushClump = {
 type BushSample = {
   x: number;
   z: number;
-  cardCount: number;
+  bushCount: number;
+  lumpCount: number;
+  minBushSpacing: number;
   flatness: number;
   nearestBiomeEdgeDistance: number;
 };
@@ -160,11 +165,6 @@ export function populateNature(
   const canopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xffb84f });
   const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xc5ff4f });
   const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xff58df });
-  const bushMaterials = [
-    new THREE.MeshBasicMaterial({ color: 0x44df9a, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
-    new THREE.MeshBasicMaterial({ color: 0xd8ff5e, side: THREE.DoubleSide, transparent: true, opacity: 0.84 }),
-    new THREE.MeshBasicMaterial({ color: 0xff67c8, side: THREE.DoubleSide, transparent: true, opacity: 0.78 }),
-  ];
   const waterMaterial = new THREE.MeshBasicMaterial({
     color: 0x8cffff,
     transparent: true,
@@ -183,7 +183,8 @@ export function populateNature(
   let generatedSeaweedPatchCount = 0;
   let generatedSeaweedBladeCount = 0;
   let generatedBushClumpCount = 0;
-  let generatedBushCardCount = 0;
+  let generatedBushFormCount = 0;
+  let generatedBushLumpCount = 0;
   let generatedBiomePatchCount = 0;
   let fullDetailBiomePatchCount = 0;
   let nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
@@ -365,38 +366,70 @@ export function populateNature(
     const clump = new THREE.Group();
     placeObjectOnPlanet(clump, x, z, y + 0.05, new THREE.Euler(0, angle, 0));
 
-    const cardCount = 3 + Math.floor(random() * 6);
-    const cards: BushCard[] = [];
-    for (let i = 0; i < cardCount; i += 1) {
-      const height = 0.9 + random() * 1.05;
-      const width = 0.86 + random() * 0.72;
-      const lobe = 0.12 + random() * 0.18;
-      const card = new THREE.Mesh(
-        makeBushCardGeometry(width, height, lobe, random() * Math.PI * 2),
-        bushMaterials[(seed + i) % bushMaterials.length]
-      );
-      const cardAngle = (i / cardCount) * Math.PI * 2 + (random() - 0.5) * 0.72;
-      const distance = Math.pow(random(), 0.68) * (0.45 + random() * 0.88);
-      const restRotation = new THREE.Euler((random() - 0.5) * 0.16, cardAngle + Math.PI * 0.5, (random() - 0.5) * 0.24);
-      const restScale = new THREE.Vector3(0.78 + random() * 0.48, 0.82 + random() * 0.38, 1);
-      card.position.set(Math.cos(cardAngle) * distance, 0, Math.sin(cardAngle) * distance);
-      card.rotation.copy(restRotation);
-      card.scale.copy(restScale);
-      clump.add(card);
-      cards.push({
-        mesh: card,
+    const baseColour = new THREE.Color(0x3a9f50);
+    baseColour.offsetHSL((random() - 0.5) * 0.018, -0.07 + random() * 0.05, -0.09 + random() * 0.07);
+    const bushCount = 3 + Math.floor(random() * 3);
+    const bushes: BushForm[] = [];
+    const bushPositions: THREE.Vector3[] = [];
+    let totalLumps = 0;
+    let minBushSpacing = Number.POSITIVE_INFINITY;
+    const bushSpacing = 1.62 + random() * 0.32;
+
+    for (let i = 0; i < bushCount; i += 1) {
+      const localX = (i - (bushCount - 1) * 0.5) * bushSpacing + (random() - 0.5) * 0.18;
+      const localZ = Math.sin(i * 1.43 + seed * 0.017) * 0.48 + (random() - 0.5) * 0.42;
+      const restPosition = new THREE.Vector3(localX, 0, localZ);
+      bushPositions.forEach((position) => {
+        minBushSpacing = Math.min(minBushSpacing, position.distanceTo(restPosition));
+      });
+      bushPositions.push(restPosition);
+
+      const bush = new THREE.Group();
+      const restRotation = new THREE.Euler((random() - 0.5) * 0.06, random() * Math.PI * 2, (random() - 0.5) * 0.08);
+      const restScale = new THREE.Vector3(0.92 + random() * 0.22, 0.94 + random() * 0.18, 0.92 + random() * 0.22);
+      bush.position.copy(restPosition);
+      bush.rotation.copy(restRotation);
+      bush.scale.copy(restScale);
+
+      const lumpCount = 3 + Math.floor(random() * 3);
+      for (let lumpIndex = 0; lumpIndex < lumpCount; lumpIndex += 1) {
+        const lumpAngle = (lumpIndex / lumpCount) * Math.PI * 2 + random() * 0.34;
+        const lumpDistance = lumpIndex === 0 ? 0 : 0.32 + random() * 0.28;
+        const lumpColour = baseColour.clone();
+        lumpColour.offsetHSL((random() - 0.5) * 0.014, (random() - 0.5) * 0.04, (random() - 0.5) * 0.075);
+        const lump = new THREE.Mesh(
+          new THREE.DodecahedronGeometry(0.58 + random() * 0.22, 0),
+          new THREE.MeshBasicMaterial({ color: lumpColour })
+        );
+        lump.position.set(
+          Math.cos(lumpAngle) * lumpDistance,
+          0.42 + random() * 0.16 + (lumpIndex === 0 ? 0.12 : 0),
+          Math.sin(lumpAngle) * lumpDistance
+        );
+        lump.rotation.set(random() * Math.PI, random() * Math.PI, random() * Math.PI);
+        lump.scale.set(0.88 + random() * 0.24, 0.78 + random() * 0.18, 0.88 + random() * 0.22);
+        bush.add(lump);
+      }
+
+      clump.add(bush);
+      bushes.push({
+        root: bush,
+        lumpCount,
+        restPosition,
         restRotation,
         restScale,
         phase: random() * Math.PI * 2,
-        wobbleAmount: 0.12 + random() * 0.11,
+        wobbleAmount: 0.1 + random() * 0.08,
       });
+      totalLumps += lumpCount;
     }
 
     generatedNatureGroup.add(clump);
-    reactiveBushClumps.push({ x, z, cards, reaction: 0, flatness });
+    reactiveBushClumps.push({ x, z, bushes, reaction: 0, flatness });
     generatedBushClumpCount += 1;
-    generatedBushCardCount += cardCount;
-    bushSamples.push({ x, z, cardCount, flatness, nearestBiomeEdgeDistance });
+    generatedBushFormCount += bushCount;
+    generatedBushLumpCount += totalLumps;
+    bushSamples.push({ x, z, bushCount, lumpCount: totalLumps, minBushSpacing, flatness, nearestBiomeEdgeDistance });
   };
 
   const rebuildGeneratedNature = (centerX: number, centerZ: number): void => {
@@ -414,7 +447,8 @@ export function populateNature(
     generatedSeaweedPatchCount = 0;
     generatedSeaweedBladeCount = 0;
     generatedBushClumpCount = 0;
-    generatedBushCardCount = 0;
+    generatedBushFormCount = 0;
+    generatedBushLumpCount = 0;
     generatedBiomePatchCount = 0;
     fullDetailBiomePatchCount = 0;
     nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
@@ -493,7 +527,7 @@ export function populateNature(
 
         const bushCount = Math.round((2 + fullness * 5) * complexObjectScale);
         for (let i = 0; i < bushCount; i += 1) {
-          const point = starterBiome && i === 0 ? { x: 7.2, z: 10.4 } : pointNear(clusterX, clusterZ, clusterRadius * 0.82, random);
+          const point = starterBiome && i === 0 ? { x: 12.8, z: 10.8 } : pointNear(clusterX, clusterZ, clusterRadius * 0.82, random);
           if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
           const flatness = terrainFlatnessAt(heightAt, point.x, point.z);
           if (flatness > bushMaxFlatness) continue;
@@ -601,7 +635,8 @@ export function populateNature(
         generatedSeaweedPatchCount,
         generatedSeaweedBladeCount,
         generatedBushClumpCount,
-        generatedBushCardCount,
+        generatedBushFormCount,
+        generatedBushLumpCount,
         nearestSeaweedDistance,
         nearestSeaweedFreezeAmount,
         nearestBushDistance,
@@ -674,17 +709,22 @@ function createFloraReactivityUpdater(
         nearestBushWobbleAmount = clump.reaction;
       }
 
-      clump.cards.forEach((card, cardIndex) => {
-        const dance = Math.sin(elapsed * 10.8 + card.phase + clumpIndex * 0.43 + cardIndex * 0.29);
-        const flutter = Math.sin(elapsed * 17.2 + card.phase * 0.7);
-        const wobble = clump.reaction * card.wobbleAmount;
-        card.mesh.rotation.x = card.restRotation.x + flutter * wobble * 0.34;
-        card.mesh.rotation.y = card.restRotation.y + dance * wobble * 0.55;
-        card.mesh.rotation.z = card.restRotation.z + dance * wobble;
-        card.mesh.scale.set(
-          card.restScale.x * (1 + clump.reaction * 0.08 + Math.max(0, dance) * clump.reaction * 0.04),
-          card.restScale.y * (1 - clump.reaction * 0.05 + Math.max(0, flutter) * clump.reaction * 0.08),
-          card.restScale.z
+      clump.bushes.forEach((bush, bushIndex) => {
+        const dance = Math.sin(elapsed * 8.6 + bush.phase + clumpIndex * 0.43 + bushIndex * 0.61);
+        const bounce = Math.sin(elapsed * 12.4 + bush.phase * 0.7);
+        const wobble = clump.reaction * bush.wobbleAmount;
+        bush.root.position.set(
+          bush.restPosition.x + dance * wobble * 0.22,
+          bush.restPosition.y + Math.max(0, bounce) * clump.reaction * 0.12,
+          bush.restPosition.z + bounce * wobble * 0.12
+        );
+        bush.root.rotation.x = bush.restRotation.x + bounce * wobble * 0.36;
+        bush.root.rotation.y = bush.restRotation.y + dance * wobble * 0.5;
+        bush.root.rotation.z = bush.restRotation.z + dance * wobble * 0.46;
+        bush.root.scale.set(
+          bush.restScale.x * (1 + Math.max(0, dance) * clump.reaction * 0.07),
+          bush.restScale.y * (1 - clump.reaction * 0.04 + Math.max(0, bounce) * clump.reaction * 0.08),
+          bush.restScale.z * (1 + Math.max(0, -dance) * clump.reaction * 0.05)
         );
       });
     });
@@ -765,28 +805,6 @@ function makeSeaweedBladeGeometry(width: number, height: number, bend: number, p
   return geometry;
 }
 
-function makeBushCardGeometry(width: number, height: number, lobe: number, phase: number): THREE.BufferGeometry {
-  const waist = width * (0.34 + Math.sin(phase) * 0.04);
-  const shoulder = width * (0.5 + Math.cos(phase * 1.3) * 0.05);
-  const top = width * (0.16 + lobe * 0.25);
-  const positions = [
-    -waist, 0, 0,
-    waist, 0, 0,
-    -shoulder, height * 0.38, 0,
-    shoulder, height * 0.35, 0,
-    -width * (0.36 + lobe), height * 0.68, 0,
-    width * (0.3 + lobe * 0.7), height * 0.72, 0,
-    -top, height, 0,
-    top, height * (0.95 + Math.sin(phase * 0.8) * 0.04), 0,
-  ];
-  const indices = [0, 2, 1, 1, 2, 3, 2, 4, 3, 3, 4, 5, 4, 6, 5, 5, 6, 7];
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 function terrainFlatnessAt(heightAt: HeightSampler, x: number, z: number): number {
   const center = heightAt(x, z);
   const sampleDistance = 3.5;
@@ -818,7 +836,8 @@ function getGeneratedNatureState(
   generatedSeaweedPatches: number,
   generatedSeaweedBlades: number,
   generatedBushClumps: number,
-  generatedBushCards: number,
+  generatedBushForms: number,
+  generatedBushLumps: number,
   nearestSeaweedDistance: number,
   nearestSeaweedFreezeAmount: number,
   nearestBushDistance: number,
@@ -853,7 +872,8 @@ function getGeneratedNatureState(
     generatedSeaweedPatches,
     generatedSeaweedBlades,
     generatedBushClumps,
-    generatedBushCards,
+    generatedBushForms,
+    generatedBushLumps,
     nearestSeaweedDistance,
     nearestSeaweedFreezeAmount,
     nearestBushDistance,

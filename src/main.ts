@@ -79,7 +79,8 @@ declare global {
         generatedSeaweedPatches: number;
         generatedSeaweedBlades: number;
         generatedBushClumps: number;
-        generatedBushCards: number;
+        generatedBushForms: number;
+        generatedBushLumps: number;
         nearestSeaweedDistance: number;
         nearestSeaweedFreezeAmount: number;
         nearestBushDistance: number;
@@ -95,7 +96,9 @@ declare global {
         bushSamples: {
           x: number;
           z: number;
-          cardCount: number;
+          bushCount: number;
+          lumpCount: number;
+          minBushSpacing: number;
           flatness: number;
           nearestBiomeEdgeDistance: number;
         }[];
@@ -302,7 +305,7 @@ const initialPlayerLocalPosition = enableTempleDebug
     : isBirdDebug
       ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
       : enableBushDebug
-        ? new THREE.Vector3(7.2, 0, 15.4)
+        ? new THREE.Vector3(9.2, 0, 14.6)
         : enableMountainDebug
           ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
           : enableOceanDebug
@@ -313,7 +316,7 @@ const initialPlayerLocalPosition = enableTempleDebug
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
   : enableBushDebug
-    ? Math.atan2(initialPlayerLocalPosition.x - 7.2, initialPlayerLocalPosition.z - 10.4)
+    ? Math.atan2(initialPlayerLocalPosition.x - 12.8, initialPlayerLocalPosition.z - 10.8)
     : enableMountainDebug
       ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
       : enableOceanDebug

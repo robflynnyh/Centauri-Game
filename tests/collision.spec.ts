@@ -454,12 +454,15 @@ test("generates passable reactive bush clumps that wobble near the player", asyn
   });
 
   expect(spawnState.generatedBushClumps).toBeGreaterThan(20);
-  expect(spawnState.generatedBushCards).toBeGreaterThan(spawnState.generatedBushClumps * 3);
+  expect(spawnState.generatedBushForms).toBeGreaterThan(spawnState.generatedBushClumps * 3);
+  expect(spawnState.generatedBushLumps).toBeGreaterThan(spawnState.generatedBushForms * 3);
   expect(spawnState.bushSamples.length).toBeGreaterThan(0);
-  expect(spawnState.bushSamples.every((sample) => sample.cardCount >= 3 && sample.cardCount <= 8)).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.bushCount >= 3 && sample.bushCount <= 5)).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.lumpCount >= sample.bushCount * 3)).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.minBushSpacing >= 1.35)).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.flatness <= 0.86)).toBe(true);
 
-  const bush = spawnState.bushSamples.find((sample) => sample.x > 5 && sample.x < 9 && sample.z > 8 && sample.z < 13) ?? spawnState.bushSamples[0];
+  const bush = spawnState.bushSamples.find((sample) => sample.x > 11 && sample.x < 15 && sample.z > 9 && sample.z < 13) ?? spawnState.bushSamples[0];
   expect(bush).toBeTruthy();
 
   const passable = await page.evaluate((sample) => {
