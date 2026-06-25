@@ -21,6 +21,9 @@ export type MassiveMountainDebugState = {
   reservedZones: { x: number; z: number; radius: number }[];
 };
 
+type HeightSampler = (x: number, z: number) => number;
+type TerrainColourOverride = (x: number, z: number, y: number) => THREE.Color | null;
+
 export type TerrainSystem = {
   group: THREE.Group;
   update: (centerX: number, centerZ: number) => void;
@@ -332,7 +335,10 @@ const terrainChunkRadius = 5;
 const terrainChunkCellSize = terrainChunkSize / terrainChunkSegments;
 const terrainColourBlockSize = terrainChunkCellSize * 2;
 
-export function createTerrainSystem(): TerrainSystem {
+export function createTerrainSystem(
+  heightSampler: HeightSampler = heightAt,
+  colourOverride: TerrainColourOverride = () => null
+): TerrainSystem {
   const group = new THREE.Group();
   group.name = "spherical-planet-terrain";
   const terrainMaterial = makeTerrainMaterial();
@@ -362,7 +368,7 @@ export function createTerrainSystem(): TerrainSystem {
     centerChunkX = nextChunkX;
     centerChunkZ = nextChunkZ;
     const rebuildStart = performance.now();
-    const stats = syncTerrainChunks(group, terrainMaterial, chunks, centerChunkX, centerChunkZ);
+    const stats = syncTerrainChunks(group, terrainMaterial, chunks, centerChunkX, centerChunkZ, heightSampler, colourOverride);
     const rebuildMs = performance.now() - rebuildStart;
     perfState.rebuilds += 1;
     perfState.lastRebuildMs = rebuildMs;
@@ -391,7 +397,9 @@ function syncTerrainChunks(
   terrainMaterial: THREE.MeshBasicMaterial,
   chunks: Map<string, TerrainChunk>,
   centerChunkX: number,
-  centerChunkZ: number
+  centerChunkZ: number,
+  heightSampler: HeightSampler,
+  colourOverride: TerrainColourOverride
 ): TerrainChunkSyncStats {
   const desiredKeys = new Set<string>();
   const orderedChunks: TerrainChunk[] = [];
@@ -403,7 +411,7 @@ function syncTerrainChunks(
       desiredKeys.add(key);
       let chunk = chunks.get(key);
       if (!chunk) {
-        chunk = makeTerrainChunk(terrainMaterial, xChunk, zChunk);
+        chunk = makeTerrainChunk(terrainMaterial, xChunk, zChunk, heightSampler, colourOverride);
         chunks.set(key, chunk);
         createdChunks += 1;
       }
@@ -430,11 +438,27 @@ function syncTerrainChunks(
   };
 }
 
-function makeTerrainChunk(terrainMaterial: THREE.MeshBasicMaterial, xChunk: number, zChunk: number): TerrainChunk {
+function makeTerrainChunk(
+  terrainMaterial: THREE.MeshBasicMaterial,
+  xChunk: number,
+  zChunk: number,
+  heightSampler: HeightSampler,
+  colourOverride: TerrainColourOverride
+): TerrainChunk {
   const xMin = xChunk * terrainChunkSize;
   const zMin = zChunk * terrainChunkSize;
   const chunk = new THREE.Mesh(
-    makeTerrainGeometry(xMin, xMin + terrainChunkSize, zMin, zMin + terrainChunkSize, terrainChunkSegments, terrainChunkSegments),
+    makeTerrainGeometry(
+      xMin,
+      xMin + terrainChunkSize,
+      zMin,
+      zMin + terrainChunkSize,
+      terrainChunkSegments,
+      terrainChunkSegments,
+      0,
+      heightSampler,
+      colourOverride
+    ),
     terrainMaterial
   );
   chunk.name = `spherical-terrain-chunk-${xChunk}-${zChunk}`;
@@ -491,7 +515,9 @@ function makeTerrainGeometry(
   zMax: number,
   xSegments: number,
   zSegments: number,
-  lift = 0
+  lift = 0,
+  heightSampler: HeightSampler = heightAt,
+  colourOverride: TerrainColourOverride = () => null
 ): THREE.BufferGeometry {
   const geometry = new THREE.BufferGeometry();
   const positions: number[] = [];
@@ -506,15 +532,15 @@ function makeTerrainGeometry(
       const x1 = x0 + cellSizeX;
       const z0 = zMin + zIndex * cellSizeZ;
       const z1 = z0 + cellSizeZ;
-      const y00 = heightAt(x0, z0);
-      const y10 = heightAt(x1, z0);
-      const y01 = heightAt(x0, z1);
-      const y11 = heightAt(x1, z1);
+      const y00 = heightSampler(x0, z0);
+      const y10 = heightSampler(x1, z0);
+      const y01 = heightSampler(x0, z1);
+      const y11 = heightSampler(x1, z1);
       const centerX = (x0 + x1) * 0.5;
       const centerZ = (z0 + z1) * 0.5;
       const centerY = (y00 + y10 + y01 + y11) * 0.25;
 
-      const colour = terrainColourForCell(centerX, centerZ, centerY);
+      const colour = colourOverride(centerX, centerZ, centerY) ?? terrainColourForCell(centerX, centerZ, centerY);
       const vertexIndex = positions.length / 3;
       const p00 = pointOnPlanet(x0, z0, y00 + lift);
       const p10 = pointOnPlanet(x1, z0, y10 + lift);

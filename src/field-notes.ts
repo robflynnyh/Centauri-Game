@@ -1,4 +1,4 @@
-export type FieldNoteId = "temple-gate" | "observatory-sightline";
+export type FieldNoteId = "temple-gate" | "dome-chronoglass" | "observatory-sightline";
 export type FieldNotePageId = FieldNoteId | "arrival";
 
 export type FieldNoteDefinition = {
@@ -36,6 +36,10 @@ export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   {
     id: "temple-gate",
     body: "Gate in the violet stone. The ring is broken, but the air inside it keeps a second colour. The planet leans toward it.",
+  },
+  {
+    id: "dome-chronoglass",
+    body: "Glass weather over bare ground. Inside the dome, daylight hurries across the sky as if the planet is remembering faster.",
   },
   {
     id: "observatory-sightline",
