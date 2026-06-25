@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-23
+
+Adjusted the observatory follow-up so the raised platform has a walkable height surface, the telescope marker is a single simple shard glyph, and unattached upright platform blocks are removed.
+
 ## 2026-06-22
 
 Added two large irregular swimmable oceans to the spherical planet, with carved deep basins, chunked ocean-surface rendering, slower in-water movement, underwater tinting, and a focused `?debug=ocean` review route.
@@ -9,6 +13,8 @@ Retuned ocean rendering after review so the water keeps a lo-fi shimmer without 
 Grounded ocean shorelines after review by blending low outside banks up toward the water surface and fading/clipping shoreline water vertices, preventing partial shoreline cells from reading as floating sheets.
 
 Slightly reduced player gravity so jumps and falls feel a touch floatier while keeping the existing movement model intact.
+
+Refined the observatory follow-up with terrain-contact foundation supports, a walkable platform with smaller pier/telescope blockers, hidden telescope geometry during scoped view, and a non-cross astronomical field-note glyph.
 
 Added debug-only performance instrumentation for frame/render/memory/object counts and terrain/nature rebuild timings, then removed obvious movement and sky update scratch allocations without changing gameplay or visuals.
 
@@ -25,6 +31,8 @@ Changed sky time to come from planet spin: the sun, stars, planets, ring, and me
 Added sparse mountain birds as tiny curved V-shaped flocks that circle high ridges, flee upward and away from nearby focus/player movement, expose `?debug=birds`, and appear in the deterministic PR demo for review.
 
 Distributed mountain bird flocks across repeated high-ridge regions so longer exploration can reveal more mountain-only bird groups beyond the initial debug/start flock.
+
+Added a single alien observatory landmark with a discoverable collection-order field note, an interactable zoomed telescope mode, `?debug=observatory`/`?debug=telescope` review routes, and PR-demo visibility.
 
 ## 2026-06-20
 

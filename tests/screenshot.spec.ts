@@ -207,6 +207,34 @@ test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ pa
   }
 });
 
+test("telescope mode renders a nonblack scoped canvas", async ({ page }, testInfo) => {
+  await page.goto("/?debug=telescope&test=collision");
+  await expect(page.getByText("telescope debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const viewState = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const observatory = debug.enterTelescope();
+    return {
+      observatory,
+      viewBlocked: debug.isBlockedAt(observatory.telescopeViewX, observatory.telescopeViewZ),
+    };
+  });
+  await page.waitForTimeout(500);
+
+  expect(viewState.observatory.telescopeActive).toBe(true);
+  expect(viewState.observatory.observatoryVisible).toBe(false);
+  expect(viewState.observatory.cameraFov).toBeLessThan(40);
+  expect(viewState.viewBlocked).toBe(false);
+
+  await page.addStyleTag({ content: ".hud, .telescope-scope { display: none !important; }" });
+  const signal = await getCanvasSignal(page, testInfo.outputPath("telescope-scoped-canvas.png"));
+  expect(signal.litPixels).toBeGreaterThan(3_000);
+  expect(signal.meanBrightness).toBeGreaterThan(22);
+  expect(signal.variance).toBeGreaterThan(8);
+});
+
 test("PR demo traverses day, twilight, and night sky regions", async ({ page }) => {
   await page.goto("/?demo=pr&test=collision");
   await expect(page.getByText("PR demo mode")).toBeVisible();
@@ -536,6 +564,7 @@ async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
   width: number;
   height: number;
   litPixels: number;
+  meanBrightness: number;
   variance: number;
   signature: number;
 }> {
@@ -573,6 +602,7 @@ async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
       width: image.width,
       height: image.height,
       litPixels,
+      meanBrightness: mean,
       variance: sumSquares / pixels - mean * mean,
       signature: signature / pixels,
     };
