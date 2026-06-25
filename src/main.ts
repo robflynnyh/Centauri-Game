@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
-import { createAlienWaterCreatures, createRareFlyingBeetles } from "./creatures";
+import { createAlienWaterCreatures, createMountainBirds, createRareFlyingBeetles, type BirdDebugState } from "./creatures";
 import { createPrDemoController } from "./demo";
 import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import { createGlassDomeLandmark, createTempleLandmark } from "./landmarks";
-import { createMistSystem } from "./mist";
-import { populateNature } from "./nature";
+import { createMistSystem, type MistDebugState } from "./mist";
+import { populateNature, type NaturePerfState } from "./nature";
 import {
   normalizeLocalVector,
   normalizePlanetCoords,
@@ -22,7 +22,26 @@ import {
 import { createPixelRenderPipeline } from "./pixel-renderer";
 import { createSleepController, type SleepDebugState, type SleepUpdateInput } from "./sleep";
 import { createSkySystem, type SkyDebugState } from "./sky";
-import { createTerrainSystem, heightAt, makeHorizonLandforms } from "./terrain";
+import {
+  createTerrainSystem,
+  getMassiveMountainDebugState,
+  heightAt,
+  makeHorizonLandforms,
+  massiveMountainReservedZones,
+  terrainDownhillDirectionAt,
+  terrainSlipperinessAt,
+  terrainSlopeAt,
+  type TerrainPerfState,
+} from "./terrain";
+import {
+  createOceanSystem,
+  getOceanDebugSpawn,
+  getOceanDebugState,
+  oceanStateAt,
+  type OceanDebugState,
+  type OceanPerfState,
+  type OceanState,
+} from "./water";
 import "./style.css";
 
 declare global {
@@ -39,6 +58,19 @@ declare global {
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
+      getPerfState: () => {
+        frameMs: number;
+        fps: number;
+        frameSamples: number;
+        drawCalls: number;
+        triangles: number;
+        geometries: number;
+        textures: number;
+        sceneObjects: number;
+        terrain: TerrainPerfState;
+        nature: NaturePerfState;
+        ocean: OceanPerfState;
+      };
       getTerrainState: () => {
         centerX: number;
         centerZ: number;
@@ -127,14 +159,50 @@ declare global {
         targetTimeMultiplier: number;
       };
       getFieldNotesState: () => FieldNotesSnapshot;
+      getCreatureState: () => {
+        total: number;
+        activeHops: number;
+        scaredHops: number;
+        nearestObstacleClearance: number;
+        maxDistanceFromWater: number;
+        minActiveHopDistance: number;
+        minScaredHopDistance: number;
+        creatures: {
+          x: number;
+          z: number;
+          anchorX: number;
+          anchorZ: number;
+          distanceFromWater: number;
+          activeHopKind: "scared" | "return" | null;
+          hopDistance: number;
+        }[];
+      };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getMistState: () => MistDebugState;
+      getBirdState: () => BirdDebugState;
+      getMassiveMountainState: () => {
+        center: { x: number; z: number };
+        base: { x: number; z: number; height: number };
+        peak: { x: number; z: number; height: number };
+        normalMountainPeakHeight: number;
+        mountainRise: number;
+        pathSamples: { x: number; z: number; progress: number; width: number; height: number }[];
+        steepFaceSamples: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[];
+        reservedZones: { x: number; z: number; radius: number }[];
+      };
+      getOceanState: () => OceanState;
+      getOceanStateAt: (x: number, z: number) => OceanState;
+      getOceanDebugState: () => OceanDebugState;
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
       getSkyState: () => SkyDebugState;
+      setSkyElapsed: (elapsed: number) => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
-      attemptMove: (x: number, z: number) => { x: number; z: number };
+      attemptMove: (x: number, z: number) => { x: number; y: number; z: number };
       isBlockedAt: (x: number, z: number) => boolean;
+      terrainSlopeAt: (x: number, z: number) => number;
+      terrainSlipperinessAt: (x: number, z: number) => number;
       terrainHeightAt: (x: number, z: number) => number;
     };
   }
@@ -150,19 +218,35 @@ const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
 const enableDomeDebug = params.get("debug") === "dome";
 const isBeetleDebug = params.get("debug") === "beetle";
+const isBirdDebug = params.get("debug") === "birds";
+const enableMountainDebug = params.get("debug") === "mountain";
+const enableOceanDebug = params.get("debug") === "ocean";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
-const enableDebugTools = enableCollisionDebug || enableTempleDebug || enableDomeDebug || isBeetleDebug || enableSleepDebug || enableIsolationDebug;
+const enablePerfDebug = params.get("debug") === "perf" || params.get("test") === "perf";
+const enableDebugTools =
+  enableCollisionDebug ||
+  enableTempleDebug ||
+  enableDomeDebug ||
+  isBeetleDebug ||
+  isBirdDebug ||
+  enableMountainDebug ||
+  enableOceanDebug ||
+  enableSleepDebug ||
+  enableIsolationDebug ||
+  enablePerfDebug;
 const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
 const crouchSpeed = 2.9;
 const acceleration = 19;
 const braking = 24;
-const gravity = 18;
+const gravity = 17.8;
 const jumpImpulse = 7.2;
 const mouseLookSensitivity = 0.0024;
+const maxGroundedStepDistance = 0.9;
+const maxGroundedStepRise = 0.82;
 const hudBadgeText = isDemo
   ? "PR demo mode"
   : enableTempleDebug
@@ -171,11 +255,19 @@ const hudBadgeText = isDemo
       ? "dome debug"
       : isBeetleDebug
         ? "beetle debug"
-        : enableSleepDebug
-          ? "sleep debug"
-          : enableIsolationDebug
-            ? "isolation debug"
-            : "exploration mode";
+        : isBirdDebug
+          ? "birds debug"
+          : enableMountainDebug
+            ? "mountain debug"
+            : enableOceanDebug
+              ? "ocean debug"
+              : enableSleepDebug
+                ? "sleep debug"
+                : enableIsolationDebug
+                  ? "isolation debug"
+                  : enablePerfDebug
+                    ? "perf debug"
+                    : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -220,11 +312,13 @@ app.innerHTML = `
   <div class="blackout" aria-hidden="true">
     <span class="blackout__message">resting in the dark</span>
   </div>
+  <div class="underwater" aria-hidden="true"></div>
 `;
 
 const scene = new THREE.Scene();
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
 renderer.setPixelRatio(1);
+renderer.info.autoReset = false;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.domElement.tabIndex = 0;
 renderer.domElement.setAttribute("aria-label", "Centauri exploration view");
@@ -236,7 +330,7 @@ const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
-const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone]);
+const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone, ...massiveMountainReservedZones]);
 const domeFloorColour = new THREE.Color(0x273c78);
 const domeGroundingBandWidth = 16;
 const domeGroundingFlatShoulder = 0.25;
@@ -247,18 +341,38 @@ if (!fieldNotesHeading || !fieldNotesBody) {
   throw new Error("Missing field note HUD");
 }
 const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fieldNotes);
+const mountainBirds = createMountainBirds(scene, heightAt);
+const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
+const mountainDebugState = getMassiveMountainDebugState();
+const oceanDebugSpawn = getOceanDebugSpawn();
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : enableDomeDebug
     ? new THREE.Vector3(dome.approachPosition.x, 0, dome.approachPosition.z)
   : isBeetleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
-    : enableIsolationDebug
-      ? new THREE.Vector3(-128, 0, -464)
-      : new THREE.Vector3(0, 0, 24);
+    : isBirdDebug
+      ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
+      : enableMountainDebug
+        ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
+        : enableOceanDebug
+          ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
+          : enableIsolationDebug
+            ? new THREE.Vector3(-128, 0, -464)
+            : new THREE.Vector3(0, 0, 24);
+const initialPlayerYaw = isBirdDebug
+  ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
+  : enableDomeDebug
+    ? Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z)
+  : enableMountainDebug
+    ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
+    : enableOceanDebug
+      ? oceanDebugSpawn.yaw
+      : 0;
+const initialPlayerPitch = enableDomeDebug ? -0.36 : isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
 const player = {
-  yaw: enableDomeDebug ? Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z) : 0,
-  pitch: enableDomeDebug ? -0.36 : -0.12,
+  yaw: initialPlayerYaw,
+  pitch: initialPlayerPitch,
   localPosition: initialPlayerLocalPosition.clone(),
   position: pointOnPlanet(
     initialPlayerLocalPosition.x,
@@ -278,43 +392,51 @@ const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
 const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
 const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
+const underwaterOverlay = document.querySelector<HTMLDivElement>(".underwater");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
 const terrain = createTerrainSystem(effectiveHeightAt, terrainColourOverride);
+const oceans = createOceanSystem();
 const mist = createMistSystem(scene, effectiveHeightAt, isDemo);
 
 scene.add(terrain.group);
+scene.add(oceans.group);
 scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
 collisionWorld.addObstacle(dome.collision);
 
-const { updateFloraReactivity, updateNatureChunks, getNatureState } = populateNature(
+const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerfState } = populateNature(
   scene,
   effectiveHeightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
-  [temple.reservedZone, dome.reservedZone]
+  [temple.reservedZone, dome.reservedZone, ...massiveMountainReservedZones]
 );
-const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt);
+const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
-const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt);
+const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const visionState = {
   isolationAmount: 0,
   targetIsolationAmount: 0,
   nearestBiomePatchDistance: 0,
 };
+const perfState = {
+  smoothedFrameMs: 0,
+  frameSamples: 0,
+};
 let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
-const prDemo = createPrDemoController(camera, effectiveHeightAt, collisionWorld.resolveMove, (position, delta) => {
+const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome);
+}, temple, dome, mountainDebugState);
 let skyElapsed = clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
 
 terrain.update(player.localPosition.x, player.localPosition.z);
+oceans.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
 updatePlayerWorldPosition();
 
@@ -346,6 +468,26 @@ if (enableDebugTools) {
       crouching: isCrouchPressed(),
       cameraHeight: player.cameraHeight,
     }),
+    getPerfState: () => {
+      let sceneObjects = 0;
+      scene.traverse(() => {
+        sceneObjects += 1;
+      });
+      const frameMs = perfState.smoothedFrameMs;
+      return {
+        frameMs,
+        fps: frameMs > 0 ? 1000 / frameMs : 0,
+        frameSamples: perfState.frameSamples,
+        drawCalls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        geometries: renderer.info.memory.geometries,
+        textures: renderer.info.memory.textures,
+        sceneObjects,
+        terrain: terrain.getTerrainPerfState(),
+        nature: getNaturePerfState(),
+        ocean: oceans.getOceanPerfState(),
+      };
+    },
     getTerrainState: terrain.getTerrainState,
     getNatureState,
     getVisionState: () => ({ ...visionState }),
@@ -402,7 +544,23 @@ if (enableDebugTools) {
     }),
     getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
+    setSkyElapsed: (elapsed: number) => {
+      skyElapsed = elapsed;
+      updateDomeTimeMultiplier(0, player.localPosition);
+      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
+      return sky.getDebugState();
+    },
+    getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
+    getMistState: () => {
+      mist.update(clock.elapsedTime, player.localPosition);
+      return mist.getDebugState();
+    },
+    getBirdState: mountainBirds.getState,
+    getMassiveMountainState: getMassiveMountainDebugState,
+    getOceanState: () => oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt),
+    getOceanStateAt: (x: number, z: number) => oceanStateAt(x, z, heightAt),
+    getOceanDebugState: () => getOceanDebugState(heightAt),
     getSleepState: sleep.getState,
     setSleepAmount: (amount: number) => {
       const state = sleep.setAmount(amount);
@@ -410,10 +568,16 @@ if (enableDebugTools) {
       return state;
     },
     advanceSleep: (delta: number, input: Partial<SleepUpdateInput> = {}) => {
+      const moving = input.moving ?? hasMovementInput();
+      const movementAmount = input.movementAmount ?? (moving ? 1 : 0);
+      const grounded = input.grounded ?? player.grounded;
       const state = sleep.update(delta, {
         wantsSleep: input.wantsSleep ?? isSleepPressed(),
-        moving: input.moving ?? hasMovementInput(),
-        grounded: input.grounded ?? player.grounded,
+        moving,
+        grounded,
+        movementAmount,
+        crouching: input.crouching ?? isCrouchPressed(),
+        airborne: input.airborne ?? !grounded,
       });
       updateSleepHud(state);
       return state;
@@ -428,20 +592,30 @@ if (enableDebugTools) {
       player.grounded = true;
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
+      oceans.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
       updateDomeTimeMultiplier(0, player.localPosition);
       sky.update(skyElapsed, player.localPosition);
     },
     attemptMove: (x: number, z: number) => {
-      collisionWorld.resolveMove(player.localPosition, new THREE.Vector3(x, 0, z));
+      resolvePlayerMove(player.localPosition, new THREE.Vector3(x, 0, z));
       updatePlayerWorldPosition();
       terrain.update(player.localPosition.x, player.localPosition.z);
+      oceans.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
-      return { x: player.localPosition.x, z: player.localPosition.z };
+      return { x: player.localPosition.x, y: player.position.length() - PLANET_RADIUS, z: player.localPosition.z };
     },
     isBlockedAt: (x: number, z: number) => {
       const normalized = normalizePlanetCoords(x, z);
       return collisionWorld.isBlockedAt(normalized.x, normalized.z);
+    },
+    terrainSlopeAt: (x: number, z: number) => {
+      const normalized = normalizePlanetCoords(x, z);
+      return terrainSlopeAt(normalized.x, normalized.z);
+    },
+    terrainSlipperinessAt: (x: number, z: number) => {
+      const normalized = normalizePlanetCoords(x, z);
+      return terrainSlipperinessAt(normalized.x, normalized.z);
     },
     terrainHeightAt: effectiveHeightAt,
   };
@@ -473,6 +647,11 @@ function updateLookStatus(): void {
   lookStatus.textContent = isDemo ? "" : mouseLookActive ? "mouse locked" : "click to lock";
 }
 
+function clearTransientInputState(): void {
+  keys.clear();
+  player.jumpQueued = false;
+}
+
 updateLookStatus();
 
 function updateSleepHud(state: SleepDebugState): void {
@@ -483,6 +662,16 @@ function updateSleepHud(state: SleepDebugState): void {
   eyelidOverlay?.setAttribute("data-phase", state.eyelidPhase);
   blackoutOverlay?.classList.toggle("blackout--visible", state.blackout);
   blackoutOverlay?.setAttribute("aria-hidden", state.blackout ? "false" : "true");
+}
+
+function updateUnderwaterCue(): void {
+  if (!underwaterOverlay) return;
+  const oceanState = oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt);
+  const cameraAltitude = playerSurfaceAltitude();
+  const belowSurface = oceanState.waterSurfaceHeight - cameraAltitude;
+  const amount = oceanState.isInOcean ? THREE.MathUtils.smoothstep(belowSurface, 0.05, 2.2) : 0;
+  underwaterOverlay.style.opacity = amount.toFixed(3);
+  underwaterOverlay.setAttribute("aria-hidden", amount > 0.02 ? "false" : "true");
 }
 
 updateSleepHud(sleep.getState());
@@ -500,6 +689,10 @@ window.addEventListener("keydown", (event) => {
   startAudio();
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
+window.addEventListener("blur", clearTransientInputState);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") clearTransientInputState();
+});
 renderer.domElement.addEventListener("click", () => {
   startAudio();
   if (isDemo) return;
@@ -539,6 +732,12 @@ function moveToward(current: number, target: number, maxDelta: number): number {
   if (Math.abs(target - current) <= maxDelta) return target;
   return current + Math.sign(target - current) * maxDelta;
 }
+
+const movementForward = new THREE.Vector3();
+const movementRight = new THREE.Vector3();
+const movementWish = new THREE.Vector3();
+const movementDelta = new THREE.Vector3();
+const movementBeforeLocal = new THREE.Vector3();
 
 function isolationTargetForDistance(distance: number): number {
   if (!Number.isFinite(distance)) return 1;
@@ -610,6 +809,70 @@ function updatePlayerWorldPosition(): void {
   player.position.copy(pointOnPlanet(player.localPosition.x, player.localPosition.z, playerSurfaceAltitude()));
 }
 
+function resolvePlayerMove(position: THREE.Vector3, movement: THREE.Vector3): void {
+  if (movement.length() > 64) {
+    collisionWorld.resolveMove(position, movement);
+    return;
+  }
+
+  const stepCount = Math.max(1, Math.ceil(movement.length() / maxGroundedStepDistance));
+  const step = movement.clone().multiplyScalar(1 / stepCount);
+  for (let i = 0; i < stepCount; i += 1) {
+    resolvePlayerMoveStep(position, movementWithTerrainSlip(position, step));
+  }
+}
+
+function resolvePlayerMoveStep(position: THREE.Vector3, movement: THREE.Vector3): void {
+  const candidate = position.clone();
+  candidate.x += movement.x;
+  normalizeLocalVector(candidate);
+  if (canMoveAcrossTerrainStep(position, candidate)) {
+    position.x = candidate.x;
+    position.z = candidate.z;
+  }
+
+  candidate.copy(position);
+  candidate.z += movement.z;
+  normalizeLocalVector(candidate);
+  if (canMoveAcrossTerrainStep(position, candidate)) {
+    position.x = candidate.x;
+    position.z = candidate.z;
+  }
+}
+
+function canMoveAcrossTerrainStep(from: THREE.Vector3, to: THREE.Vector3): boolean {
+  if (collisionWorld.isBlockedAt(to.x, to.z)) return false;
+  const rise = effectiveHeightAt(to.x, to.z) - effectiveHeightAt(from.x, from.z);
+  if (rise <= maxGroundedStepRise) return true;
+
+  const distance = Math.max(Math.hypot(to.x - from.x, to.z - from.z), 0.001);
+  const slope = rise / distance;
+  const slipperiness = Math.max(terrainSlipperinessAt(from.x, from.z), terrainSlipperinessAt(to.x, to.z));
+  return slope < 0.62 && slipperiness < 0.18;
+}
+
+function movementWithTerrainSlip(position: THREE.Vector3, movement: THREE.Vector3): THREE.Vector3 {
+  const slipperiness = terrainSlipperinessAt(position.x, position.z);
+  const movementLength = movement.length();
+  if (slipperiness <= 0 || movementLength < 0.001) return movement;
+
+  const downhill = terrainDownhillDirectionAt(position.x, position.z);
+  const downhillVector = new THREE.Vector3(downhill.x, 0, downhill.z);
+  if (downhillVector.lengthSq() <= 0.0001) return movement;
+
+  const adjusted = movement.clone();
+  const uphillDirection = downhillVector.clone().multiplyScalar(-1);
+  const uphillAmount = Math.max(0, adjusted.dot(uphillDirection));
+  if (uphillAmount > 0) {
+    adjusted.add(downhillVector.clone().multiplyScalar(uphillAmount * slipperiness * 0.82));
+  }
+
+  const uphillRatio = uphillAmount / movementLength;
+  const tractionLoss = movementLength * slipperiness * (0.06 + uphillRatio * 0.22);
+  adjusted.add(downhillVector.multiplyScalar(tractionLoss));
+  return adjusted;
+}
+
 function restPlayerInPlace(delta: number, targetHeight: number): void {
   player.velocity.set(0, 0, 0);
   player.verticalVelocity = 0;
@@ -622,18 +885,19 @@ function restPlayerInPlace(delta: number, targetHeight: number): void {
 }
 
 function updateExploration(delta: number): { horizontalSpeed: number } {
-  const forward = new THREE.Vector3(Math.sin(player.yaw), 0, Math.cos(player.yaw));
-  const right = new THREE.Vector3(forward.z, 0, -forward.x);
-  const wish = new THREE.Vector3();
+  const forward = movementForward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
+  const right = movementRight.set(forward.z, 0, -forward.x);
+  const wish = movementWish.set(0, 0, 0);
 
-  if (keys.has("KeyW")) wish.add(forward.clone().multiplyScalar(-1));
+  if (keys.has("KeyW")) wish.addScaledVector(forward, -1);
   if (keys.has("KeyS")) wish.add(forward);
-  if (keys.has("KeyA")) wish.add(right.clone().multiplyScalar(-1));
+  if (keys.has("KeyA")) wish.addScaledVector(right, -1);
   if (keys.has("KeyD")) wish.add(right);
 
   if (wish.lengthSq() > 0) wish.normalize();
   const crouching = isCrouchPressed();
-  const targetSpeed = crouching ? crouchSpeed : walkSpeed;
+  const oceanState = oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt);
+  const targetSpeed = (crouching ? crouchSpeed : walkSpeed) * oceanState.movementSpeedMultiplier;
   const targetVelocity = wish.multiplyScalar(targetSpeed);
   const horizontalRate = targetVelocity.lengthSq() > 0 ? acceleration : braking;
   const maxVelocityDelta = horizontalRate * delta;
@@ -656,9 +920,9 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
     }
   }
 
-  const beforeLocal = { x: player.localPosition.x, z: player.localPosition.z };
-  collisionWorld.resolveMove(player.localPosition, player.velocity.clone().multiplyScalar(delta));
-  const actualHorizontalSpeed = surfaceDistanceBetweenLocal(beforeLocal, player.localPosition) / Math.max(delta, 0.001);
+  movementBeforeLocal.set(player.localPosition.x, 0, player.localPosition.z);
+  resolvePlayerMove(player.localPosition, movementDelta.copy(player.velocity).multiplyScalar(delta));
+  const actualHorizontalSpeed = surfaceDistanceBetweenLocal(movementBeforeLocal, player.localPosition) / Math.max(delta, 0.001);
   if (actualHorizontalSpeed < 0.02) {
     player.velocity.x = 0;
     player.velocity.z = 0;
@@ -686,9 +950,18 @@ function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: numb
   }
 }
 
+function recordFrameTiming(rawDelta: number): void {
+  const frameMs = rawDelta * 1000;
+  if (!Number.isFinite(frameMs) || frameMs <= 0) return;
+  perfState.smoothedFrameMs = perfState.frameSamples === 0 ? frameMs : THREE.MathUtils.lerp(perfState.smoothedFrameMs, frameMs, 0.08);
+  perfState.frameSamples += 1;
+}
+
 function animate(): void {
-  const delta = Math.min(clock.getDelta(), 0.05);
+  const rawDelta = clock.getDelta();
+  const delta = Math.min(rawDelta, 0.05);
   const elapsed = clock.elapsedTime;
+  recordFrameTiming(rawDelta);
   const sleepBefore = sleep.getState();
   const movementIntent = hasMovementInput();
   const wantsSleep = isDemo ? sleepBefore.amount < 1 : isSleepPressed();
@@ -711,18 +984,27 @@ function animate(): void {
     );
   }
 
-  const sleepState = sleep.update(delta, {
-    wantsSleep,
-    moving: isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15,
-    grounded: isDemo || player.grounded,
-  });
+  const movementAmount = isDemo ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
+  const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
+  const grounded = isDemo || player.grounded;
+  const sleepState = enableSleepDebug
+    ? sleep.getState()
+    : sleep.update(delta, {
+        wantsSleep,
+        moving,
+        grounded,
+        movementAmount,
+        crouching: !isDemo && isCrouchPressed(),
+        airborne: !grounded,
+      });
   updateSleepHud(sleepState);
 
   footsteps.update(delta);
-  waterCreatures.update(elapsed);
   temple.update(elapsed);
   const floraFocus = isDemo ? demoFloraFocus : player.localPosition;
+  waterCreatures.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
+  mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, templeFocus);
   skyElapsed += delta * activeDomeTimeMultiplier;
@@ -730,11 +1012,14 @@ function animate(): void {
   dome.update(elapsed, activeDomeTimeMultiplier);
   sky.update(skyElapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
+  oceans.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
   updateVisionState(delta);
   mist.update(elapsed, floraFocus);
+  if (!isDemo) updateUnderwaterCue();
 
+  renderer.info.reset();
   pixelRenderer.render(scene, camera, {
     elapsed,
     isolationAmount: visionState.isolationAmount,

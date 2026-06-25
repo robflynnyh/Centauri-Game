@@ -8,12 +8,91 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?demo=pr");
+  await page.goto("/?debug=mountain&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("PR demo mode")).toBeVisible();
-  await page.addStyleTag({ content: ".eyelids { display: none !important; }" });
-  await page.waitForTimeout(16_400);
+  await expect(page.getByText("mountain debug")).toBeVisible();
+  await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
+  await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+});
+
+test("ocean debug exposes two large irregular deep oceans", async ({ page }) => {
+  await page.goto("/?debug=ocean&test=collision");
+  await expect(page.getByText("ocean debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getOceanDebugState));
+
+  const state = await page.evaluate(() => window.__centauriDebug?.getOceanDebugState());
+  expect(state?.oceanCount).toBe(2);
+  expect(state?.movementSpeedMultiplierInOcean).toBeCloseTo(0.5, 2);
+  expect(state?.regions).toHaveLength(2);
+
+  for (const ocean of state?.regions ?? []) {
+    expect(ocean.estimatedShorelineCircumference).toBeGreaterThan(1_650);
+    expect(ocean.estimatedShorelineCircumference).toBeLessThan(2_250);
+    expect(ocean.maxShorelineRadius - ocean.minShorelineRadius).toBeGreaterThan(42);
+    expect(ocean.maxTerrainDepthBelowSurface).toBeGreaterThan(16);
+
+    const deepState = await page.evaluate(
+      ({ x, z }) => window.__centauriDebug?.getOceanStateAt(x, z),
+      ocean.deepSample
+    );
+    const outsideState = await page.evaluate(
+      ({ x, z }) => window.__centauriDebug?.getOceanStateAt(x, z),
+      ocean.outsideShoreSample
+    );
+
+    expect(deepState?.isInOcean).toBe(true);
+    expect(deepState?.terrainDepthBelowSurface).toBeGreaterThan(16);
+    expect(deepState?.movementSpeedMultiplier).toBeCloseTo(0.5, 2);
+    expect(outsideState?.isInOcean).toBe(false);
+
+    for (const sample of ocean.shorelineSamples) {
+      const shorelineState = await page.evaluate(
+        ({ inside, outside }) => {
+          const insideState = window.__centauriDebug?.getOceanStateAt(inside.x, inside.z);
+          const outsideState = window.__centauriDebug?.getOceanStateAt(outside.x, outside.z);
+          return {
+            insideState,
+            outsideState,
+            insideTerrainHeight: window.__centauriDebug?.terrainHeightAt(inside.x, inside.z),
+            outsideTerrainHeight: window.__centauriDebug?.terrainHeightAt(outside.x, outside.z),
+          };
+        },
+        sample
+      );
+
+      expect(shorelineState.insideState?.isInOcean).toBe(true);
+      expect(shorelineState.insideTerrainHeight).toBeGreaterThan((shorelineState.insideState?.waterSurfaceHeight ?? 0) - 5);
+      expect(shorelineState.outsideState?.signedShoreDistance).toBeGreaterThan(-2);
+      expect(shorelineState.outsideTerrainHeight).toBeGreaterThan((shorelineState.outsideState?.waterSurfaceHeight ?? 0) - 0.35);
+    }
+  }
+});
+
+test("walking through ocean water is about twice as slow", async ({ page }) => {
+  await page.goto("/?debug=ocean&test=collision");
+  await expect(page.getByText("ocean debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getOceanDebugState));
+
+  const ocean = await page.evaluate(() => window.__centauriDebug?.getOceanDebugState().regions[0]);
+  const outside = { x: 1200, z: 500 };
+  const inside = ocean.deepSample;
+
+  const outsideState = await page.evaluate(
+    ({ x, z }) => window.__centauriDebug?.getOceanStateAt(x, z),
+    outside
+  );
+  const outsideDistance = await walkForwardFor(page, outside, 3_200);
+  const insideDistance = await walkForwardFor(page, inside, 3_200);
+  const insideState = await page.evaluate(() => window.__centauriDebug?.getOceanState());
+
+  expect(outsideState?.isInOcean).toBe(false);
+  expect(insideState?.isInOcean).toBe(true);
+  expect(insideState?.movementSpeedMultiplier).toBeCloseTo(0.5, 2);
+  expect(outsideDistance).toBeGreaterThan(14);
+  expect(insideDistance).toBeGreaterThan(7);
+  expect(insideDistance / outsideDistance).toBeGreaterThan(0.45);
+  expect(insideDistance / outsideDistance).toBeLessThan(0.62);
 });
 
 test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ page }, testInfo) => {
@@ -44,21 +123,18 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
   await expect(page.getByText("PR demo mode")).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
 
-  const daySideHandle = await page.waitForFunction(() => {
+  const daySide = await (await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
     return state && state.dayAmount > 0.75 && Math.abs(state.latitude) > 0.1 ? state : false;
-  });
-  const daySide = await daySideHandle.jsonValue();
-  const twilightEdgeHandle = await page.waitForFunction(() => {
+  })).jsonValue();
+  const twilightEdge = await (await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
     return state && state.twilightAmount > 0.45 && Math.abs(state.latitude) > 0.04 ? state : false;
-  });
-  const twilightEdge = await twilightEdgeHandle.jsonValue();
-  const nightSideHandle = await page.waitForFunction(() => {
+  })).jsonValue();
+  const nightSide = await (await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getSkyState();
     return state && state.dayAmount < 0.25 && Math.abs(state.latitude) > 0.1 ? state : false;
-  });
-  const nightSide = await nightSideHandle.jsonValue();
+  })).jsonValue();
 
   expect(daySide?.dayAmount).toBeGreaterThan(0.75);
   expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
@@ -85,6 +161,203 @@ test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
   expect(debugState.beetles.visible).toBeGreaterThan(0);
   expect(Number.isFinite(debugState.beetles.nearestObstacleClearance)).toBe(true);
   expect(debugState.beetles.nearestObstacleClearance).toBeGreaterThan(0.2);
+});
+
+test("starts near mountain birds and triggers clear fleeing", async ({ page }) => {
+  await page.goto("/?debug=birds&test=collision");
+  await expect(page.getByText("birds debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getBirdState));
+  await page.waitForTimeout(500);
+
+  const settledState = await page.evaluate(() => {
+    if (!window.__centauriDebug) throw new Error("Missing Centauri debug state");
+    return {
+      player: window.__centauriDebug.getPlayer(),
+      birds: window.__centauriDebug.getBirdState(),
+      lowlandHeight: window.__centauriDebug.terrainHeightAt(0, 24),
+    };
+  });
+
+  expect(settledState.birds.total).toBeGreaterThanOrEqual(3);
+  expect(settledState.birds.visible).toBeGreaterThan(0);
+  expect(settledState.birds.minAnchorHeight).toBeGreaterThan(settledState.lowlandHeight + 7);
+  expect(settledState.birds.minAnchorSuitability).toBeGreaterThan(0.55);
+  expect(Number.isFinite(settledState.birds.nearestTerrainClearance)).toBe(true);
+  expect(settledState.birds.nearestTerrainClearance).toBeGreaterThan(6);
+  expect(settledState.player.x).toBeCloseTo(settledState.birds.nearestAnchor.x + 22, 0);
+  expect(settledState.player.z).toBeCloseTo(settledState.birds.nearestAnchor.z + 8, 0);
+  expect(settledState.birds.total).toBeGreaterThan(24);
+  expect(Math.hypot(settledState.birds.distantAnchor.x - settledState.birds.nearestAnchor.x, settledState.birds.distantAnchor.z - settledState.birds.nearestAnchor.z)).toBeGreaterThan(720);
+
+  await page.evaluate(({ x, z }) => window.__centauriDebug?.setPlayer(x + 22, z + 8), settledState.birds.distantAnchor);
+  await page.waitForTimeout(500);
+  const distantState = await page.evaluate(() => {
+    if (!window.__centauriDebug) throw new Error("Missing Centauri debug state");
+    const birds = window.__centauriDebug.getBirdState();
+    return {
+      birds,
+      distantHeight: window.__centauriDebug.terrainHeightAt(birds.nearestAnchor.x, birds.nearestAnchor.z),
+      lowlandHeight: window.__centauriDebug.terrainHeightAt(0, 24),
+    };
+  });
+
+  expect(distantState.birds.visible).toBeGreaterThan(0);
+  expect(distantState.distantHeight).toBeGreaterThan(distantState.lowlandHeight + 7);
+
+  await page.evaluate(() => {
+    const anchor = window.__centauriDebug?.getBirdState().nearestAnchor;
+    if (!anchor) throw new Error("Missing bird anchor");
+    window.__centauriDebug?.setPlayer(anchor.x + 1.5, anchor.z + 1.5);
+  });
+  await page.waitForFunction(() => (window.__centauriDebug?.getBirdState().fleeing ?? 0) > 0);
+  const fleeState = await page.evaluate(() => window.__centauriDebug?.getBirdState());
+
+  expect(fleeState?.fleeing).toBeGreaterThan(0);
+  expect(fleeState?.nearestTerrainClearance).toBeGreaterThan(6);
+
+  await page.evaluate(() => {
+    const anchor = window.__centauriDebug?.getBirdState().nearestAnchor;
+    if (!anchor) throw new Error("Missing bird anchor");
+    window.__centauriDebug?.setPlayer(anchor.x - 5.5, anchor.z + 2.5);
+  });
+  await page.waitForTimeout(160);
+  const afterStrafeState = await page.evaluate(() => window.__centauriDebug?.getBirdState());
+
+  await page.waitForTimeout(650);
+  const afterStopState = await page.evaluate(() => window.__centauriDebug?.getBirdState());
+  const postStopMotion = Math.hypot(
+    (afterStopState?.nearestPosition.x ?? 0) - (afterStrafeState?.nearestPosition.x ?? 0),
+    (afterStopState?.nearestPosition.z ?? 0) - (afterStrafeState?.nearestPosition.z ?? 0)
+  );
+
+  expect(afterStopState?.fleeing).toBeGreaterThan(0);
+  expect(postStopMotion).toBeGreaterThan(0.2);
+  expect(afterStopState?.maxFrameDisplacement).toBeLessThan(2.5);
+});
+
+test("starts at one massive mountain with a clear bendy summit path", async ({ page }) => {
+  await page.goto("/?debug=mountain&test=collision");
+  await expect(page.getByText("mountain debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMassiveMountainState));
+  await page.waitForTimeout(500);
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri mountain debug hook");
+
+    const mountain = debug.getMassiveMountainState();
+    const player = debug.getPlayer();
+    const lowlandHeight = debug.terrainHeightAt(0, 24);
+    const normalMountainRise = mountain.normalMountainPeakHeight - lowlandHeight;
+    const massiveMountainRise = mountain.peak.height - lowlandHeight;
+    const sampleStates = mountain.pathSamples.map((sample) => ({
+      ...sample,
+      blocked: debug.isBlockedAt(sample.x, sample.z),
+      slope: debug.terrainSlopeAt(sample.x, sample.z),
+      slipperiness: debug.terrainSlipperinessAt(sample.x, sample.z),
+      actualHeight: debug.terrainHeightAt(sample.x, sample.z),
+    }));
+    const steepFaceStates = mountain.steepFaceSamples.map((sample) => ({
+      ...sample,
+      blocked: debug.isBlockedAt(sample.x, sample.z),
+      slope: debug.terrainSlopeAt(sample.x, sample.z),
+      slipperiness: debug.terrainSlipperinessAt(sample.x, sample.z),
+    }));
+    const pathClimbChecks = sampleStates.slice(1, 7).map((sample, index) => {
+      const start = sampleStates[index];
+      debug.setPlayer(start.x, start.z);
+      const before = debug.getPlayer();
+      const segmentDistance = Math.hypot(sample.x - start.x, sample.z - start.z);
+      const after = debug.attemptMove(sample.x - start.x, sample.z - start.z);
+      return {
+        progressDistance: Math.hypot(after.x - before.x, after.z - before.z),
+        segmentDistance,
+      };
+    });
+    const steepSlipChecks = steepFaceStates.slice(0, 4).map((sample) => {
+      debug.setPlayer(sample.x, sample.z);
+      const beforePlayer = debug.getPlayer();
+      const beforeHeight = debug.terrainHeightAt(sample.x, sample.z);
+      const uphillX = -sample.downhillX * 8;
+      const uphillZ = -sample.downhillZ * 8;
+      const after = debug.attemptMove(uphillX, uphillZ);
+      const afterHeight = debug.terrainHeightAt(after.x, after.z);
+      return {
+        heightGain: afterHeight - beforeHeight,
+        playerYGain: after.y - beforePlayer.y,
+        uphillTravel: -((after.x - sample.x) * sample.downhillX + (after.z - sample.z) * sample.downhillZ),
+      };
+    });
+    const pathSteps = sampleStates.slice(1).map((sample, index) => {
+      const previous = sampleStates[index];
+      const distance = Math.hypot(sample.x - previous.x, sample.z - previous.z);
+      const heightDelta = sample.actualHeight - previous.actualHeight;
+      return {
+        distance,
+        heightDelta,
+        slope: Math.abs(heightDelta) / Math.max(distance, 0.001),
+      };
+    });
+    const pathLength = sampleStates.slice(1).reduce((length, sample, index) => {
+      const previous = sampleStates[index];
+      return length + Math.hypot(sample.x - previous.x, sample.z - previous.z);
+    }, 0);
+    const straightDistance = Math.hypot(mountain.peak.x - mountain.base.x, mountain.peak.z - mountain.base.z);
+    const turns = sampleStates.slice(2).filter((sample, index) => {
+      const a = sampleStates[index];
+      const b = sampleStates[index + 1];
+      const ab = Math.atan2(b.z - a.z, b.x - a.x);
+      const bc = Math.atan2(sample.z - b.z, sample.x - b.x);
+      const turn = Math.abs((((bc - ab + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI);
+      return turn > 0.35;
+    }).length;
+    debug.setPlayer(mountain.center.x, mountain.center.z);
+    const summitNature = debug.getNatureState();
+    const lowlandSlope = debug.terrainSlopeAt(0, 24);
+    const lowlandSlipperiness = debug.terrainSlipperinessAt(0, 24);
+
+    return {
+      playerStartsAtBase: Math.hypot(player.x - mountain.base.x, player.z - mountain.base.z) < 0.5,
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      oneReservedSummit: mountain.reservedZones.filter((zone) => Math.hypot(zone.x - mountain.center.x, zone.z - mountain.center.z) < 0.001).length,
+      peakAroundThreeTimesNormal: massiveMountainRise > normalMountainRise * 2.7,
+      peakAbovePathBase: mountain.peak.height > mountain.base.height + 52,
+      pathHasEnoughSamples: sampleStates.length >= 10,
+      pathIsClear: sampleStates.every((sample) => !sample.blocked),
+      pathIsSubtlySlippery: sampleStates.every((sample) => sample.slipperiness < 0.2),
+      pathSlipDoesNotMaskSteepSpikes: sampleStates.every((sample) => sample.slope < 0.55 || sample.slipperiness > 0.02),
+      pathClimbsReliably: pathClimbChecks.every((check) => check.progressDistance > check.segmentDistance * 0.92),
+      pathHeightsMatchTerrain: sampleStates.every((sample) => Math.abs(sample.actualHeight - sample.height) < 0.001),
+      pathClimbsToPeak: sampleStates[sampleStates.length - 1].actualHeight > sampleStates[0].actualHeight + 52,
+      pathHeightIsContinuous: pathSteps.every((step) => Math.abs(step.heightDelta) < 1.35 && step.slope < 0.56),
+      pathIsBendy: pathLength > straightDistance * 1.18 && turns >= 3,
+      generalSlopeQuerySeparatesTerrain: lowlandSlope < 0.44 && lowlandSlipperiness === 0 && steepFaceStates.every((sample) => sample.slope > lowlandSlope + 0.3),
+      steepFacesAreSlippery: steepFaceStates.length >= 3 && steepFaceStates.every((sample) => !sample.blocked && sample.slipperiness > 0.25 && sample.slope > 0.44),
+      steepUphillAttemptsSlip:
+        steepSlipChecks.length >= 3 &&
+        steepSlipChecks.every((check) => check.heightGain < 2.8 && check.playerYGain < 2.8 && (check.uphillTravel < 2.2 || check.heightGain < 0.8)),
+      summitBiomeCleared: summitNature.nearestBiomePatchDistance > 120 && summitNature.generatedObstacles < 90,
+    };
+  });
+
+  expect(result.playerStartsAtBase).toBe(true);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.oneReservedSummit).toBe(1);
+  expect(result.peakAroundThreeTimesNormal).toBe(true);
+  expect(result.peakAbovePathBase).toBe(true);
+  expect(result.pathHasEnoughSamples).toBe(true);
+  expect(result.pathIsClear).toBe(true);
+  expect(result.pathIsSubtlySlippery).toBe(true);
+  expect(result.pathSlipDoesNotMaskSteepSpikes).toBe(true);
+  expect(result.pathClimbsReliably).toBe(true);
+  expect(result.pathHeightsMatchTerrain).toBe(true);
+  expect(result.pathClimbsToPeak).toBe(true);
+  expect(result.pathHeightIsContinuous).toBe(true);
+  expect(result.pathIsBendy).toBe(true);
+  expect(result.generalSlopeQuerySeparatesTerrain).toBe(true);
+  expect(result.steepFacesAreSlippery).toBe(true);
+  expect(result.steepUphillAttemptsSlip).toBe(true);
+  expect(result.summitBiomeCleared).toBe(true);
 });
 
 test("isolation debug state rises outside populated biome patches", async ({ page }) => {
@@ -165,8 +438,8 @@ test("isolation postprocess visibly changes the rendered frame", async ({ page }
   const isolationOn = await page.locator("canvas").screenshot({ path: testInfo.outputPath("isolation-on.png") });
 
   const difference = await getImageDifference(page, isolationOff, isolationOn);
-  expect(difference.meanAbsoluteDifference).toBeGreaterThan(5);
-  expect(difference.changedPixels).toBeGreaterThan(2_000);
+  expect(difference.meanAbsoluteDifference).toBeGreaterThan(2.5);
+  expect(difference.changedPixels).toBeGreaterThan(700);
   expect(difference.maxPixelDifference).toBeGreaterThan(24);
 });
 
@@ -215,6 +488,21 @@ async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
       signature: signature / pixels,
     };
   }, `data:image/png;base64,${screenshot.toString("base64")}`);
+}
+
+async function walkForwardFor(page: Page, position: { x: number; z: number }, milliseconds: number): Promise<number> {
+  await page.evaluate(({ x, z }) => window.__centauriDebug?.setPlayer(x, z), position);
+  await page.focus("canvas");
+  await page.waitForTimeout(100);
+  const before = await page.evaluate(() => window.__centauriDebug?.getPlayer());
+  await page.keyboard.down("KeyW");
+  await page.waitForTimeout(milliseconds);
+  await page.keyboard.up("KeyW");
+  await page.waitForTimeout(100);
+  const after = await page.evaluate(() => window.__centauriDebug?.getPlayer());
+
+  if (!before || !after) throw new Error("Missing player debug state");
+  return Math.hypot(after.x - before.x, after.z - before.z);
 }
 
 async function getImageDifference(

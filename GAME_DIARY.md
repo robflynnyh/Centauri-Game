@@ -1,10 +1,46 @@
 # Game Diary
 
+## 2026-06-22
+
+Added two large irregular swimmable oceans to the spherical planet, with carved deep basins, chunked ocean-surface rendering, slower in-water movement, underwater tinting, and a focused `?debug=ocean` review route.
+
+Retuned ocean rendering after review so the water keeps a lo-fi shimmer without obvious large square mesh tiles, using a finer shared vertex grid, per-vertex color, and continuous subtle ripple.
+
+Grounded ocean shorelines after review by blending low outside banks up toward the water surface and fading/clipping shoreline water vertices, preventing partial shoreline cells from reading as floating sheets.
+
+Slightly reduced player gravity so jumps and falls feel a touch floatier while keeping the existing movement model intact.
+
+Added debug-only performance instrumentation for frame/render/memory/object counts and terrain/nature rebuild timings, then removed obvious movement and sky update scratch allocations without changing gameplay or visuals.
+
+Reduced chunk-boundary stalls by reusing terrain and ocean chunks across the visible window, added ocean rebuild timing to perf debug, and covered one-chunk moves with an incremental update regression test.
+
+## 2026-06-21
+
+Removed the hard water-distance cap from scared water-creature flee hops so chased frogs can keep escaping beyond their normal patrol radius, while calm return hops still guide them back toward water once danger passes.
+
+Made sleep drain scale with exertion: idle standing drains slowest, crouch-walking drains gently, normal movement uses the intended play drain, and airborne/jump frames spike fatigue faster while preserving hold-still rest behavior.
+
+Changed sky time to come from planet spin: the sun, stars, planets, ring, and meteors now project through a spun sky frame so they rise and set at a fixed location while the demo includes a fixed-position sky watch beat.
+
+Added sparse mountain birds as tiny curved V-shaped flocks that circle high ridges, flee upward and away from nearby focus/player movement, expose `?debug=birds`, and appear in the deterministic PR demo for review.
+
+Distributed mountain bird flocks across repeated high-ridge regions so longer exploration can reveal more mountain-only bird groups beyond the initial debug/start flock.
+
 ## 2026-06-20
 
 Added a slow sleep meter as a small red HUD bar, with hold-still sleeping to refill it and a recoverable dark pass-out state when fatigue reaches zero.
 
 Added a calm eyelid close/open overlay for voluntary sleep, keeping it distinct from the zero-sleep blackout while making rest feel more intentional in the PR demo.
+
+Retuned ground mist distance falloff so nearby low wisps remain spooky while mid/far patches fade harder, especially on rough high terrain and cliff silhouettes.
+
+Tightened the mist review follow-up with a shorter hard distance cutoff, zeroed hidden-patch alpha, and a debug assertion that far mist patches are fully culled from normal walking views.
+
+Changed ground mist into a strictly local near-player atmosphere by reducing patch generation scope and culling distinct wisps before they can read across distant terrain.
+
+Matched demo and normal mist fade/cull distances so the PR flythrough uses the same local-only mist range as ordinary play.
+
+Stabilized local mist patch generation across chunk boundaries by keeping deterministic chunk-keyed patches alive while visible instead of clearing and reseeding the whole mist field.
 
 Rebuilt ground mist from scratch as sparse low drifting terrain-following wisps, using deterministic chunk placement biased toward lowlands and water-like terrain without cube particles or camera-facing billboards.
 
@@ -88,6 +124,8 @@ Added a trippy color-shifting planet fog and capped generated nature complexity 
 
 Guaranteed that the default spawn cell produces a dense generated biome patch close to the player start, keeping the opening view rich without bringing back a separate handcrafted start area.
 
+Fixed shortcut-driven tab return input cleanup so stale held modifier keys do not leave the player crouched and unable to jump after returning to pointer-lock play.
+
 Rebuilt the lo-fi render direction around a low-resolution whole-scene render target upscaled with nearest filtering, disabled WebGL antialiasing, and retuned terrain colour boundaries into broader block-stepped regions without repainting the existing palette.
 
 ## 2026-06-20
@@ -126,18 +164,14 @@ Added sparse wilderness seaweed patches as flat green reactive blade sprites tha
 
 Retuned the wilderness seaweed after review so each flat blade has an organic static bend even when frozen, and suitable sparse areas receive a few more patches and blades without relaxing biome or slope constraints.
 
-Added one deterministic glass dome landmark with a hollow collision shell, a clear entrance, a discoverable chronoglass field note, a `?debug=dome` review spawn, and a 4x blended sky-time effect while the player is inside.
+Reworked scared water-creature hops as per-creature committed state machines on latest main: each scared hop now starts from anticipation at phase zero, drives horizontal travel and vertical arc from the same local progress, and only retargets after landing.
 
-Reworked the glass dome follow-up so field-note numbers follow collection order, the interior uses one flat effective terrain surface and colour, and the dome ribs read more continuously in the PR preview.
+Tightened scared water-creature movement so frogs choose obstacle-clear forward landings, reject hop paths through solid blockers, and return to their patrols via planted hops instead of sliding along the ground.
 
-Smoothed the glass dome entrance with a doorway terrain ramp, restored broader continuous ribs for a cleaner exterior silhouette, and reframed `?debug=dome` with a raised idle inspection camera.
+## 2026-06-22
 
-Added a full-circumference glass dome terrain collar that blends the varied outside ground toward the flat interior floor, helping the rim feel seated without removing the smooth entrance ramp.
+Added one massive planet-local mountain as terrain height-field geometry, with a broad climbable summit, a switchback-like carved path, a `?debug=mountain` spawn, generated-nature clearance along the route, and PR demo/screenshot coverage focused on the new landmark.
 
-Fixed the glass dome entrance arch so it stands upright over the doorway and adjusted the transparent shell rendering to avoid one visibly faded sector.
+Followed review feedback by keeping normal generated biome clusters off the massive mountain footprint and adding general terrain-slope slipperiness, with the massive mountain path overriding that slip so it remains the reliable climb route.
 
-Embedded the glass dome entrance sill into the ramp surface and flattened a small rim shoulder at the shell footprint so the doorway/base reads as seated instead of floating.
-
-Removed the raised glass dome threshold from the passable doorway and replaced the rim treatment with a low segmented base collar that leaves the entrance path clear.
-
-Cut the glass dome latitude rings out of the same shared doorway aperture as the shell and collar, keeping the entrance walk-through visually open while preserving the current arch and grounded rim.
+Retuned the slope slipperiness so the mountain path is smooth enough to climb without a hard zero-slip exemption, and added a general grounded step-rise guard to avoid sudden camera pops on steep terrain discontinuities.
