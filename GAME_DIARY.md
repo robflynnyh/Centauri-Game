@@ -183,3 +183,9 @@ Added one massive planet-local mountain as terrain height-field geometry, with a
 Followed review feedback by keeping normal generated biome clusters off the massive mountain footprint and adding general terrain-slope slipperiness, with the massive mountain path overriding that slip so it remains the reliable climb route.
 
 Retuned the slope slipperiness so the mountain path is smooth enough to climb without a hard zero-slip exemption, and added a general grounded step-rise guard to avoid sudden camera pops on steep terrain discontinuities.
+
+## 2026-06-23
+
+Added a deterministic prismatic diamond biome with terrain-integrated pale spectral ground, many small embedded crystal fragments, a `?debug=diamond` review spawn, local half-gravity, and a smooth low-res prism vision pass that appears only inside the biome.
+
+Generalized the diamond biome into three deterministic planet regions with shared sampling/rendering helpers, distinct cyan and rose mineral variants, explicit debug spawns, and progressively lighter local gravity.

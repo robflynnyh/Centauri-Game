@@ -9,6 +9,7 @@ export type PixelRenderPipeline = {
 export type PixelRenderOptions = {
   elapsed?: number;
   isolationAmount?: number;
+  prismAmount?: number;
 };
 
 // One low-resolution scene pixel becomes a 4x4 screen block after the nearest-filter upscale.
@@ -23,6 +24,7 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
     lowResolution: { value: new THREE.Vector2(1, 1) },
     elapsed: { value: 0 },
     isolationAmount: { value: 0 },
+    prismAmount: { value: 0 },
   };
 
   const lowResolutionScene = new THREE.WebGLRenderTarget(1, 1, {
@@ -55,15 +57,41 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
       uniform vec2 lowResolution;
       uniform float elapsed;
       uniform float isolationAmount;
+      uniform float prismAmount;
       varying vec2 vUv;
 
       void main() {
         vec4 base = texture2D(sceneTexture, vUv);
         float amount = clamp(isolationAmount, 0.0, 1.0);
+        float prism = clamp(prismAmount, 0.0, 1.0);
 
-        if (amount <= 0.001) {
+        if (amount <= 0.001 && prism <= 0.001) {
           gl_FragColor = base;
           return;
+        }
+
+        vec3 colour = base.rgb;
+        vec2 texel = 1.0 / max(lowResolution, vec2(1.0));
+
+        if (prism > 0.001) {
+          vec2 centered = vUv * 2.0 - 1.0;
+          float wave = sin(elapsed * 1.7 + centered.x * 7.0 - centered.y * 4.0);
+          vec2 prismDirection = normalize(vec2(0.58 + sin(elapsed * 0.31) * 0.18, 0.36 + cos(elapsed * 0.27) * 0.14));
+          vec2 prismOffset = prismDirection * texel * prism * (1.6 + wave * 0.55);
+          vec3 split = vec3(
+            texture2D(sceneTexture, vUv + prismOffset * 1.3).r,
+            texture2D(sceneTexture, vUv - prismOffset * 0.2).g,
+            texture2D(sceneTexture, vUv - prismOffset * 1.15).b
+          );
+          float shimmer = 0.5 + 0.5 * sin(elapsed * 2.6 + centered.x * 15.0 + centered.y * 9.0);
+          vec3 spectralTint = vec3(
+            0.5 + 0.5 * sin(elapsed * 0.53 + centered.y * 5.0),
+            0.5 + 0.5 * sin(elapsed * 0.47 + 2.1 + centered.x * 4.0),
+            0.5 + 0.5 * sin(elapsed * 0.51 + 4.2 - centered.y * 3.0)
+          );
+          float edge = smoothstep(0.12, 0.46, length(abs(split - base.rgb)));
+          colour = mix(colour, split, prism * (0.24 + edge * 0.12));
+          colour += spectralTint * prism * (0.035 + shimmer * 0.025 + edge * 0.03);
         }
 
         vec2 centered = vUv * 2.0 - 1.0;
@@ -72,7 +100,6 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
           cos(elapsed * 0.31) - centered.x * 0.14
         ));
         float breath = 0.5 + 0.5 * sin(elapsed * 1.05);
-        vec2 texel = 1.0 / max(lowResolution, vec2(1.0));
         vec2 offset = direction * texel * amount * (3.0 + breath * 2.7);
 
         vec3 ghostA = texture2D(sceneTexture, vUv + offset).rgb;
@@ -96,7 +123,7 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
 
         float ghostStrength = amount * (0.2 + breath * 0.14 + edgeSignal * 0.12);
         float chromaStrength = amount * (0.34 + edgeSignal * 0.16);
-        vec3 colour = mix(base.rgb, chroma, chromaStrength);
+        colour = mix(colour, chroma, chromaStrength);
         colour = mix(colour, doubled, ghostStrength);
         vec3 echoDifference = abs(doubled - base.rgb);
         colour += echoDifference * amount * (0.26 + breath * 0.18 + edgeSignal * 0.18);
@@ -136,6 +163,7 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
   const render = (scene: THREE.Scene, camera: THREE.Camera, options: PixelRenderOptions = {}): void => {
     screenUniforms.elapsed.value = options.elapsed ?? 0;
     screenUniforms.isolationAmount.value = THREE.MathUtils.clamp(options.isolationAmount ?? 0, 0, 1);
+    screenUniforms.prismAmount.value = THREE.MathUtils.clamp(options.prismAmount ?? 0, 0, 1);
 
     renderer.setRenderTarget(lowResolutionScene);
     renderer.clear();
