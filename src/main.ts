@@ -7,6 +7,7 @@ import { createFootstepTrail } from "./footsteps";
 import { createGlassDomeLandmark, createTempleLandmark } from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature, type NaturePerfState } from "./nature";
+import { createParamotorDevice, type ParamotorPlacementState } from "./paramotor";
 import {
   normalizeLocalVector,
   normalizePlanetCoords,
@@ -44,6 +45,22 @@ import {
 } from "./water";
 import "./style.css";
 
+type ParamotorDebugState = ParamotorPlacementState & {
+  mounted: boolean;
+  airborne: boolean;
+  canMount: boolean;
+  interactionRadius: number;
+  distanceToPlayer: number;
+  throttle: number;
+  gas: number;
+  speed: number;
+  verticalSpeed: number;
+  altitudeAboveGround: number;
+  absoluteAltitude: number;
+  maxAltitude: number;
+  yaw: number;
+};
+
 declare global {
   interface Window {
     __centauriDebug?: {
@@ -58,6 +75,16 @@ declare global {
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean };
       getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number };
+      getParamotorState: () => ParamotorDebugState;
+      setParamotorFlightForTest: (input: {
+        x?: number;
+        z?: number;
+        yaw?: number;
+        speed?: number;
+        throttle?: number;
+        altitudeAboveGround?: number;
+        gas?: number;
+      }) => ParamotorDebugState;
       getPerfState: () => {
         frameMs: number;
         fps: number;
@@ -221,6 +248,7 @@ const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
 const enableOceanDebug = params.get("debug") === "ocean";
+const enableParamotorDebug = params.get("debug") === "paramotor";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
@@ -233,6 +261,7 @@ const enableDebugTools =
   isBirdDebug ||
   enableMountainDebug ||
   enableOceanDebug ||
+  enableParamotorDebug ||
   enableSleepDebug ||
   enableIsolationDebug ||
   enablePerfDebug;
@@ -261,13 +290,15 @@ const hudBadgeText = isDemo
             ? "mountain debug"
             : enableOceanDebug
               ? "ocean debug"
-              : enableSleepDebug
-                ? "sleep debug"
-                : enableIsolationDebug
-                  ? "isolation debug"
-                  : enablePerfDebug
-                    ? "perf debug"
-                    : "exploration mode";
+              : enableParamotorDebug
+                ? "paramotor debug"
+                : enableSleepDebug
+                  ? "sleep debug"
+                  : enableIsolationDebug
+                    ? "isolation debug"
+                    : enablePerfDebug
+                      ? "perf debug"
+                      : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -302,8 +333,26 @@ app.innerHTML = `
         <div class="hud__sleep-fill"></div>
       </div>
     </div>
+    <div class="hud__flight" aria-label="Paramotor flight status" hidden>
+      <div class="hud__flight-row">
+        <span>Gas</span>
+        <span class="hud__flight-gas-text">100%</span>
+      </div>
+      <div class="hud__flight-track" aria-hidden="true">
+        <div class="hud__flight-fill hud__flight-fill--gas"></div>
+      </div>
+      <div class="hud__flight-row">
+        <span>Throttle</span>
+        <span class="hud__flight-throttle-text">0%</span>
+      </div>
+      <div class="hud__flight-track" aria-hidden="true">
+        <div class="hud__flight-fill hud__flight-fill--throttle"></div>
+      </div>
+      <div class="hud__flight-altitude">Alt 0m</div>
+    </div>
     <div class="hud__badge">${hudBadgeText}</div>
     <div class="hud__look" aria-live="polite"></div>
+    <div class="hud__prompt" aria-live="polite"></div>
   </div>
   <div class="eyelids" aria-hidden="true" data-phase="open">
     <div class="eyelid eyelid--top"></div>
@@ -334,6 +383,7 @@ const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone, ...m
 const domeFloorColour = new THREE.Color(0x273c78);
 const domeGroundingBandWidth = 16;
 const domeGroundingFlatShoulder = 0.25;
+const paramotor = createParamotorDevice(scene, effectiveHeightAt, [temple.reservedZone, dome.reservedZone, ...massiveMountainReservedZones]);
 const fieldNotes = createFieldNotesState();
 const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
 const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
@@ -349,27 +399,44 @@ const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : enableDomeDebug
     ? new THREE.Vector3(dome.approachPosition.x, 0, dome.approachPosition.z)
-  : isBeetleDebug
-    ? new THREE.Vector3(4.8, 0, 14.2)
-    : isBirdDebug
-      ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
-      : enableMountainDebug
-        ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
-        : enableOceanDebug
-          ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
-          : enableIsolationDebug
-            ? new THREE.Vector3(-128, 0, -464)
-            : new THREE.Vector3(0, 0, 24);
+    : enableParamotorDebug
+      ? new THREE.Vector3(paramotor.approachPosition.x, 0, paramotor.approachPosition.z)
+      : isBeetleDebug
+        ? new THREE.Vector3(4.8, 0, 14.2)
+        : isBirdDebug
+          ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
+          : enableMountainDebug
+            ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
+            : enableOceanDebug
+              ? new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z)
+              : enableIsolationDebug
+                ? new THREE.Vector3(-128, 0, -464)
+                : new THREE.Vector3(0, 0, 24);
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
   : enableDomeDebug
     ? Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z)
-  : enableMountainDebug
-    ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
-    : enableOceanDebug
-      ? oceanDebugSpawn.yaw
-      : 0;
-const initialPlayerPitch = enableDomeDebug ? -0.36 : isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
+    : enableParamotorDebug
+      ? Math.atan2(
+          -(paramotor.position.x - initialPlayerLocalPosition.x),
+          -(paramotor.position.z - initialPlayerLocalPosition.z)
+        )
+      : enableMountainDebug
+        ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
+        : enableOceanDebug
+          ? oceanDebugSpawn.yaw
+          : 0;
+const initialPlayerPitch = enableDomeDebug
+  ? -0.36
+  : isBirdDebug
+    ? 0.18
+    : enableParamotorDebug
+      ? -0.2
+      : enableMountainDebug
+        ? 0.08
+        : enableOceanDebug
+          ? -0.05
+          : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -386,10 +453,31 @@ const player = {
   grounded: true,
   jumpQueued: false,
 };
+const paramotorFlight = {
+  mounted: false,
+  airborne: false,
+  throttle: 0,
+  gas: 1,
+  speed: 0,
+  verticalSpeed: 0,
+  absoluteAltitude: effectiveHeightAt(initialPlayerLocalPosition.x, initialPlayerLocalPosition.z) + standHeight,
+  hasFlown: false,
+};
+const paramotorSeatedHeight = 1.34;
+const paramotorGroundClearance = 0.08;
+const paramotorMaxSpeed = 18.5;
+const paramotorAirborneCollisionClearance = 2.4;
 let mouseLookActive = false;
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
+const flightHud = document.querySelector<HTMLDivElement>(".hud__flight");
+const flightGasFill = document.querySelector<HTMLDivElement>(".hud__flight-fill--gas");
+const flightThrottleFill = document.querySelector<HTMLDivElement>(".hud__flight-fill--throttle");
+const flightGasText = document.querySelector<HTMLSpanElement>(".hud__flight-gas-text");
+const flightThrottleText = document.querySelector<HTMLSpanElement>(".hud__flight-throttle-text");
+const flightAltitudeText = document.querySelector<HTMLDivElement>(".hud__flight-altitude");
+const interactionPrompt = document.querySelector<HTMLDivElement>(".hud__prompt");
 const eyelidOverlay = document.querySelector<HTMLDivElement>(".eyelids");
 const blackoutOverlay = document.querySelector<HTMLDivElement>(".blackout");
 const underwaterOverlay = document.querySelector<HTMLDivElement>(".underwater");
@@ -411,7 +499,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerf
   effectiveHeightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
-  [temple.reservedZone, dome.reservedZone, ...massiveMountainReservedZones]
+  [temple.reservedZone, dome.reservedZone, paramotor.reservedZone, ...massiveMountainReservedZones]
 );
 const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
@@ -430,7 +518,7 @@ let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome, mountainDebugState);
+}, temple, dome, mountainDebugState, paramotor);
 let skyElapsed = clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
@@ -465,9 +553,11 @@ if (enableDebugTools) {
     }),
     getMovementState: () => ({
       grounded: player.grounded,
-      crouching: isCrouchPressed(),
+      crouching: !paramotorFlight.mounted && isCrouchPressed(),
       cameraHeight: player.cameraHeight,
     }),
+    getParamotorState: getParamotorDebugState,
+    setParamotorFlightForTest,
     getPerfState: () => {
       let sceneObjects = 0;
       scene.traverse(() => {
@@ -583,6 +673,7 @@ if (enableDebugTools) {
       return state;
     },
     setPlayer: (x: number, z: number) => {
+      resetParamotorFlight(false);
       const normalized = normalizePlanetCoords(x, z);
       player.localPosition.set(normalized.x, 0, normalized.z);
       player.velocity.set(0, 0, 0);
@@ -681,9 +772,13 @@ window.addEventListener("keydown", (event) => {
   if (event.code === "KeyR") {
     event.preventDefault();
   }
+  if (event.code === "KeyE" && !event.repeat) {
+    event.preventDefault();
+    attemptParamotorInteraction();
+  }
   if (event.code === "Space") {
     event.preventDefault();
-    if (!event.repeat) player.jumpQueued = true;
+    if (!event.repeat && !paramotorFlight.mounted) player.jumpQueued = true;
   }
   void audio.resume();
   startAudio();
@@ -738,6 +833,250 @@ const movementRight = new THREE.Vector3();
 const movementWish = new THREE.Vector3();
 const movementDelta = new THREE.Vector3();
 const movementBeforeLocal = new THREE.Vector3();
+const paramotorHeading = new THREE.Vector3();
+const paramotorMove = new THREE.Vector3();
+
+function isParamotorThrottlePressed(): boolean {
+  return keys.has("KeyW") || keys.has("Space");
+}
+
+function isParamotorBrakePressed(): boolean {
+  return keys.has("KeyS") || keys.has("ShiftLeft") || keys.has("ShiftRight");
+}
+
+function canMountParamotor(): boolean {
+  if (paramotorFlight.mounted || !player.grounded) return false;
+  return surfaceDistanceBetweenLocal(player.localPosition, paramotor.position) <= paramotor.interactionRadius;
+}
+
+function attemptParamotorInteraction(): void {
+  if (paramotorFlight.mounted) {
+    if (!paramotorFlight.airborne || getParamotorAltitudeAboveGround() < 1.2) {
+      resetParamotorFlight(true);
+    }
+    return;
+  }
+
+  if (canMountParamotor()) {
+    mountParamotor();
+  }
+}
+
+function mountParamotor(): void {
+  const placement = paramotor.getPlacementState();
+  paramotorFlight.mounted = true;
+  paramotorFlight.airborne = false;
+  paramotorFlight.throttle = 0;
+  paramotorFlight.speed = 0;
+  paramotorFlight.verticalSpeed = 0;
+  paramotorFlight.hasFlown = false;
+  paramotorFlight.absoluteAltitude = effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight;
+  player.yaw = placement.takeoffYaw;
+  player.pitch = THREE.MathUtils.clamp(player.pitch, -0.38, 0.14);
+  player.velocity.set(0, 0, 0);
+  player.verticalVelocity = 0;
+  player.verticalOffset = 0;
+  player.grounded = true;
+  player.jumpQueued = false;
+}
+
+function resetParamotorFlight(parkAtPlayer = true, resetCamera = false): void {
+  if (parkAtPlayer && paramotorFlight.mounted) {
+    paramotor.parkAt({ x: player.localPosition.x, z: player.localPosition.z }, player.yaw);
+  }
+  paramotorFlight.mounted = false;
+  paramotorFlight.airborne = false;
+  paramotorFlight.throttle = 0;
+  paramotorFlight.speed = 0;
+  paramotorFlight.verticalSpeed = 0;
+  paramotorFlight.absoluteAltitude = effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight;
+  paramotorFlight.hasFlown = false;
+  player.verticalVelocity = 0;
+  player.verticalOffset = 0;
+  player.grounded = true;
+  player.jumpQueued = false;
+  if (resetCamera) player.cameraHeight = standHeight;
+  updatePlayerWorldPosition();
+}
+
+function getParamotorAltitudeAboveGround(): number {
+  return Math.max(0, paramotorFlight.absoluteAltitude - effectiveHeightAt(player.localPosition.x, player.localPosition.z) - player.cameraHeight);
+}
+
+function getParamotorDebugState(): ParamotorDebugState {
+  const placement = paramotor.getPlacementState();
+  return {
+    ...placement,
+    mounted: paramotorFlight.mounted,
+    airborne: paramotorFlight.airborne,
+    canMount: canMountParamotor(),
+    interactionRadius: paramotor.interactionRadius,
+    distanceToPlayer: surfaceDistanceBetweenLocal(player.localPosition, paramotor.position),
+    throttle: paramotorFlight.throttle,
+    gas: paramotorFlight.gas,
+    speed: paramotorFlight.speed,
+    verticalSpeed: paramotorFlight.verticalSpeed,
+    altitudeAboveGround: getParamotorAltitudeAboveGround(),
+    absoluteAltitude: paramotorFlight.absoluteAltitude,
+    maxAltitude: paramotor.maxAltitude,
+    yaw: player.yaw,
+  };
+}
+
+function setParamotorFlightForTest(input: {
+  x?: number;
+  z?: number;
+  yaw?: number;
+  speed?: number;
+  throttle?: number;
+  altitudeAboveGround?: number;
+  gas?: number;
+}): ParamotorDebugState {
+  const normalized = normalizePlanetCoords(input.x ?? player.localPosition.x, input.z ?? player.localPosition.z);
+  player.localPosition.set(normalized.x, 0, normalized.z);
+  player.yaw = input.yaw ?? player.yaw;
+  player.pitch = THREE.MathUtils.clamp(player.pitch, -0.42, 0.18);
+  player.cameraHeight = paramotorSeatedHeight;
+  player.velocity.set(0, 0, 0);
+  player.verticalVelocity = 0;
+  paramotorFlight.mounted = true;
+  paramotorFlight.airborne = true;
+  paramotorFlight.hasFlown = true;
+  paramotorFlight.speed = THREE.MathUtils.clamp(input.speed ?? 9, 0, paramotorMaxSpeed);
+  paramotorFlight.throttle = THREE.MathUtils.clamp(input.throttle ?? 0.45, 0, 1);
+  paramotorFlight.gas = THREE.MathUtils.clamp(input.gas ?? paramotorFlight.gas, 0, 1);
+  paramotorFlight.verticalSpeed = 0;
+  paramotorFlight.absoluteAltitude =
+    effectiveHeightAt(player.localPosition.x, player.localPosition.z) +
+    player.cameraHeight +
+    THREE.MathUtils.clamp(input.altitudeAboveGround ?? 12, 0, paramotor.maxAltitude);
+  player.verticalOffset = getParamotorAltitudeAboveGround();
+  player.grounded = false;
+  updatePlayerWorldPosition();
+  return getParamotorDebugState();
+}
+
+function updateParamotorHud(): void {
+  const state = getParamotorDebugState();
+  if (flightHud) flightHud.hidden = !state.mounted;
+  if (flightGasFill) flightGasFill.style.width = `${Math.round(state.gas * 100)}%`;
+  if (flightThrottleFill) flightThrottleFill.style.width = `${Math.round(state.throttle * 100)}%`;
+  if (flightGasText) flightGasText.textContent = `${Math.round(state.gas * 100)}%`;
+  if (flightThrottleText) flightThrottleText.textContent = `${Math.round(state.throttle * 100)}%`;
+  if (flightAltitudeText) flightAltitudeText.textContent = `Alt ${Math.round(state.altitudeAboveGround)}m`;
+
+  if (!interactionPrompt) return;
+  if (state.mounted && (!state.airborne || state.altitudeAboveGround < 1.2)) {
+    interactionPrompt.textContent = "E dismount";
+  } else if (state.canMount) {
+    interactionPrompt.textContent = "E mount paramotor";
+  } else {
+    interactionPrompt.textContent = "";
+  }
+}
+
+function updateParamotorFlight(delta: number): { horizontalSpeed: number } {
+  const throttlePressed = isParamotorThrottlePressed() && paramotorFlight.gas > 0.002;
+  const brakePressed = isParamotorBrakePressed();
+  const throttleDelta = throttlePressed ? 0.72 : brakePressed ? -0.95 : -0.16;
+  paramotorFlight.throttle = THREE.MathUtils.clamp(paramotorFlight.throttle + throttleDelta * delta, 0, 1);
+  if (paramotorFlight.gas <= 0.002) paramotorFlight.throttle = Math.min(paramotorFlight.throttle, 0.08);
+  if (paramotorFlight.throttle > 0) {
+    paramotorFlight.gas = THREE.MathUtils.clamp(paramotorFlight.gas - paramotorFlight.throttle * 0.036 * delta, 0, 1);
+  } else {
+    paramotorFlight.gas = THREE.MathUtils.clamp(paramotorFlight.gas + (paramotorFlight.airborne ? 0.012 : 0.045) * delta, 0, 1);
+  }
+
+  const speedRatio = THREE.MathUtils.clamp(paramotorFlight.speed / paramotorMaxSpeed, 0, 1);
+  const turnRate = THREE.MathUtils.lerp(0.62, 1.22, speedRatio);
+  if (keys.has("KeyA")) player.yaw += turnRate * delta;
+  if (keys.has("KeyD")) player.yaw -= turnRate * delta;
+
+  player.cameraHeight = THREE.MathUtils.lerp(player.cameraHeight, paramotorSeatedHeight, 1 - Math.exp(-delta * 5.5));
+
+  const targetSpeed =
+    paramotorFlight.airborne || paramotorFlight.throttle > 0.02
+      ? (paramotorFlight.airborne ? 3.6 : 0.6) + paramotorFlight.throttle * 14.9
+      : 0;
+  const brakedTargetSpeed = brakePressed ? targetSpeed * 0.54 : targetSpeed;
+  const speedDelta = (brakedTargetSpeed > paramotorFlight.speed ? 5.1 : brakePressed ? 6.6 : 2.45) * delta;
+  paramotorFlight.speed = moveToward(paramotorFlight.speed, brakedTargetSpeed, speedDelta);
+  if (paramotorFlight.speed < 0.035) paramotorFlight.speed = 0;
+
+  movementBeforeLocal.set(player.localPosition.x, 0, player.localPosition.z);
+  if (paramotorFlight.speed > 0) {
+    paramotorHeading.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    paramotorMove.copy(paramotorHeading).multiplyScalar(paramotorFlight.speed * delta);
+    if (paramotorFlight.airborne && player.verticalOffset > paramotorAirborneCollisionClearance) {
+      player.localPosition.add(paramotorMove);
+      normalizeLocalVector(player.localPosition);
+    } else {
+      resolvePlayerMove(player.localPosition, paramotorMove);
+    }
+  }
+
+  const actualHorizontalSpeed = surfaceDistanceBetweenLocal(movementBeforeLocal, player.localPosition) / Math.max(delta, 0.001);
+  if (actualHorizontalSpeed < 0.03 && !paramotorFlight.airborne) paramotorFlight.speed = 0;
+
+  const groundCameraAltitude = effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight;
+  if (!paramotorFlight.airborne) {
+    paramotorFlight.verticalSpeed = 0;
+    paramotorFlight.absoluteAltitude = groundCameraAltitude;
+    player.verticalOffset = 0;
+    player.grounded = true;
+    if (paramotorFlight.throttle > 0.42 && paramotorFlight.speed > 4.25) {
+      paramotorFlight.airborne = true;
+      paramotorFlight.hasFlown = true;
+      paramotorFlight.verticalSpeed = 0.82;
+      paramotorFlight.absoluteAltitude = groundCameraAltitude + paramotorGroundClearance;
+      player.grounded = false;
+    }
+  }
+
+  if (paramotorFlight.airborne) {
+    const flightSpeedRatio = THREE.MathUtils.clamp((paramotorFlight.speed - 2.5) / (paramotorMaxSpeed - 2.5), 0, 1);
+    const lift = paramotorFlight.throttle * (2.1 + flightSpeedRatio * 4.0);
+    const sink = 1.05 + (brakePressed ? 1.35 : 0) + (paramotorFlight.throttle < 0.08 ? 0.48 : 0);
+    const verticalAcceleration = lift - sink - paramotorFlight.verticalSpeed * 0.55;
+    paramotorFlight.verticalSpeed = THREE.MathUtils.clamp(paramotorFlight.verticalSpeed + verticalAcceleration * delta, -4.8, 5.4);
+    paramotorFlight.absoluteAltitude += paramotorFlight.verticalSpeed * delta;
+
+    const refreshedGroundCameraAltitude = effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight;
+    const minimumAltitude = refreshedGroundCameraAltitude + paramotorGroundClearance;
+    const maximumAltitude = refreshedGroundCameraAltitude + paramotor.maxAltitude;
+    if (paramotorFlight.absoluteAltitude > maximumAltitude) {
+      paramotorFlight.absoluteAltitude = maximumAltitude;
+      paramotorFlight.verticalSpeed = Math.min(paramotorFlight.verticalSpeed, 0);
+    }
+
+    if (paramotorFlight.absoluteAltitude <= minimumAltitude) {
+      paramotorFlight.absoluteAltitude = minimumAltitude;
+      paramotorFlight.verticalSpeed = 0;
+      paramotorFlight.airborne = false;
+      player.verticalOffset = 0;
+      player.grounded = true;
+    } else {
+      player.verticalOffset = Math.max(0, paramotorFlight.absoluteAltitude - refreshedGroundCameraAltitude);
+      player.grounded = false;
+    }
+  }
+
+  updatePlayerWorldPosition();
+  setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
+
+  if (
+    paramotorFlight.mounted &&
+    !paramotorFlight.airborne &&
+    paramotorFlight.hasFlown &&
+    !throttlePressed &&
+    paramotorFlight.throttle < 0.08 &&
+    paramotorFlight.speed < 1.35
+  ) {
+    resetParamotorFlight(true);
+  }
+
+  return { horizontalSpeed: actualHorizontalSpeed };
+}
 
 function isolationTargetForDistance(distance: number): number {
   if (!Number.isFinite(distance)) return 1;
@@ -970,6 +1309,7 @@ function animate(): void {
   if (isDemo) prDemo.update(elapsed, delta);
   else if (sleepBefore.blackout) restPlayerInPlace(delta, 0.52);
   else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
+  else if (paramotorFlight.mounted) explorationMotion = updateParamotorFlight(delta);
   else explorationMotion = updateExploration(delta);
 
   if (enableDomeDebug && !mouseLookActive && !movementIntent) {
@@ -984,8 +1324,24 @@ function animate(): void {
     );
   }
 
-  const movementAmount = isDemo ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
-  const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
+  if (enableParamotorDebug && !mouseLookActive && !movementIntent && !paramotorFlight.mounted) {
+    lookAtPlanetPoint(
+      camera,
+      paramotor.approachPosition.x,
+      paramotor.approachPosition.z,
+      effectiveHeightAt(paramotor.approachPosition.x, paramotor.approachPosition.z) + 3.4,
+      paramotor.position.x,
+      paramotor.position.z,
+      effectiveHeightAt(paramotor.position.x, paramotor.position.z) + 2.4
+    );
+  }
+
+  const movementAmount = isDemo
+    ? 0
+    : paramotorFlight.mounted
+      ? THREE.MathUtils.clamp(paramotorFlight.speed / paramotorMaxSpeed, 0, 1)
+      : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
+  const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15 || paramotorFlight.speed > 0.3;
   const grounded = isDemo || player.grounded;
   const sleepState = enableSleepDebug
     ? sleep.getState()
@@ -994,7 +1350,7 @@ function animate(): void {
         moving,
         grounded,
         movementAmount,
-        crouching: !isDemo && isCrouchPressed(),
+        crouching: !isDemo && !paramotorFlight.mounted && isCrouchPressed(),
         airborne: !grounded,
       });
   updateSleepHud(sleepState);
@@ -1018,6 +1374,18 @@ function animate(): void {
   updateVisionState(delta);
   mist.update(elapsed, floraFocus);
   if (!isDemo) updateUnderwaterCue();
+  if (paramotorFlight.mounted) {
+    paramotor.update(elapsed, {
+      mounted: true,
+      position: { x: player.localPosition.x, z: player.localPosition.z },
+      baseAltitude: effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.verticalOffset + 0.05,
+      yaw: player.yaw,
+      throttle: paramotorFlight.throttle,
+    });
+  } else {
+    paramotor.update(elapsed, { mounted: false });
+  }
+  updateParamotorHud();
 
   renderer.info.reset();
   pixelRenderer.render(scene, camera, {
