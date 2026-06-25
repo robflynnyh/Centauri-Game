@@ -28,6 +28,15 @@ export type SkyDebugState = {
   meteorRadiantAltitude: number;
   dayHorizonHex: number;
   nightHorizonHex: number;
+  patternedStarClusters: number;
+  patternedStarCloudBands: number;
+  patternedStarGlints: number;
+  patternedStarNorthernFeatures: number;
+  patternedStarSouthernFeatures: number;
+  patternedStarMinLatitude: number;
+  patternedStarMaxLatitude: number;
+  patternedStars: number;
+  starVisibility: number;
 };
 
 type SkyLocationState = SkyDebugState & {
@@ -114,7 +123,7 @@ export function createSkySystem(
   skyAnchor.add(celestialGroup);
   celestialBodies.forEach((body, index) => addCelestialBody(celestialGroup, camera, body, index));
   const starField = createStarField();
-  skyAnchor.add(starField.points);
+  skyAnchor.add(starField.group);
   const meteorField = createMeteorField(camera, isDemo);
   skyAnchor.add(meteorField.group);
 
@@ -163,7 +172,7 @@ export function createSkySystem(
 
       updateSkyRing(skyRing, locationState, elapsed);
       celestialGroup.children.forEach((child, index) => updateCelestialBody(child, camera, celestialBodies[index], index, locationState, elapsed));
-      starField.update(nightAmount, phaseAmount, locationState);
+      starField.update(elapsed, nightAmount, phaseAmount, locationState);
       meteorField.update(elapsed, nightAmount, locationState);
     },
     getDebugState: () => ({ ...locationState }),
@@ -223,6 +232,15 @@ function getSkyLocationState(location: LocalPlanetPoint, elapsed: number, isDemo
     meteorRadiantAltitude,
     dayHorizonHex,
     nightHorizonHex,
+    patternedStarClusters: starClusters.length,
+    patternedStarCloudBands: starCloudBands.length,
+    patternedStarGlints: patternedStars.filter((star) => (star.glow ?? 0) > 0).length,
+    patternedStarNorthernFeatures: starCoverage.northernFeatures,
+    patternedStarSouthernFeatures: starCoverage.southernFeatures,
+    patternedStarMinLatitude: starCoverage.minLatitude,
+    patternedStarMaxLatitude: starCoverage.maxLatitude,
+    patternedStars: patternedStars.length,
+    starVisibility: 0,
     frame,
     spunFrame,
     sunDirection,
@@ -401,7 +419,28 @@ type MeteorPath = {
   offset: number;
 };
 
+type StarPoint = {
+  longitudeOffset: number;
+  latitudeOffset: number;
+  size: number;
+  colour: number;
+  twinkleSpeed: number;
+  twinkleOffset: number;
+  twinkleAmount: number;
+  baseOpacity?: number;
+  depthOffset?: number;
+  glow?: number;
+  glowSize?: number;
+};
+
+type StarCluster = {
+  longitude: number;
+  latitude: number;
+  points: StarPoint[];
+};
+
 const skyShellDistance = 132;
+const starShellDistance = 170;
 const ringDirection = stableDirection(0.34, 0.56);
 
 const celestialBodies: CelestialBody[] = [
@@ -419,9 +458,198 @@ const celestialBodies: CelestialBody[] = [
   { direction: stableDirection(4.42, 0.08), radius: 3.1, colour: 0xffdf74, halo: 0x6b521e },
 ];
 
+const starConstellations: StarCluster[] = [
+  {
+    longitude: -1.42,
+    latitude: 0.38,
+    points: [
+      { longitudeOffset: -0.035, latitudeOffset: -0.018, size: 2.9, colour: 0xf4fff2, twinkleSpeed: 1.15, twinkleOffset: 0.2, twinkleAmount: 0.3 },
+      { longitudeOffset: -0.006, latitudeOffset: 0.006, size: 3.4, colour: 0xfff1c9, twinkleSpeed: 0.82, twinkleOffset: 1.7, twinkleAmount: 0.22 },
+      { longitudeOffset: 0.028, latitudeOffset: 0.026, size: 2.4, colour: 0xbffffa, twinkleSpeed: 1.38, twinkleOffset: 3.2, twinkleAmount: 0.26 },
+      { longitudeOffset: 0.056, latitudeOffset: 0.008, size: 2.1, colour: 0xffc7f0, twinkleSpeed: 1.03, twinkleOffset: 4.9, twinkleAmount: 0.2 },
+      { longitudeOffset: 0.014, latitudeOffset: -0.038, size: 2.0, colour: 0xd9d1ff, twinkleSpeed: 1.25, twinkleOffset: 2.6, twinkleAmount: 0.24 },
+    ],
+  },
+  {
+    longitude: -0.18,
+    latitude: 0.62,
+    points: [
+      { longitudeOffset: -0.05, latitudeOffset: 0.0, size: 2.1, colour: 0xc8fff4, twinkleSpeed: 0.76, twinkleOffset: 1.1, twinkleAmount: 0.24 },
+      { longitudeOffset: -0.02, latitudeOffset: 0.03, size: 2.7, colour: 0xfff6bb, twinkleSpeed: 1.06, twinkleOffset: 2.5, twinkleAmount: 0.28 },
+      { longitudeOffset: 0.018, latitudeOffset: 0.012, size: 2.3, colour: 0xffffff, twinkleSpeed: 1.34, twinkleOffset: 3.3, twinkleAmount: 0.22 },
+      { longitudeOffset: 0.048, latitudeOffset: 0.045, size: 2.9, colour: 0xffb8e8, twinkleSpeed: 0.92, twinkleOffset: 4.1, twinkleAmount: 0.2 },
+      { longitudeOffset: 0.064, latitudeOffset: -0.006, size: 1.9, colour: 0x9fffe0, twinkleSpeed: 1.18, twinkleOffset: 5.6, twinkleAmount: 0.26 },
+    ],
+  },
+  {
+    longitude: 0.88,
+    latitude: 0.22,
+    points: [
+      { longitudeOffset: -0.048, latitudeOffset: 0.034, size: 2.2, colour: 0xfff0a6, twinkleSpeed: 1.28, twinkleOffset: 0.7, twinkleAmount: 0.22 },
+      { longitudeOffset: -0.016, latitudeOffset: 0.006, size: 2.6, colour: 0xf8fff6, twinkleSpeed: 0.88, twinkleOffset: 2.0, twinkleAmount: 0.3 },
+      { longitudeOffset: 0.018, latitudeOffset: -0.018, size: 2.0, colour: 0xb7d8ff, twinkleSpeed: 1.42, twinkleOffset: 3.8, twinkleAmount: 0.24 },
+      { longitudeOffset: 0.052, latitudeOffset: -0.048, size: 2.8, colour: 0xffc6f4, twinkleSpeed: 1.0, twinkleOffset: 5.1, twinkleAmount: 0.2 },
+    ],
+  },
+  {
+    longitude: 1.78,
+    latitude: 0.72,
+    points: [
+      { longitudeOffset: -0.036, latitudeOffset: -0.03, size: 2.4, colour: 0xf6ffd9, twinkleSpeed: 0.94, twinkleOffset: 1.4, twinkleAmount: 0.24 },
+      { longitudeOffset: -0.006, latitudeOffset: -0.002, size: 3.1, colour: 0xffffff, twinkleSpeed: 1.2, twinkleOffset: 2.9, twinkleAmount: 0.18 },
+      { longitudeOffset: 0.03, latitudeOffset: -0.032, size: 2.4, colour: 0xa5fff6, twinkleSpeed: 0.86, twinkleOffset: 4.2, twinkleAmount: 0.28 },
+      { longitudeOffset: -0.002, latitudeOffset: 0.038, size: 2.0, colour: 0xe4b9ff, twinkleSpeed: 1.48, twinkleOffset: 5.8, twinkleAmount: 0.22 },
+    ],
+  },
+  {
+    longitude: 2.72,
+    latitude: 0.18,
+    points: [
+      { longitudeOffset: -0.052, latitudeOffset: 0.002, size: 2.0, colour: 0xbffff7, twinkleSpeed: 1.08, twinkleOffset: 0.5, twinkleAmount: 0.2 },
+      { longitudeOffset: -0.018, latitudeOffset: -0.022, size: 2.7, colour: 0xfff8d4, twinkleSpeed: 1.36, twinkleOffset: 1.9, twinkleAmount: 0.3 },
+      { longitudeOffset: 0.012, latitudeOffset: 0.014, size: 2.2, colour: 0xffb7de, twinkleSpeed: 0.8, twinkleOffset: 3.0, twinkleAmount: 0.24 },
+      { longitudeOffset: 0.046, latitudeOffset: -0.01, size: 2.8, colour: 0xf7fff0, twinkleSpeed: 1.18, twinkleOffset: 4.8, twinkleAmount: 0.2 },
+      { longitudeOffset: 0.074, latitudeOffset: 0.026, size: 1.8, colour: 0x9ddaff, twinkleSpeed: 1.52, twinkleOffset: 6.0, twinkleAmount: 0.26 },
+    ],
+  },
+  {
+    longitude: 3.74,
+    latitude: 0.52,
+    points: [
+      { longitudeOffset: -0.04, latitudeOffset: -0.016, size: 2.6, colour: 0xffffff, twinkleSpeed: 0.9, twinkleOffset: 0.0, twinkleAmount: 0.22 },
+      { longitudeOffset: -0.012, latitudeOffset: 0.018, size: 2.0, colour: 0xffd3f1, twinkleSpeed: 1.3, twinkleOffset: 1.5, twinkleAmount: 0.24 },
+      { longitudeOffset: 0.014, latitudeOffset: -0.01, size: 3.0, colour: 0xe9ffd0, twinkleSpeed: 1.04, twinkleOffset: 2.8, twinkleAmount: 0.28 },
+      { longitudeOffset: 0.044, latitudeOffset: 0.02, size: 2.3, colour: 0xb0fff9, twinkleSpeed: 1.46, twinkleOffset: 4.5, twinkleAmount: 0.2 },
+    ],
+  },
+  {
+    longitude: 4.82,
+    latitude: 0.06,
+    points: [
+      { longitudeOffset: -0.07, latitudeOffset: 0.02, size: 1.9, colour: 0xaee8ff, twinkleSpeed: 1.38, twinkleOffset: 0.8, twinkleAmount: 0.22 },
+      { longitudeOffset: -0.034, latitudeOffset: -0.012, size: 2.5, colour: 0xfff3bf, twinkleSpeed: 0.84, twinkleOffset: 2.1, twinkleAmount: 0.3 },
+      { longitudeOffset: 0.0, latitudeOffset: 0.016, size: 2.1, colour: 0xffb7e7, twinkleSpeed: 1.14, twinkleOffset: 3.4, twinkleAmount: 0.24 },
+      { longitudeOffset: 0.036, latitudeOffset: -0.02, size: 2.8, colour: 0xf7fff4, twinkleSpeed: 1.0, twinkleOffset: 4.7, twinkleAmount: 0.18 },
+      { longitudeOffset: 0.07, latitudeOffset: 0.014, size: 2.0, colour: 0xb7ffd2, twinkleSpeed: 1.56, twinkleOffset: 6.2, twinkleAmount: 0.26 },
+    ],
+  },
+];
+
+const starCloudBands: StarCluster[] = [
+  makeStarRibbon(-0.96, 0.56, 1.18, 0.06, 42, [0x78a8ff, 0xc3ddff, 0xeec7ff], 0.3, 12.0),
+  makeStarRibbon(0.18, 0.7, 0.92, 0.045, 34, [0x93fff0, 0xf7f1c7, 0xc7adff], 0.24, 16.0),
+  makeStarRibbon(1.18, 0.34, 1.04, 0.052, 38, [0xffc5ec, 0xb6f7ff, 0xffef9f], 0.26, 6.0),
+  makeStarRibbon(3.42, 0.48, 1.08, 0.056, 36, [0xb5c7ff, 0xf5ffda, 0x9effe8], 0.25, 20.0),
+  makeStarRibbon(2.28, 0.84, 1.42, 0.05, 44, [0xf7f4ff, 0x87c8ff, 0xffbfe9], 0.28, 24.0),
+  makeStarRibbon(5.18, 0.74, 1.36, 0.058, 42, [0xa8fff0, 0xd5d1ff, 0xfff0a8], 0.27, 18.0),
+  makeStarRibbon(-2.78, 0.28, 1.18, 0.05, 34, [0x9fb9ff, 0xffc9f1, 0xc7ffd8], 0.22, 8.0),
+  makeStarRibbon(-0.66, -0.5, 1.16, 0.058, 40, [0x8fc6ff, 0xffd2f6, 0xd8ffe4], 0.27, 10.0),
+  makeStarRibbon(0.82, -0.76, 1.28, 0.052, 42, [0xf8f3ff, 0x9affee, 0xffe2a8], 0.28, 22.0),
+  makeStarRibbon(2.58, -0.36, 1.1, 0.056, 36, [0xb8c4ff, 0xffbde5, 0xcaffff], 0.24, 14.0),
+  makeStarRibbon(4.18, -0.84, 1.38, 0.052, 44, [0x91d8ff, 0xfff7c0, 0xdbb6ff], 0.29, 26.0),
+  makeStarRibbon(5.48, -0.18, 0.98, 0.046, 30, [0xa8ffdd, 0xd1c2ff, 0xffc7df], 0.21, 4.0),
+];
+
+const starDomeGlyphs: StarCluster[] = [
+  makeEchoGlyph(-2.94, -0.68, 0xffd7f2, 0),
+  makeEchoGlyph(-2.36, -0.32, 0x9fe8ff, 1),
+  makeEchoGlyph(-1.78, 0.02, 0xf8f2bd, 2),
+  makeEchoGlyph(-1.2, 0.42, 0xc8b4ff, 3),
+  makeEchoGlyph(-0.62, 0.72, 0x9affdf, 4),
+  makeEchoGlyph(-0.04, -0.78, 0xf7f8ff, 5),
+  makeEchoGlyph(0.54, -0.46, 0xffc1e8, 6),
+  makeEchoGlyph(1.12, -0.08, 0xa9d4ff, 7),
+  makeEchoGlyph(1.7, 0.32, 0xfff0a4, 8),
+  makeEchoGlyph(2.28, 0.68, 0xb8ffe8, 9),
+  makeEchoGlyph(2.86, -0.72, 0xd9c4ff, 10),
+  makeEchoGlyph(3.44, -0.38, 0xffcfef, 11),
+  makeEchoGlyph(4.02, 0.08, 0x9ffff2, 12),
+  makeEchoGlyph(4.6, 0.5, 0xfff7c6, 13),
+  makeEchoGlyph(5.18, -0.14, 0xbfcfff, 14),
+  makeEchoGlyph(5.76, 0.82, 0xffbfe3, 15),
+];
+
+const starClusters = [...starConstellations, ...starCloudBands, ...starDomeGlyphs];
+const patternedStars = starClusters.flatMap((cluster) => cluster.points);
+const starCoverage = getStarCoverage(starClusters);
+
 function stableDirection(longitude: number, latitude: number): THREE.Vector3 {
   const cosLatitude = Math.cos(latitude);
   return new THREE.Vector3(Math.sin(longitude) * cosLatitude, Math.cos(longitude) * cosLatitude, Math.sin(latitude)).normalize();
+}
+
+function makeStarRibbon(
+  longitude: number,
+  latitude: number,
+  longitudeSpan: number,
+  width: number,
+  count: number,
+  colours: number[],
+  opacity: number,
+  depthOffset: number
+): StarCluster {
+  const points: StarPoint[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const t = count === 1 ? 0.5 : index / (count - 1);
+    const centered = t - 0.5;
+    const lane = (((index * 7) % 11) - 5) / 5;
+    const wave = Math.sin(t * Math.PI * 2.4 + longitude * 1.7) * width * 0.42;
+    const shimmer = ((index * 13) % 9) / 8;
+    const glint = index % 11 === 2 || index % 17 === 5;
+    points.push({
+      longitudeOffset: centered * longitudeSpan + Math.sin(index * 1.37) * 0.018,
+      latitudeOffset: lane * width + wave + Math.cos(index * 0.93) * width * 0.18,
+      size: glint ? 4.0 + shimmer * 1.45 : 1.55 + shimmer * 1.75,
+      colour: colours[index % colours.length],
+      twinkleSpeed: glint ? 1.55 + shimmer * 0.42 : 0.58 + shimmer * 0.62,
+      twinkleOffset: longitude * 1.9 + latitude * 2.7 + index * 0.73,
+      twinkleAmount: glint ? 0.62 : 0.36,
+      baseOpacity: glint ? opacity * 2.9 : opacity * (0.72 + shimmer * 0.5),
+      depthOffset: depthOffset + lane * 4,
+      glow: glint ? 0.46 : undefined,
+      glowSize: glint ? 3.8 + shimmer * 1.45 : undefined,
+    });
+  }
+  return { longitude, latitude, points };
+}
+
+function makeEchoGlyph(longitude: number, latitude: number, colour: number, seed: number): StarCluster {
+  const warmColour = seed % 2 === 0 ? 0xfff4c8 : 0xc8fff7;
+  return {
+    longitude,
+    latitude,
+    points: [
+      { longitudeOffset: -0.035, latitudeOffset: -0.018, size: 2.4, colour, twinkleSpeed: 0.82, twinkleOffset: seed * 0.7, twinkleAmount: 0.34, baseOpacity: 0.82, depthOffset: -6 },
+      { longitudeOffset: -0.006, latitudeOffset: 0.012, size: 3.4, colour: warmColour, twinkleSpeed: 1.18, twinkleOffset: seed * 0.7 + 1.4, twinkleAmount: 0.5, baseOpacity: 0.98, depthOffset: 4, glow: 0.34, glowSize: 3.4 },
+      { longitudeOffset: 0.032, latitudeOffset: 0.03, size: 2.1, colour: 0xf7f9ff, twinkleSpeed: 0.96, twinkleOffset: seed * 0.7 + 2.6, twinkleAmount: 0.36, baseOpacity: 0.78, depthOffset: 10 },
+      { longitudeOffset: 0.05, latitudeOffset: -0.008, size: 2.8, colour, twinkleSpeed: 1.36, twinkleOffset: seed * 0.7 + 3.8, twinkleAmount: 0.58, baseOpacity: 0.9, depthOffset: 0, glow: 0.18, glowSize: 2.7 },
+      { longitudeOffset: 0.014, latitudeOffset: -0.04, size: 2.0, colour: warmColour, twinkleSpeed: 0.74, twinkleOffset: seed * 0.7 + 5.0, twinkleAmount: 0.3, baseOpacity: 0.74, depthOffset: 14 },
+    ],
+  };
+}
+
+function getStarCoverage(clusters: StarCluster[]): {
+  northernFeatures: number;
+  southernFeatures: number;
+  minLatitude: number;
+  maxLatitude: number;
+} {
+  let northernFeatures = 0;
+  let southernFeatures = 0;
+  let minLatitude = Infinity;
+  let maxLatitude = -Infinity;
+
+  clusters.forEach((cluster) => {
+    cluster.points.forEach((star) => {
+      const latitude = cluster.latitude + star.latitudeOffset;
+      minLatitude = Math.min(minLatitude, latitude);
+      maxLatitude = Math.max(maxLatitude, latitude);
+      if (latitude >= 0) northernFeatures += 1;
+      else southernFeatures += 1;
+    });
+  });
+
+  return { northernFeatures, southernFeatures, minLatitude, maxLatitude };
 }
 
 function addCelestialBody(celestialGroup: THREE.Group, camera: THREE.Camera, body: CelestialBody, index: number): void {
@@ -505,36 +733,85 @@ function updateSkyRing(skyRing: THREE.Mesh, state: SkyLocationState, elapsed: nu
   skyRing.visible = apparentRingDirection.dot(state.frame.up) > -0.16;
 }
 
-function createStarField(): { points: THREE.Points; update: (nightAmount: number, templeInfluence: number, state: SkyLocationState) => void } {
-  const geometry = new THREE.BufferGeometry();
-  const positions: number[] = [];
-  const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+function createStarField(): {
+  group: THREE.Group;
+  update: (elapsed: number, nightAmount: number, templeInfluence: number, state: SkyLocationState) => void;
+} {
+  const group = new THREE.Group();
+  group.name = "patterned-twinkling-star-clusters";
+  const starGeometry = new THREE.PlaneGeometry(1, 1);
+  const starVisualScale = 0.28;
+  const starGlowVisualScale = 0.34;
+  const twinkleTint = new THREE.Color(0xffffff);
+  const stars: Array<{
+    star: StarPoint;
+    mesh: THREE.Mesh;
+    material: THREE.MeshBasicMaterial;
+    baseColour: THREE.Color;
+    glowMesh?: THREE.Mesh;
+    glowMaterial?: THREE.MeshBasicMaterial;
+  }> = [];
 
-  for (let index = 0; index < 96; index += 1) {
-    const y = 1 - (index / 95) * 2;
-    const radius = Math.sqrt(1 - y * y);
-    const theta = index * goldenAngle;
-    positions.push(Math.cos(theta) * radius * 170, y * 170, Math.sin(theta) * radius * 170);
-  }
-
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  const material = new THREE.PointsMaterial({
-    color: 0xe9fff7,
-    transparent: true,
-    opacity: 0,
-    size: 2.4,
-    sizeAttenuation: false,
-    depthWrite: false,
+  starClusters.forEach((cluster) => {
+    cluster.points.forEach((star) => {
+      const direction = stableDirection(cluster.longitude + star.longitudeOffset, cluster.latitude + star.latitudeOffset);
+      const material = new THREE.MeshBasicMaterial({
+        color: star.colour,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(starGeometry, material);
+      mesh.position.copy(direction).multiplyScalar(starShellDistance + (star.depthOffset ?? 0));
+      mesh.lookAt(0, 0, 0);
+      mesh.scale.setScalar(star.size * starVisualScale);
+      group.add(mesh);
+      const glowAmount = star.glow ?? 0;
+      if (glowAmount > 0) {
+        const glowMaterial = new THREE.MeshBasicMaterial({
+          color: star.colour,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          fog: false,
+          side: THREE.DoubleSide,
+        });
+        const glowMesh = new THREE.Mesh(starGeometry, glowMaterial);
+        glowMesh.position.copy(direction).multiplyScalar(starShellDistance + (star.depthOffset ?? 0) - 0.35);
+        glowMesh.lookAt(0, 0, 0);
+        glowMesh.scale.setScalar(star.size * (star.glowSize ?? 2.8) * starGlowVisualScale);
+        group.add(glowMesh);
+        stars.push({ star, mesh, material, baseColour: new THREE.Color(star.colour), glowMesh, glowMaterial });
+      } else {
+        stars.push({ star, mesh, material, baseColour: new THREE.Color(star.colour) });
+      }
+    });
   });
-  const points = new THREE.Points(geometry, material);
-  points.name = "stable-celestial-star-field";
 
   return {
-    points,
-    update: (nightAmount, templeInfluence, state) => {
-      material.opacity = THREE.MathUtils.clamp(nightAmount * 0.72 + templeInfluence * 0.18, 0, 0.86);
-      points.visible = material.opacity > 0.02;
-      points.quaternion.copy(apparentSkyQuaternion(state));
+    group,
+    update: (elapsed, nightAmount, templeInfluence, state) => {
+      const visibility = THREE.MathUtils.clamp(nightAmount * 0.94 + templeInfluence * 0.08, 0, 1);
+      state.starVisibility = visibility;
+      group.visible = visibility > 0.02;
+      group.quaternion.copy(apparentSkyQuaternion(state));
+      stars.forEach(({ star, mesh, material, baseColour, glowMesh, glowMaterial }) => {
+        const slowPulse = Math.sin(elapsed * star.twinkleSpeed + star.twinkleOffset) * 0.5 + 0.5;
+        const smallPulse = Math.sin(elapsed * (star.twinkleSpeed * 1.9 + 0.37) + star.twinkleOffset * 1.7) * 0.5 + 0.5;
+        const alivePulse = slowPulse * 0.62 + smallPulse * 0.38;
+        const twinkle = 1 + (alivePulse - 0.5) * star.twinkleAmount;
+        material.color.copy(baseColour).lerp(twinkleTint, slowPulse * 0.22);
+        material.opacity = visibility * (star.baseOpacity ?? 1) * (0.54 + slowPulse * 0.34 + smallPulse * 0.22);
+        mesh.scale.setScalar(star.size * twinkle * starVisualScale);
+        if (glowMesh && glowMaterial) {
+          const glowPulse = Math.pow(alivePulse, 1.6);
+          glowMaterial.color.copy(baseColour).lerp(twinkleTint, 0.24 + slowPulse * 0.2);
+          glowMaterial.opacity = visibility * (star.glow ?? 0) * (0.24 + glowPulse * 0.72);
+          glowMesh.scale.setScalar(star.size * (star.glowSize ?? 2.8) * (0.88 + glowPulse * 0.2) * starGlowVisualScale);
+        }
+      });
     },
   };
 }
