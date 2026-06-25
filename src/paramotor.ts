@@ -35,7 +35,7 @@ export type ParamotorDevice = {
     elapsed: number,
     input:
       | { mounted: false }
-      | { mounted: true; position: LocalPlanetPoint; baseAltitude: number; yaw: number; throttle: number }
+      | { mounted: true; position: LocalPlanetPoint; baseAltitude: number; yaw: number; throttle: number; cameraPitch: number }
   ) => void;
   getPlacementState: () => ParamotorPlacementState;
 };
@@ -58,6 +58,8 @@ export function createParamotorDevice(
   let parkedYaw = placement.takeoffYaw;
 
   const updateParkedPose = (elapsed: number): void => {
+    group.scale.setScalar(1);
+    setMountedObstructorOpacity(group, 1);
     placeObjectOnPlanet(
       group,
       placement.position.x,
@@ -97,6 +99,9 @@ export function createParamotorDevice(
         input.baseAltitude,
         new THREE.Euler(Math.sin(elapsed * 1.9) * 0.015, input.yaw, Math.sin(elapsed * 2.3) * 0.025)
       );
+      const pitchDownAmount = THREE.MathUtils.smoothstep(-input.cameraPitch, 0.18, 0.9);
+      group.scale.setScalar(THREE.MathUtils.lerp(0.94, 0.84, pitchDownAmount));
+      setMountedObstructorOpacity(group, THREE.MathUtils.lerp(1, 0.58, pitchDownAmount));
       updatePropeller(group, elapsed, input.throttle);
     },
     getPlacementState: () => ({
@@ -241,14 +246,14 @@ function makeParamotorModel(): THREE.Group {
 
   const frameMaterial = new THREE.MeshBasicMaterial({ color: 0x2b2358 });
   const shadowMaterial = new THREE.MeshBasicMaterial({ color: 0x17132c });
-  const seatMaterial = new THREE.MeshBasicMaterial({ color: 0xff7a84 });
+  const seatMaterial = new THREE.MeshBasicMaterial({ color: 0xff7a84, transparent: true, opacity: 1 });
   const canopyMaterials = [
     new THREE.MeshBasicMaterial({ color: 0x46e1c4 }),
     new THREE.MeshBasicMaterial({ color: 0xf1ec72 }),
     new THREE.MeshBasicMaterial({ color: 0x7d62ff }),
   ];
   const cordMaterial = new THREE.MeshBasicMaterial({ color: 0xd8fbff });
-  const fuelMaterial = new THREE.MeshBasicMaterial({ color: 0xffb15e });
+  const fuelMaterial = new THREE.MeshBasicMaterial({ color: 0xffb15e, transparent: true, opacity: 1 });
   const propMaterial = new THREE.MeshBasicMaterial({ color: 0xeefcff, transparent: true, opacity: 0.72, depthWrite: false });
 
   const skidLeft = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 2.15), shadowMaterial);
@@ -304,7 +309,7 @@ function makeParamotorModel(): THREE.Group {
   noseFlag.rotation.x = -Math.PI * 0.5;
   group.add(noseFlag);
 
-  group.userData = { propeller };
+  group.userData = { propeller, mountedObstructors: [seat, fuel] };
   return group;
 }
 
@@ -324,6 +329,18 @@ function updatePropeller(group: THREE.Group, elapsed: number, throttle: number):
   if (!propeller) return;
   propeller.rotation.z = elapsed * THREE.MathUtils.lerp(5, 34, throttle);
   propeller.scale.setScalar(1 + throttle * 0.08);
+}
+
+function setMountedObstructorOpacity(group: THREE.Group, opacity: number): void {
+  const mountedObstructors = group.userData.mountedObstructors as
+    | Array<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>
+    | undefined;
+  if (!mountedObstructors) return;
+
+  mountedObstructors.forEach((mesh) => {
+    mesh.material.opacity = opacity;
+    mesh.material.depthWrite = opacity > 0.96;
+  });
 }
 
 function subtleGroundRock(elapsed: number): number {

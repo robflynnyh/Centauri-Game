@@ -80,6 +80,7 @@ declare global {
         x?: number;
         z?: number;
         yaw?: number;
+        pitch?: number;
         speed?: number;
         throttle?: number;
         altitudeAboveGround?: number;
@@ -927,6 +928,7 @@ function setParamotorFlightForTest(input: {
   x?: number;
   z?: number;
   yaw?: number;
+  pitch?: number;
   speed?: number;
   throttle?: number;
   altitudeAboveGround?: number;
@@ -935,7 +937,7 @@ function setParamotorFlightForTest(input: {
   const normalized = normalizePlanetCoords(input.x ?? player.localPosition.x, input.z ?? player.localPosition.z);
   player.localPosition.set(normalized.x, 0, normalized.z);
   player.yaw = input.yaw ?? player.yaw;
-  player.pitch = THREE.MathUtils.clamp(player.pitch, -0.42, 0.18);
+  player.pitch = THREE.MathUtils.clamp(input.pitch ?? player.pitch, -1.1, 0.6);
   player.cameraHeight = paramotorSeatedHeight;
   player.velocity.set(0, 0, 0);
   player.verticalVelocity = 0;
@@ -1375,12 +1377,17 @@ function animate(): void {
   mist.update(elapsed, floraFocus);
   if (!isDemo) updateUnderwaterCue();
   if (paramotorFlight.mounted) {
+    const pitchDownAmount = THREE.MathUtils.smoothstep(-player.pitch, 0.18, 0.9);
+    const airborneVisualAmount = THREE.MathUtils.smoothstep(player.verticalOffset, 0.25, 2.2);
+    const mountedVisualDrop = THREE.MathUtils.lerp(0.1, 0.56, pitchDownAmount) * airborneVisualAmount;
+    const groundAltitude = effectiveHeightAt(player.localPosition.x, player.localPosition.z);
     paramotor.update(elapsed, {
       mounted: true,
       position: { x: player.localPosition.x, z: player.localPosition.z },
-      baseAltitude: effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.verticalOffset + 0.05,
+      baseAltitude: groundAltitude + player.verticalOffset + 0.05 - mountedVisualDrop,
       yaw: player.yaw,
       throttle: paramotorFlight.throttle,
+      cameraPitch: player.pitch,
     });
   } else {
     paramotor.update(elapsed, { mounted: false });
