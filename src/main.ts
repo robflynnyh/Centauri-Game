@@ -4,12 +4,13 @@ import { createAlienWaterCreatures, createMountainBirds, createRareFlyingBeetles
 import { createPrDemoController } from "./demo";
 import { createFieldNotesHud, createFieldNotesState, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
-import { createTempleLandmark } from "./landmarks";
+import { createGlassDomeLandmark, createTempleLandmark } from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature, type NaturePerfState } from "./nature";
 import {
   normalizeLocalVector,
   normalizePlanetCoords,
+  lookAtPlanetPoint,
   PLANET_ASSUMED_WALK_SPEED,
   PLANET_CIRCUMFERENCE,
   PLANET_RADIUS,
@@ -128,6 +129,35 @@ declare global {
         influenceRadius: number;
         fullInfluenceRadius: number;
       };
+      getDomeState: () => {
+        x: number;
+        z: number;
+        radius: number;
+        interiorRadius: number;
+        floorHeight: number;
+        shellThickness: number;
+        entranceHalfWidth: number;
+        entranceSillTopHeight: number;
+        visualEntranceGapHalfWidth: number;
+        visualRingGapHalfWidth: number;
+        baseCollarGapHalfWidth: number;
+        entranceDirectionX: number;
+        entranceDirectionZ: number;
+        entranceX: number;
+        entranceZ: number;
+        approachX: number;
+        approachZ: number;
+        noteX: number;
+        noteZ: number;
+        noteRadius: number;
+        inside: boolean;
+        entranceClearance: number;
+        groundingBandWidth: number;
+        groundingFlatRadius: number;
+        groundingOuterRadius: number;
+        timeMultiplier: number;
+        targetTimeMultiplier: number;
+      };
       getFieldNotesState: () => FieldNotesSnapshot;
       getCreatureState: () => {
         total: number;
@@ -186,6 +216,7 @@ if (!app) {
 const params = new URLSearchParams(window.location.search);
 const isDemo = params.get("demo") === "pr";
 const enableTempleDebug = params.get("debug") === "temple";
+const enableDomeDebug = params.get("debug") === "dome";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
@@ -197,6 +228,7 @@ const enablePerfDebug = params.get("debug") === "perf" || params.get("test") ===
 const enableDebugTools =
   enableCollisionDebug ||
   enableTempleDebug ||
+  enableDomeDebug ||
   isBeetleDebug ||
   isBirdDebug ||
   enableMountainDebug ||
@@ -219,6 +251,8 @@ const hudBadgeText = isDemo
   ? "PR demo mode"
   : enableTempleDebug
     ? "temple debug"
+    : enableDomeDebug
+      ? "dome debug"
       : isBeetleDebug
         ? "beetle debug"
         : isBirdDebug
@@ -296,6 +330,10 @@ const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerH
 const clock = new THREE.Clock();
 const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
+const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone, ...massiveMountainReservedZones]);
+const domeFloorColour = new THREE.Color(0x273c78);
+const domeGroundingBandWidth = 16;
+const domeGroundingFlatShoulder = 0.25;
 const fieldNotes = createFieldNotesState();
 const fieldNotesHeading = document.querySelector<HTMLElement>(".hud__note-heading");
 const fieldNotesBody = document.querySelector<HTMLElement>(".hud__note-body");
@@ -309,6 +347,8 @@ const mountainDebugState = getMassiveMountainDebugState();
 const oceanDebugSpawn = getOceanDebugSpawn();
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
+  : enableDomeDebug
+    ? new THREE.Vector3(dome.approachPosition.x, 0, dome.approachPosition.z)
   : isBeetleDebug
     ? new THREE.Vector3(4.8, 0, 14.2)
     : isBirdDebug
@@ -322,12 +362,14 @@ const initialPlayerLocalPosition = enableTempleDebug
             : new THREE.Vector3(0, 0, 24);
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
+  : enableDomeDebug
+    ? Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z)
   : enableMountainDebug
     ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
     : enableOceanDebug
       ? oceanDebugSpawn.yaw
       : 0;
-const initialPlayerPitch = isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
+const initialPlayerPitch = enableDomeDebug ? -0.36 : isBirdDebug ? 0.18 : enableMountainDebug ? 0.08 : enableOceanDebug ? -0.05 : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -335,7 +377,7 @@ const player = {
   position: pointOnPlanet(
     initialPlayerLocalPosition.x,
     initialPlayerLocalPosition.z,
-    heightAt(initialPlayerLocalPosition.x, initialPlayerLocalPosition.z) + standHeight
+    effectiveHeightAt(initialPlayerLocalPosition.x, initialPlayerLocalPosition.z) + standHeight
   ),
   velocity: new THREE.Vector3(),
   verticalVelocity: 0,
@@ -354,25 +396,26 @@ const underwaterOverlay = document.querySelector<HTMLDivElement>(".underwater");
 
 const collisionWorld = createCollisionWorld(normalizeLocalVector);
 const sky = createSkySystem(scene, camera, isDemo);
-const terrain = createTerrainSystem();
+const terrain = createTerrainSystem(effectiveHeightAt, terrainColourOverride);
 const oceans = createOceanSystem();
-const mist = createMistSystem(scene, heightAt, isDemo);
+const mist = createMistSystem(scene, effectiveHeightAt, isDemo);
 
 scene.add(terrain.group);
 scene.add(oceans.group);
 scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
+collisionWorld.addObstacle(dome.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerfState } = populateNature(
   scene,
-  heightAt,
+  effectiveHeightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
-  [temple.reservedZone, ...massiveMountainReservedZones]
+  [temple.reservedZone, dome.reservedZone, ...massiveMountainReservedZones]
 );
-const waterCreatures = createAlienWaterCreatures(scene, heightAt, collisionWorld.obstacles);
-const flyingBeetles = createRareFlyingBeetles(scene, heightAt, collisionWorld.obstacles);
-const footsteps = createFootstepTrail(scene, heightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
+const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
+const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
+const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const visionState = {
   isolationAmount: 0,
@@ -383,11 +426,14 @@ const perfState = {
   smoothedFrameMs: 0,
   frameSamples: 0,
 };
-let isolationOverrideAmount: number | null = null;
-const prDemo = createPrDemoController(camera, heightAt, resolvePlayerMove, (position, delta) => {
+let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
+const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, mountainDebugState);
+}, temple, dome, mountainDebugState);
+let skyElapsed = clock.elapsedTime;
+let domeTimeMultiplier = 1;
+let domeTargetTimeMultiplier = 1;
 
 terrain.update(player.localPosition.x, player.localPosition.z);
 oceans.update(player.localPosition.x, player.localPosition.z);
@@ -467,10 +513,41 @@ if (enableDebugTools) {
       influenceRadius: temple.influenceRadius,
       fullInfluenceRadius: temple.fullInfluenceRadius,
     }),
+    getDomeState: () => ({
+      x: dome.position.x,
+      z: dome.position.z,
+      radius: dome.radius,
+      interiorRadius: dome.interiorRadius,
+      floorHeight: dome.floorHeight,
+      shellThickness: dome.shellThickness,
+      entranceHalfWidth: dome.entranceHalfWidth,
+      entranceSillTopHeight: dome.entranceSillTopHeight,
+      visualEntranceGapHalfWidth: dome.visualEntranceGapHalfWidth,
+      visualRingGapHalfWidth: dome.visualRingGapHalfWidth,
+      baseCollarGapHalfWidth: dome.baseCollarGapHalfWidth,
+      entranceDirectionX: dome.entranceDirection.x,
+      entranceDirectionZ: dome.entranceDirection.z,
+      entranceX: dome.entrancePosition.x,
+      entranceZ: dome.entrancePosition.z,
+      approachX: dome.approachPosition.x,
+      approachZ: dome.approachPosition.z,
+      noteX: dome.noteSource.position.x,
+      noteZ: dome.noteSource.position.z,
+      noteRadius: dome.noteSource.radius,
+      inside: dome.contains(player.localPosition),
+      entranceClearance: dome.entranceClearanceAt(player.localPosition),
+      groundingBandWidth: domeGroundingBandWidth,
+      groundingFlatRadius: dome.radius + domeGroundingFlatShoulder,
+      groundingOuterRadius: dome.radius + domeGroundingBandWidth,
+      timeMultiplier: domeTimeMultiplier,
+      targetTimeMultiplier: domeTargetTimeMultiplier,
+    }),
     getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
     setSkyElapsed: (elapsed: number) => {
-      sky.update(elapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
+      skyElapsed = elapsed;
+      updateDomeTimeMultiplier(0, player.localPosition);
+      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
       return sky.getDebugState();
     },
     getCreatureState: waterCreatures.getState,
@@ -517,7 +594,8 @@ if (enableDebugTools) {
       terrain.update(player.localPosition.x, player.localPosition.z);
       oceans.update(player.localPosition.x, player.localPosition.z);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
-      sky.update(clock.elapsedTime, player.localPosition);
+      updateDomeTimeMultiplier(0, player.localPosition);
+      sky.update(skyElapsed, player.localPosition);
     },
     attemptMove: (x: number, z: number) => {
       resolvePlayerMove(player.localPosition, new THREE.Vector3(x, 0, z));
@@ -539,7 +617,7 @@ if (enableDebugTools) {
       const normalized = normalizePlanetCoords(x, z);
       return terrainSlipperinessAt(normalized.x, normalized.z);
     },
-    terrainHeightAt: heightAt,
+    terrainHeightAt: effectiveHeightAt,
   };
 }
 
@@ -675,8 +753,55 @@ function updateVisionState(delta: number): void {
   visionState.isolationAmount = THREE.MathUtils.lerp(visionState.isolationAmount, targetIsolationAmount, fade);
 }
 
+function updateDomeTimeMultiplier(delta: number, focus: { x: number; z: number }): number {
+  domeTargetTimeMultiplier = dome.contains(focus) ? 4 : 1;
+  if (delta <= 0) {
+    domeTimeMultiplier = domeTargetTimeMultiplier;
+    return domeTimeMultiplier;
+  }
+  domeTimeMultiplier = THREE.MathUtils.lerp(domeTimeMultiplier, domeTargetTimeMultiplier, 1 - Math.exp(-delta * 1.85));
+  return domeTimeMultiplier;
+}
+
+function effectiveHeightAt(x: number, z: number): number {
+  const baseHeight = heightAt(x, z);
+  if (dome.contains({ x, z })) return dome.floorHeight;
+
+  const groundingAmount = Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z));
+  if (groundingAmount > 0) return THREE.MathUtils.lerp(baseHeight, dome.floorHeight, groundingAmount);
+  return baseHeight;
+}
+
+function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | null {
+  return dome.contains({ x, z }) || Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z)) > 0.35
+    ? domeFloorColour
+    : null;
+}
+
+function domeRimGroundingAmountAt(x: number, z: number): number {
+  const distance = surfaceDistanceBetweenLocal({ x, z }, dome.position);
+  if (distance <= dome.interiorRadius || distance >= dome.radius + domeGroundingBandWidth) return 0;
+  if (distance <= dome.radius + domeGroundingFlatShoulder) return 1;
+  return 1 - THREE.MathUtils.smoothstep(distance, dome.radius + domeGroundingFlatShoulder, dome.radius + domeGroundingBandWidth);
+}
+
+function domeEntranceRampAmountAt(x: number, z: number): number {
+  const dx = x - dome.position.x;
+  const dz = z - dome.position.z;
+  const alongEntrance = dx * dome.entranceDirection.x + dz * dome.entranceDirection.z;
+  const crossEntrance = Math.abs(dx * dome.entranceDirection.z - dz * dome.entranceDirection.x);
+  const corridorHalfWidth = dome.entranceHalfWidth + 4.5;
+  if (crossEntrance > corridorHalfWidth) return 0;
+
+  const outerRamp = dome.radius + 18;
+  const flatRamp = dome.radius + domeGroundingFlatShoulder;
+  const alongAmount = alongEntrance <= flatRamp ? 1 : 1 - THREE.MathUtils.smoothstep(alongEntrance, flatRamp, outerRamp);
+  const widthAmount = 1 - THREE.MathUtils.smoothstep(crossEntrance, dome.entranceHalfWidth, corridorHalfWidth);
+  return THREE.MathUtils.clamp(alongAmount * widthAmount, 0, 1);
+}
+
 function playerSurfaceAltitude(): number {
-  return heightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight + player.verticalOffset;
+  return effectiveHeightAt(player.localPosition.x, player.localPosition.z) + player.cameraHeight + player.verticalOffset;
 }
 
 function updatePlayerWorldPosition(): void {
@@ -717,7 +842,7 @@ function resolvePlayerMoveStep(position: THREE.Vector3, movement: THREE.Vector3)
 
 function canMoveAcrossTerrainStep(from: THREE.Vector3, to: THREE.Vector3): boolean {
   if (collisionWorld.isBlockedAt(to.x, to.z)) return false;
-  const rise = heightAt(to.x, to.z) - heightAt(from.x, from.z);
+  const rise = effectiveHeightAt(to.x, to.z) - effectiveHeightAt(from.x, from.z);
   if (rise <= maxGroundedStepRise) return true;
 
   const distance = Math.max(Math.hypot(to.x - from.x, to.z - from.z), 0.001);
@@ -817,10 +942,11 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
 }
 
 function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: number): void {
-  const source = temple.noteSource;
-  if (surfaceDistanceBetweenLocal(focus, source.position) > source.radius) return;
-  if (fieldNotes.discover(source.noteId, elapsed)) {
-    fieldNotesHud.refresh();
+  for (const source of [temple.noteSource, dome.noteSource]) {
+    if (surfaceDistanceBetweenLocal(focus, source.position) > source.radius) continue;
+    if (fieldNotes.discover(source.noteId, elapsed)) {
+      fieldNotesHud.refresh();
+    }
   }
 }
 
@@ -846,6 +972,18 @@ function animate(): void {
   else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
   else explorationMotion = updateExploration(delta);
 
+  if (enableDomeDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      dome.approachPosition.x,
+      dome.approachPosition.z,
+      effectiveHeightAt(dome.approachPosition.x, dome.approachPosition.z) + 18,
+      dome.position.x,
+      dome.position.z,
+      dome.floorHeight + 34
+    );
+  }
+
   const movementAmount = isDemo ? 0 : THREE.MathUtils.clamp(explorationMotion.horizontalSpeed / walkSpeed, 0, 1);
   const moving = isDemo ? false : movementIntent || explorationMotion.horizontalSpeed > 0.15;
   const grounded = isDemo || player.grounded;
@@ -868,8 +1006,11 @@ function animate(): void {
   flyingBeetles.update(elapsed, floraFocus);
   mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
+  const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, templeFocus);
+  skyElapsed += delta * activeDomeTimeMultiplier;
   updateFieldNoteDiscovery(templeFocus, elapsed);
-  sky.update(elapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
+  dome.update(elapsed, activeDomeTimeMultiplier);
+  sky.update(skyElapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   oceans.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);

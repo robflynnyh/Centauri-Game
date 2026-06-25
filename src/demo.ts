@@ -90,6 +90,13 @@ export function createPrDemoController(
   resolveMove: ResolveMove,
   onWalk?: WalkObserver,
   temple?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
+  dome?: {
+    position: LocalPlanetPoint;
+    approachPosition: LocalPlanetPoint;
+    entrancePosition: LocalPlanetPoint;
+    entranceDirection: LocalPlanetPoint;
+    radius: number;
+  },
   mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
@@ -170,7 +177,35 @@ export function createPrDemoController(
         return;
       }
 
-      if (shiftedElapsed < 18.2) {
+      if (shiftedElapsed < 17.6) {
+        const domePosition = dome?.position ?? { x: -360, z: 260 };
+        const approach = dome?.approachPosition ?? { x: -415, z: 282 };
+        const entrance = dome?.entrancePosition ?? { x: -390, z: 270 };
+        onWalk?.(new THREE.Vector3(approach.x, 0, approach.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          approach.x,
+          approach.z,
+          heightAt(approach.x, approach.z) + 18,
+          domePosition.x,
+          domePosition.z,
+          heightAt(domePosition.x, domePosition.z) + 34
+        );
+        if (shiftedElapsed > 16.9) {
+          lookAtPlanetPoint(
+            camera,
+            entrance.x,
+            entrance.z,
+            heightAt(entrance.x, entrance.z) + 4.2,
+            domePosition.x,
+            domePosition.z,
+            heightAt(domePosition.x, domePosition.z) + 10
+          );
+        }
+        return;
+      }
+
+      if (shiftedElapsed < 18.8) {
         const focus = { x: 12.9, z: -73.4 };
         const x = 23 + Math.sin(elapsed * 0.62) * 1.1;
         const z = -62 + Math.cos(elapsed * 0.54) * 1.1;
@@ -187,7 +222,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (shiftedElapsed < 19.8) {
+      if (shiftedElapsed < 20.4) {
         const base = mountain?.base ?? { x: 470, z: -446 };
         const center = mountain?.center ?? { x: 612, z: -528 };
         const x = base.x - 12 + Math.sin(elapsed * 0.45) * 2.4;
@@ -205,7 +240,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (shiftedElapsed < 20.8) {
+      if (shiftedElapsed < 21.4) {
         const samples = mountain?.pathSamples ?? [];
         const middle = samples[Math.floor(samples.length * 0.56)] ?? { x: 500, z: -560 };
         const summit = mountain?.center ?? { x: 612, z: -528 };
@@ -224,7 +259,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (shiftedElapsed < 21.2) {
+      if (shiftedElapsed < 21.8) {
         const focus = { x: 25.0, z: -614.0 };
         const x = 31 + Math.sin(elapsed * 0.55) * 1.2;
         const z = -607 + Math.cos(elapsed * 0.48) * 1.2;
