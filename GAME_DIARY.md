@@ -179,3 +179,5 @@ Retuned the slope slipperiness so the mountain path is smooth enough to climb wi
 ## 2026-06-23
 
 Added a deterministic prismatic diamond biome with terrain-integrated pale spectral ground, many small embedded crystal fragments, a `?debug=diamond` review spawn, local half-gravity, and a smooth low-res prism vision pass that appears only inside the biome.
+
+Generalized the diamond biome into three deterministic planet regions with shared sampling/rendering helpers, distinct cyan and rose mineral variants, explicit debug spawns, and progressively lighter local gravity.

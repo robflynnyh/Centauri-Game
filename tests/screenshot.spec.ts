@@ -95,32 +95,41 @@ test("walking through ocean water is about twice as slow", async ({ page }) => {
   expect(insideDistance / outsideDistance).toBeLessThan(0.62);
 });
 
-test("diamond debug starts inside a prismatic low-gravity biome", async ({ page }) => {
-  await page.goto("/?debug=diamond&test=collision");
-  await expect(page.getByText("diamond debug")).toBeVisible();
-  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getDiamondBiomeState));
-  await page.waitForTimeout(600);
+for (const diamondDebug of [
+  { route: "diamond", biomeId: "primary", gravityMultiplier: 0.5 },
+  { route: "diamond2", biomeId: "cyan", gravityMultiplier: 0.25 },
+  { route: "diamond3", biomeId: "rose", gravityMultiplier: 0.125 },
+]) {
+  test(`${diamondDebug.route} debug starts inside its prismatic low-gravity biome`, async ({ page }) => {
+    await page.goto(`/?debug=${diamondDebug.route}&test=collision`);
+    await expect(page.getByText(`${diamondDebug.route} debug`)).toBeVisible();
+    await page.waitForFunction(() => Boolean(window.__centauriDebug?.getDiamondBiomeState));
+    await page.waitForTimeout(600);
 
-  const state = await page.evaluate(() => {
-    const debug = window.__centauriDebug;
-    if (!debug) throw new Error("Missing Centauri diamond debug hook");
-    return {
-      player: debug.getPlayer(),
-      movement: debug.getMovementState(),
-      diamond: debug.getDiamondBiomeState(),
-      terrainHeight: debug.terrainHeightAt(debug.getPlayer().x, debug.getPlayer().z),
-    };
+    const state = await page.evaluate(() => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri diamond debug hook");
+      return {
+        player: debug.getPlayer(),
+        movement: debug.getMovementState(),
+        diamond: debug.getDiamondBiomeState(),
+        terrainHeight: debug.terrainHeightAt(debug.getPlayer().x, debug.getPlayer().z),
+      };
+    });
+
+    expect(state.diamond.biomeCount).toBe(3);
+    expect(state.diamond.biomeId).toBe(diamondDebug.biomeId);
+    expect(state.diamond.debugName).toBe(diamondDebug.route);
+    expect(state.diamond.isInside).toBe(true);
+    expect(state.diamond.activeAmount).toBeGreaterThan(0.25);
+    expect(state.diamond.gravityMultiplier).toBeCloseTo(diamondDebug.gravityMultiplier, 3);
+    expect(state.movement.gravityMultiplier).toBeCloseTo(diamondDebug.gravityMultiplier, 3);
+    expect(state.diamond.renderedFragmentCount).toBeGreaterThan(80);
+    expect(state.diamond.renderedChunkCount).toBeGreaterThan(4);
+    expect(Math.hypot(state.player.x - state.diamond.debugSpawn.x, state.player.z - state.diamond.debugSpawn.z)).toBeLessThan(0.5);
+    expect(Number.isFinite(state.terrainHeight)).toBe(true);
   });
-
-  expect(state.diamond.isInside).toBe(true);
-  expect(state.diamond.activeAmount).toBeGreaterThan(0.25);
-  expect(state.diamond.gravityMultiplier).toBeCloseTo(0.5, 2);
-  expect(state.movement.gravityMultiplier).toBeCloseTo(0.5, 2);
-  expect(state.diamond.renderedFragmentCount).toBeGreaterThan(80);
-  expect(state.diamond.renderedChunkCount).toBeGreaterThan(4);
-  expect(Math.hypot(state.player.x - state.diamond.debugSpawn.x, state.player.z - state.diamond.debugSpawn.z)).toBeLessThan(0.5);
-  expect(Number.isFinite(state.terrainHeight)).toBe(true);
-});
+}
 
 test("diamond prism vision and gravity fade out beyond the biome", async ({ page }) => {
   await page.goto("/?debug=diamond&test=collision");

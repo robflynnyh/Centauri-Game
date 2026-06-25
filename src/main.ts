@@ -204,7 +204,14 @@ const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
 const enableOceanDebug = params.get("debug") === "ocean";
-const enableDiamondDebug = params.get("debug") === "diamond" || params.get("debug") === "crystals";
+const diamondDebugRoute = params.get("debug");
+const diamondDebugName =
+  diamondDebugRoute === "diamond2" || diamondDebugRoute === "diamond3" ? diamondDebugRoute : "diamond";
+const enableDiamondDebug =
+  diamondDebugRoute === "diamond" ||
+  diamondDebugRoute === "crystals" ||
+  diamondDebugRoute === "diamond2" ||
+  diamondDebugRoute === "diamond3";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
@@ -244,7 +251,7 @@ const hudBadgeText = isDemo
             : enableOceanDebug
               ? "ocean debug"
               : enableDiamondDebug
-                ? "diamond debug"
+                ? `${diamondDebugName} debug`
                 : enableSleepDebug
                   ? "sleep debug"
                   : enableIsolationDebug
@@ -325,7 +332,7 @@ const mountainBirds = createMountainBirds(scene, heightAt);
 const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
 const oceanDebugSpawn = getOceanDebugSpawn();
-const diamondDebugSpawn = getDiamondDebugSpawn();
+const diamondDebugSpawn = getDiamondDebugSpawn(diamondDebugName);
 const initialPlayerLocalPosition = enableTempleDebug
   ? new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z)
   : isBeetleDebug
