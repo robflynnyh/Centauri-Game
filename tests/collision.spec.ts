@@ -454,15 +454,22 @@ test("generates passable reactive bush clumps that wobble near the player", asyn
   });
 
   expect(spawnState.generatedBushClumps).toBeGreaterThan(20);
+  expect(spawnState.generatedBushPockets).toBeGreaterThan(0);
+  expect(spawnState.nearestBushPocketDistance).toBeLessThan(36);
   expect(spawnState.generatedBushForms).toBeGreaterThan(spawnState.generatedBushClumps * 3);
   expect(spawnState.generatedBushLumps).toBeGreaterThan(spawnState.generatedBushForms * 3);
   expect(spawnState.bushSamples.length).toBeGreaterThan(0);
+  expect(spawnState.bushSamples.some((sample) => sample.source === "bush-pocket")).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.bushCount >= 3 && sample.bushCount <= 5)).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.lumpCount >= sample.bushCount * 3)).toBe(true);
-  expect(spawnState.bushSamples.every((sample) => sample.minBushSpacing >= 1.35)).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.minBushSpacing >= 1.15)).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.footprintAspect < 3)).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.flatness <= 0.86)).toBe(true);
 
-  const bush = spawnState.bushSamples.find((sample) => sample.x > 11 && sample.x < 15 && sample.z > 9 && sample.z < 13) ?? spawnState.bushSamples[0];
+  const bush =
+    spawnState.bushSamples.find((sample) => sample.source === "bush-pocket" && sample.pocketRadius > 0 && sample.x > 4 && sample.x < 26 && sample.z > 0 && sample.z < 24) ??
+    spawnState.bushSamples.find((sample) => sample.source === "bush-pocket") ??
+    spawnState.bushSamples[0];
   expect(bush).toBeTruthy();
 
   const passable = await page.evaluate((sample) => {

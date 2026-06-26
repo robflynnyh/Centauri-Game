@@ -28,11 +28,13 @@ export type NatureState = {
   generatedReactiveFlora: number;
   generatedSeaweedPatches: number;
   generatedSeaweedBlades: number;
+  generatedBushPockets: number;
   generatedBushClumps: number;
   generatedBushForms: number;
   generatedBushLumps: number;
   nearestSeaweedDistance: number;
   nearestSeaweedFreezeAmount: number;
+  nearestBushPocketDistance: number;
   nearestBushDistance: number;
   nearestBushWobbleAmount: number;
   seaweedSamples: SeaweedSample[];
@@ -95,9 +97,12 @@ type ReactiveBushClump = {
 type BushSample = {
   x: number;
   z: number;
+  source: "tree-biome" | "bush-pocket";
   bushCount: number;
   lumpCount: number;
   minBushSpacing: number;
+  footprintAspect: number;
+  pocketRadius: number;
   flatness: number;
   nearestBiomeEdgeDistance: number;
 };
@@ -121,6 +126,7 @@ const seaweedCellSize = 48;
 const seaweedBiomeClearance = 38;
 const seaweedMaxFlatness = 0.72;
 const bushMaxFlatness = 0.86;
+const bushPocketCellSize = 144;
 const generatedNatureChunkSize = 96;
 const generatedNatureChunkRadius = 3;
 const generatedBiomeCellSize = generatedNatureChunkSize * 2;
@@ -129,6 +135,7 @@ const generatedComplexFadeRadius = 292;
 const starterBiomeCellX = 0;
 const starterBiomeCellZ = 0;
 const starterBiomeCenter = { x: 8, z: 18 };
+const starterBushPocket = { x: 16, z: 12, radius: 22 };
 const baseTreesPerChunk = 3;
 const baseReactiveFloraPerChunk = 9;
 const baseSproutsPerChunk = 6;
@@ -182,12 +189,14 @@ export function populateNature(
   let generatedReactiveFloraCount = 0;
   let generatedSeaweedPatchCount = 0;
   let generatedSeaweedBladeCount = 0;
+  let generatedBushPocketCount = 0;
   let generatedBushClumpCount = 0;
   let generatedBushFormCount = 0;
   let generatedBushLumpCount = 0;
   let generatedBiomePatchCount = 0;
   let fullDetailBiomePatchCount = 0;
   let nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
+  let nearestBushPocketDistance = Number.POSITIVE_INFINITY;
   let nearestSeaweedDistance = Number.POSITIVE_INFINITY;
   let nearestSeaweedFreezeAmount = 0;
   let nearestBushDistance = Number.POSITIVE_INFINITY;
@@ -360,7 +369,16 @@ export function populateNature(
     seaweedSamples.push({ x, z, bladeCount, nearestBiomeEdgeDistance, flatness, staticBend: strongestStaticBend });
   };
 
-  const addBushClumpAt = (x: number, z: number, seed: number, angle: number, flatness: number, nearestBiomeEdgeDistance: number): void => {
+  const addBushClumpAt = (
+    x: number,
+    z: number,
+    seed: number,
+    angle: number,
+    flatness: number,
+    nearestBiomeEdgeDistance: number,
+    source: BushSample["source"],
+    pocketRadius = 0
+  ): void => {
     const random = createChunkRandom(seed, Math.floor(seed * 0.53));
     const y = heightAt(x, z);
     const clump = new THREE.Group();
@@ -369,20 +387,24 @@ export function populateNature(
     const baseColour = new THREE.Color(0x3a9f50);
     baseColour.offsetHSL((random() - 0.5) * 0.018, -0.07 + random() * 0.05, -0.09 + random() * 0.07);
     const bushCount = 3 + Math.floor(random() * 3);
+    const bushPositions = makeBushFootprintPositions(bushCount, random);
     const bushes: BushForm[] = [];
-    const bushPositions: THREE.Vector3[] = [];
     let totalLumps = 0;
-    let minBushSpacing = Number.POSITIVE_INFINITY;
-    const bushSpacing = 1.62 + random() * 0.32;
+    let minBushSpacing = bushPositions.length > 1 ? Number.POSITIVE_INFINITY : 0;
+    let minFootprintX = Number.POSITIVE_INFINITY;
+    let maxFootprintX = Number.NEGATIVE_INFINITY;
+    let minFootprintZ = Number.POSITIVE_INFINITY;
+    let maxFootprintZ = Number.NEGATIVE_INFINITY;
 
     for (let i = 0; i < bushCount; i += 1) {
-      const localX = (i - (bushCount - 1) * 0.5) * bushSpacing + (random() - 0.5) * 0.18;
-      const localZ = Math.sin(i * 1.43 + seed * 0.017) * 0.48 + (random() - 0.5) * 0.42;
-      const restPosition = new THREE.Vector3(localX, 0, localZ);
-      bushPositions.forEach((position) => {
+      const restPosition = bushPositions[i];
+      bushPositions.slice(0, i).forEach((position) => {
         minBushSpacing = Math.min(minBushSpacing, position.distanceTo(restPosition));
       });
-      bushPositions.push(restPosition);
+      minFootprintX = Math.min(minFootprintX, restPosition.x);
+      maxFootprintX = Math.max(maxFootprintX, restPosition.x);
+      minFootprintZ = Math.min(minFootprintZ, restPosition.z);
+      maxFootprintZ = Math.max(maxFootprintZ, restPosition.z);
 
       const bush = new THREE.Group();
       const restRotation = new THREE.Euler((random() - 0.5) * 0.06, random() * Math.PI * 2, (random() - 0.5) * 0.08);
@@ -429,7 +451,21 @@ export function populateNature(
     generatedBushClumpCount += 1;
     generatedBushFormCount += bushCount;
     generatedBushLumpCount += totalLumps;
-    bushSamples.push({ x, z, bushCount, lumpCount: totalLumps, minBushSpacing, flatness, nearestBiomeEdgeDistance });
+    const spreadX = maxFootprintX - minFootprintX;
+    const spreadZ = maxFootprintZ - minFootprintZ;
+    const footprintAspect = Math.max(spreadX, spreadZ) / Math.max(0.1, Math.min(spreadX, spreadZ));
+    bushSamples.push({
+      x,
+      z,
+      source,
+      bushCount,
+      lumpCount: totalLumps,
+      minBushSpacing,
+      footprintAspect,
+      pocketRadius,
+      flatness,
+      nearestBiomeEdgeDistance,
+    });
   };
 
   const rebuildGeneratedNature = (centerX: number, centerZ: number): void => {
@@ -446,12 +482,14 @@ export function populateNature(
     generatedReactiveFloraCount = 0;
     generatedSeaweedPatchCount = 0;
     generatedSeaweedBladeCount = 0;
+    generatedBushPocketCount = 0;
     generatedBushClumpCount = 0;
     generatedBushFormCount = 0;
     generatedBushLumpCount = 0;
     generatedBiomePatchCount = 0;
     fullDetailBiomePatchCount = 0;
     nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
+    nearestBushPocketDistance = Number.POSITIVE_INFINITY;
     nearestSeaweedDistance = Number.POSITIVE_INFINITY;
     nearestSeaweedFreezeAmount = 0;
     nearestBushDistance = Number.POSITIVE_INFINITY;
@@ -525,9 +563,9 @@ export function populateNature(
           generatedObjectCount += 1;
         }
 
-        const bushCount = Math.round((2 + fullness * 5) * complexObjectScale);
+        const bushCount = Math.round((1 + fullness * 2.2) * complexObjectScale);
         for (let i = 0; i < bushCount; i += 1) {
-          const point = starterBiome && i === 0 ? { x: 12.8, z: 10.8 } : pointNear(clusterX, clusterZ, clusterRadius * 0.82, random);
+          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.82, random);
           if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
           const flatness = terrainFlatnessAt(heightAt, point.x, point.z);
           if (flatness > bushMaxFlatness) continue;
@@ -537,7 +575,8 @@ export function populateNature(
             Math.floor(random() * 100_000),
             random() * Math.PI * 2,
             flatness,
-            nearestBiomeEdgeDistanceAt(point.x, point.z, visibleBiomePatches)
+            nearestBiomeEdgeDistanceAt(point.x, point.z, visibleBiomePatches),
+            "tree-biome"
           );
           generatedObjectCount += 1;
         }
@@ -576,6 +615,61 @@ export function populateNature(
             14 + random() * 20,
             random() * Math.PI * 2,
             random() * Math.PI * 2
+          );
+          generatedObjectCount += 1;
+        }
+      }
+    }
+
+    const minBushPocketCellX = Math.floor(minX / bushPocketCellSize) - 1;
+    const maxBushPocketCellX = Math.floor(maxX / bushPocketCellSize) + 1;
+    const minBushPocketCellZ = Math.floor(minZ / bushPocketCellSize) - 1;
+    const maxBushPocketCellZ = Math.floor(maxZ / bushPocketCellSize) + 1;
+    for (let cellZ = minBushPocketCellZ; cellZ <= maxBushPocketCellZ; cellZ += 1) {
+      for (let cellX = minBushPocketCellX; cellX <= maxBushPocketCellX; cellX += 1) {
+        const starterPocket = cellX === 0 && cellZ === 0;
+        const random = createChunkRandom(cellX + 911, cellZ - 607);
+        if (!starterPocket && random() > 0.36) continue;
+
+        const pocketX = starterPocket
+          ? starterBushPocket.x
+          : cellX * bushPocketCellSize + (0.26 + random() * 0.48) * bushPocketCellSize;
+        const pocketZ = starterPocket
+          ? starterBushPocket.z
+          : cellZ * bushPocketCellSize + (0.26 + random() * 0.48) * bushPocketCellSize;
+        const radius = starterPocket ? starterBushPocket.radius : 16 + random() * 15;
+        if (isInMassiveMountainFootprint(pocketX, pocketZ, radius + 12)) continue;
+        if (isGeneratedNatureExcluded({ x: pocketX, z: pocketZ }, landmarkZones)) continue;
+
+        const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x: pocketX, z: pocketZ });
+        const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius * 0.9, generatedComplexFadeRadius);
+        if (detailAmount <= 0.03) continue;
+
+        const strength = starterPocket ? 1.2 : 0.7 + random() * 0.65;
+        generatedBushPocketCount += 1;
+        nearestBushPocketDistance = Math.min(nearestBushPocketDistance, distanceToFocus);
+
+        const clumpCount = Math.max(2, Math.round((starterPocket ? 8 : 3 + strength * 4 + random() * 3) * Math.max(0.45, detailAmount)));
+        for (let i = 0; i < clumpCount; i += 1) {
+          const pocketAngle = random() * Math.PI * 2;
+          const pocketDistance = Math.pow(random(), 0.58) * radius * (0.28 + random() * 0.56);
+          const gap = 0.5 + Math.sin(i * 1.7 + pocketX * 0.03) * 0.2;
+          const point = {
+            x: pocketX + Math.cos(pocketAngle) * pocketDistance * gap,
+            z: pocketZ + Math.sin(pocketAngle) * pocketDistance,
+          };
+          if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
+          const flatness = terrainFlatnessAt(heightAt, point.x, point.z);
+          if (flatness > bushMaxFlatness) continue;
+          addBushClumpAt(
+            point.x,
+            point.z,
+            Math.floor(random() * 100_000),
+            random() * Math.PI * 2,
+            flatness,
+            nearestBiomeEdgeDistanceAt(point.x, point.z, visibleBiomePatches),
+            "bush-pocket",
+            radius
           );
           generatedObjectCount += 1;
         }
@@ -634,11 +728,13 @@ export function populateNature(
         generatedReactiveFloraCount,
         generatedSeaweedPatchCount,
         generatedSeaweedBladeCount,
+        generatedBushPocketCount,
         generatedBushClumpCount,
         generatedBushFormCount,
         generatedBushLumpCount,
         nearestSeaweedDistance,
         nearestSeaweedFreezeAmount,
+        nearestBushPocketDistance,
         nearestBushDistance,
         nearestBushWobbleAmount,
         seaweedSamples,
@@ -757,6 +853,41 @@ function pointNear(x: number, z: number, radius: number, random: () => number): 
   };
 }
 
+function makeBushFootprintPositions(count: number, random: () => number): THREE.Vector3[] {
+  const positions: THREE.Vector3[] = [];
+  const minimumSpacing = 1.22;
+  const pocketLean = random() * Math.PI * 2;
+
+  for (let i = 0; i < count; i += 1) {
+    let chosen: THREE.Vector3 | undefined;
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const crescentBias = random() < 0.45;
+      const angle = crescentBias
+        ? pocketLean + (random() - 0.5) * Math.PI * 1.55
+        : random() * Math.PI * 2;
+      const distance = i === 0 ? random() * 0.35 : 0.75 + Math.pow(random(), 0.7) * 1.9;
+      const candidate = new THREE.Vector3(
+        Math.cos(angle) * distance + (random() - 0.5) * 0.42,
+        0,
+        Math.sin(angle) * distance * (0.72 + random() * 0.5) + (random() - 0.5) * 0.42
+      );
+      if (positions.every((position) => position.distanceTo(candidate) >= minimumSpacing)) {
+        chosen = candidate;
+        break;
+      }
+    }
+
+    if (!chosen) {
+      const fallbackAngle = pocketLean + i * 2.18 + random() * 0.42;
+      const fallbackDistance = 1.05 + i * 0.36;
+      chosen = new THREE.Vector3(Math.cos(fallbackAngle) * fallbackDistance, 0, Math.sin(fallbackAngle) * fallbackDistance * 0.86);
+    }
+    positions.push(chosen);
+  }
+
+  return positions;
+}
+
 function isGeneratedNatureExcluded(point: LocalPlanetPoint, landmarkZones: LandmarkZone[]): boolean {
   return isInLandmarkZone(point, landmarkZones) || isInMassiveMountainFootprint(point.x, point.z, 8) || isOceanPoint(point.x, point.z);
 }
@@ -835,11 +966,13 @@ function getGeneratedNatureState(
   generatedReactiveFlora: number,
   generatedSeaweedPatches: number,
   generatedSeaweedBlades: number,
+  generatedBushPockets: number,
   generatedBushClumps: number,
   generatedBushForms: number,
   generatedBushLumps: number,
   nearestSeaweedDistance: number,
   nearestSeaweedFreezeAmount: number,
+  nearestBushPocketDistance: number,
   nearestBushDistance: number,
   nearestBushWobbleAmount: number,
   seaweedSamples: SeaweedSample[],
@@ -871,15 +1004,20 @@ function getGeneratedNatureState(
     generatedReactiveFlora,
     generatedSeaweedPatches,
     generatedSeaweedBlades,
+    generatedBushPockets,
     generatedBushClumps,
     generatedBushForms,
     generatedBushLumps,
     nearestSeaweedDistance,
     nearestSeaweedFreezeAmount,
+    nearestBushPocketDistance,
     nearestBushDistance,
     nearestBushWobbleAmount,
     seaweedSamples: seaweedSamples.slice(0, 12),
-    bushSamples: bushSamples.slice(0, 12),
+    bushSamples: bushSamples
+      .slice()
+      .sort((a, b) => (a.source === b.source ? 0 : a.source === "bush-pocket" ? -1 : 1))
+      .slice(0, 16),
   };
 }
 

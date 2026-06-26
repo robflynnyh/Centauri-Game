@@ -175,3 +175,5 @@ Retuned the slope slipperiness so the mountain path is smooth enough to climb wi
 ## 2026-06-23
 
 Added grouped flat-card alien bushes to generated nature chunks, with passable clumps, proximity wobble reactions, a `?debug=bushes` review spawn, PR-demo visibility near the starter route, and focused generation/passability/reaction coverage.
+
+Reworked reactive bush placement into a separate generated bush-pocket layer with irregular non-row clump footprints, updated `?debug=bushes` to frame a bush-heavy pocket, and extended debug/test state to distinguish pocket bushes from incidental tree-biome bushes.
