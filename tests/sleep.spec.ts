@@ -123,11 +123,11 @@ test("advances game time 8x while actively sleeping", async ({ page }) => {
 
   await setSkyElapsed(page, 60);
   await setSleepAmount(page, 1);
-  const resting = await advanceGameTime(page, 0.1, { wantsSleep: true, moving: false, grounded: true });
+  const rested = await advanceGameTime(page, 0.1, { wantsSleep: true, moving: false, grounded: true });
 
-  expect(resting.sleep.sleeping).toBe(false);
-  expect(resting.time.sleepTimeMultiplier).toBe(8);
-  expect(resting.time.skyElapsed).toBeCloseTo(60.8, 4);
+  expect(rested.sleep.sleeping).toBe(false);
+  expect(rested.time.sleepTimeMultiplier).toBe(1);
+  expect(rested.time.skyElapsed).toBeCloseTo(60.1, 4);
 });
 
 test("animates voluntary sleep eyelids closed and open", async ({ page }) => {

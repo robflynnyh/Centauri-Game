@@ -771,7 +771,7 @@ if (enableDebugTools) {
       });
       updateSleepHud(sleepState);
       const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, player.localPosition);
-      sleepTimeMultiplier = getSleepTimeMultiplier(sleepState, wantsSleep, moving, grounded);
+      sleepTimeMultiplier = getSleepTimeMultiplier(sleepState);
       effectiveTimeMultiplier = activeDomeTimeMultiplier * sleepTimeMultiplier;
       skyElapsed += delta * effectiveTimeMultiplier;
       sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, skyElapsed));
@@ -1039,9 +1039,8 @@ function updateDomeTimeMultiplier(delta: number, focus: { x: number; z: number }
   return domeTimeMultiplier;
 }
 
-function getSleepTimeMultiplier(state: SleepDebugState, wantsSleep: boolean, moving: boolean, grounded: boolean): number {
-  const restingAtFull = wantsSleep && grounded && !moving && !state.blackout && state.amount >= 1;
-  return state.sleeping || restingAtFull ? 8 : 1;
+function getSleepTimeMultiplier(state: SleepDebugState): number {
+  return state.sleeping ? 8 : 1;
 }
 
 function effectiveHeightAt(x: number, z: number): number {
@@ -1430,7 +1429,7 @@ function animate(): void {
   mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, templeFocus);
-  sleepTimeMultiplier = getSleepTimeMultiplier(sleepState, wantsSleep, moving, grounded);
+  sleepTimeMultiplier = getSleepTimeMultiplier(sleepState);
   effectiveTimeMultiplier = activeDomeTimeMultiplier * sleepTimeMultiplier;
   skyElapsed += delta * effectiveTimeMultiplier;
   updateFieldNoteDiscovery(templeFocus, elapsed);
