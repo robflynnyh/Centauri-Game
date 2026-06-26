@@ -621,6 +621,9 @@ test("starts ship debug route near one grounded crashed spaceship landmark", asy
   await page.goto("/?debug=ship&test=collision");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
   await expect(page.getByText("ship debug")).toBeVisible();
+  await page.waitForFunction(() =>
+    (window.__centauriDebug?.getCrashedShipState().smoke.samples.some((sample) => sample.opacity > 0.08) ?? false)
+  );
 
   const result = await page.evaluate(() => {
     const debug = window.__centauriDebug;
@@ -650,8 +653,22 @@ test("starts ship debug route near one grounded crashed spaceship landmark", asy
       collisionTravel: Math.hypot(blockedMove.x - before.x, blockedMove.z - before.z),
       shipIsOnLand: debug.terrainHeightAt(ship.x, ship.z) > 0.25,
       nearestGeneratedObstacleDistance: afterNatureRefresh.nearestGeneratedObstacleDistance,
+      smokePuffCount: ship.smoke.puffCount,
+      smokeSourceDistance: Math.hypot(ship.smoke.sourcePosition.x - ship.x, ship.smoke.sourcePosition.z - ship.z),
+      maxSmokeOpacity: Math.max(...ship.smoke.samples.map((sample) => sample.opacity)),
+      smokeYSpread: Math.max(...ship.smoke.samples.map((sample) => sample.y)) - Math.min(...ship.smoke.samples.map((sample) => sample.y)),
+      smokeSamples: ship.smoke.samples,
     };
   });
+
+  await page.waitForTimeout(700);
+  const smokeAfter = await page.evaluate(() => window.__centauriDebug?.getCrashedShipState().smoke.samples ?? []);
+  const smokeMotion = Math.max(
+    ...smokeAfter.map((sample, index) => {
+      const before = result.smokeSamples[index];
+      return before ? Math.hypot(sample.x - before.x, sample.y - before.y, sample.z - before.z) : 0;
+    })
+  );
 
   expect(result.ship.obstacleCount).toBe(1);
   expect(result.ship.hullLength).toBeGreaterThan(20);
@@ -669,6 +686,12 @@ test("starts ship debug route near one grounded crashed spaceship landmark", asy
   expect(result.collisionTravel).toBeLessThan(1.35);
   expect(result.shipIsOnLand).toBe(true);
   expect(result.nearestGeneratedObstacleDistance).toBeGreaterThan(result.ship.reservedRadius);
+  expect(result.smokePuffCount).toBeGreaterThanOrEqual(6);
+  expect(result.smokePuffCount).toBeLessThanOrEqual(8);
+  expect(result.smokeSourceDistance).toBeLessThan(result.ship.hullWidth);
+  expect(result.maxSmokeOpacity).toBeGreaterThan(0.08);
+  expect(result.smokeYSpread).toBeGreaterThan(1.2);
+  expect(smokeMotion).toBeGreaterThan(0.12);
 });
 
 test("discovers the crashed ship field note with the existing collection card", async ({ page }) => {
@@ -696,7 +719,7 @@ test("discovers the crashed ship field note with the existing collection card", 
   await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
   await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
   await expect(page.getByText("Field Note 002")).toBeVisible();
-  await expect(page.getByText(/Rounded hull half under the grass/)).toBeVisible();
+  await expect(page.getByText(/Thin blue vapour slips from one cracked side/)).toBeVisible();
   await expect(page.getByText(/recovered/)).toHaveCount(0);
 
   const discovered = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());

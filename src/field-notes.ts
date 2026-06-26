@@ -47,7 +47,7 @@ export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   },
   {
     id: "crashed-ship-log",
-    body: "Rounded hull half under the grass. No smoke, no footprints, only warm panels clicking softly as the soil takes it in.",
+    body: "Rounded hull half under the grass. Thin blue vapour slips from one cracked side, warm panels clicking softly as the soil takes it in.",
   },
 ];
 

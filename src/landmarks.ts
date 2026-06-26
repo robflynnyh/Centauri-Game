@@ -98,6 +98,7 @@ export type CrashedShipLandmark = {
   group: THREE.Group;
   position: LocalPlanetPoint;
   approachPosition: LocalPlanetPoint;
+  smokeSourcePosition: LocalPlanetPoint;
   noteSource: {
     noteId: "crashed-ship-log";
     position: LocalPlanetPoint;
@@ -115,6 +116,20 @@ export type CrashedShipLandmark = {
     clear: LocalPlanetPoint[];
   };
   reservedZone: LandmarkZone;
+  getSmokeState: () => CrashedShipSmokeState;
+  update: (elapsed: number) => void;
+};
+
+export type CrashedShipSmokeState = {
+  puffCount: number;
+  sourcePosition: LocalPlanetPoint;
+  samples: Array<{
+    x: number;
+    y: number;
+    z: number;
+    opacity: number;
+    scale: number;
+  }>;
 };
 
 const templeSeed = "centauri-field-note-001-temple";
@@ -356,8 +371,11 @@ export function createCrashedShipLandmark(
   const yaw = seededUnit(`${crashedShipSeed}:yaw`) * Math.PI * 2 - 0.45;
   const approachPosition = crashedShipLocalToWorld(position, yaw, -16, 19);
   const notePosition = crashedShipLocalToWorld(position, yaw, -8.4, 2.8);
+  const smokeSourcePosition = crashedShipLocalToWorld(position, yaw, -5.2, -0.6);
   const altitude = heightAt(position.x, position.z);
-  const group = makeCrashedShip(position, yaw, altitude, heightAt);
+  const shipMesh = makeCrashedShip(position, yaw, altitude, heightAt);
+  const group = shipMesh.group;
+  updateCrashedShipSmoke(shipMesh.smokePuffs, 0);
   placeObjectOnPlanet(
     group,
     position.x,
@@ -381,6 +399,7 @@ export function createCrashedShipLandmark(
     group,
     position,
     approachPosition,
+    smokeSourcePosition,
     noteSource: {
       noteId: "crashed-ship-log",
       position: notePosition,
@@ -407,6 +426,8 @@ export function createCrashedShipLandmark(
       ],
     },
     reservedZone: { x: position.x, z: position.z, radius: crashedShipClearanceRadius },
+    getSmokeState: () => getCrashedShipSmokeState(shipMesh.smokePuffs, smokeSourcePosition),
+    update: (elapsed) => updateCrashedShipSmoke(shipMesh.smokePuffs, elapsed),
   };
 }
 
@@ -1151,14 +1172,30 @@ function makeObservatoryNoteMarker(): THREE.Group {
 
 type CrashedShipTerrainOffsetSampler = (localX: number, localZ: number) => number;
 
+type CrashedShipSmokePuff = {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  baseX: number;
+  baseY: number;
+  baseZ: number;
+  phase: number;
+  radius: number;
+  sway: number;
+};
+
+type CrashedShipMesh = {
+  group: THREE.Group;
+  smokePuffs: CrashedShipSmokePuff[];
+};
+
 function makeCrashedShip(
   position: LocalPlanetPoint,
   yaw: number,
   anchorAltitude: number,
   heightAt: HeightSampler
-): THREE.Group {
+): CrashedShipMesh {
   const group = new THREE.Group();
   group.name = "single-crashed-spaceship-landmark";
+  const smokePuffs: CrashedShipSmokePuff[] = [];
 
   const terrainOffsetAt: CrashedShipTerrainOffsetSampler = (localX, localZ) => {
     const world = crashedShipLocalToWorld(position, yaw, localX, localZ);
@@ -1215,6 +1252,7 @@ function makeCrashedShip(
   sideBreach.position.set(-4.72, terrainOffsetAt(-4.7, -0.6) + 2.12, -0.6);
   sideBreach.rotation.set(0.04, 0.02, -0.12);
   group.add(sideBreach);
+  addCrashedShipSmoke(group, smokePuffs, -5.18, terrainOffsetAt(-5.2, -0.6) + 2.62, -0.6);
 
   for (let i = 0; i < 4; i += 1) {
     const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.1 + i * 0.018, 0.12 + i * 0.014, 3.05 - i * 0.18, 5), pipeMaterial);
@@ -1265,7 +1303,7 @@ function makeCrashedShip(
   crackedBand.scale.y = 0.7;
   group.add(crackedBand);
 
-  return group;
+  return { group, smokePuffs };
 }
 
 function addCrashedShipGroundPatch(
@@ -1309,6 +1347,74 @@ function addShipWindow(group: THREE.Group, x: number, y: number, z: number, mate
   window.scale.set(1, 0.74, 1);
   window.renderOrder = 3;
   group.add(window);
+}
+
+function addCrashedShipSmoke(
+  group: THREE.Group,
+  smokePuffs: CrashedShipSmokePuff[],
+  sourceX: number,
+  sourceY: number,
+  sourceZ: number
+): void {
+  const smokeGeometry = new THREE.IcosahedronGeometry(1, 0);
+  const smokeColours = [0xbfd7ff, 0xcdb8ff, 0xd8ecec];
+
+  for (let i = 0; i < 7; i += 1) {
+    const material = new THREE.MeshBasicMaterial({
+      color: smokeColours[i % smokeColours.length],
+      transparent: true,
+      opacity: 0.2,
+      depthWrite: false,
+    });
+    const puff = new THREE.Mesh(smokeGeometry, material);
+    puff.renderOrder = 4;
+    const phase = (i * 0.173 + seededUnit(`${crashedShipSeed}:smoke:${i}`) * 0.11) % 1;
+    const baseX = sourceX - 0.05 + (i % 3) * 0.08;
+    const baseZ = sourceZ + (i - 3) * 0.06;
+    const radius = 0.42 + (i % 4) * 0.08;
+    smokePuffs.push({
+      mesh: puff,
+      baseX,
+      baseY: sourceY + i * 0.08,
+      baseZ,
+      phase,
+      radius,
+      sway: 0.28 + seededUnit(`${crashedShipSeed}:smoke-sway:${i}`) * 0.5,
+    });
+    group.add(puff);
+  }
+}
+
+function updateCrashedShipSmoke(smokePuffs: CrashedShipSmokePuff[], elapsed: number): void {
+  smokePuffs.forEach((puff, index) => {
+    const cycle = (elapsed * 0.12 + puff.phase) % 1;
+    const fadeIn = THREE.MathUtils.smoothstep(cycle, 0, 0.18);
+    const fadeOut = 1 - THREE.MathUtils.smoothstep(cycle, 0.62, 1);
+    const visibility = fadeIn * fadeOut;
+    const rise = cycle * 4.8;
+    const sideSway = Math.sin(elapsed * 0.74 + index * 1.72) * puff.sway * (0.22 + cycle * 0.9);
+    const forwardSway = Math.cos(elapsed * 0.51 + index * 0.93) * (0.08 + cycle * 0.42);
+    const scale = puff.radius * (0.9 + cycle * 1.45);
+
+    puff.mesh.position.set(puff.baseX + sideSway, puff.baseY + rise, puff.baseZ + forwardSway);
+    puff.mesh.scale.set(scale * 1.35, scale * 0.82, scale * 1.08);
+    puff.mesh.rotation.set(cycle * Math.PI * 0.36, elapsed * 0.16 + index, Math.sin(elapsed * 0.3 + index) * 0.18);
+    puff.mesh.material.opacity = visibility * (0.18 + (1 - cycle) * 0.18);
+  });
+}
+
+function getCrashedShipSmokeState(smokePuffs: CrashedShipSmokePuff[], sourcePosition: LocalPlanetPoint): CrashedShipSmokeState {
+  return {
+    puffCount: smokePuffs.length,
+    sourcePosition,
+    samples: smokePuffs.map((puff) => ({
+      x: puff.mesh.position.x,
+      y: puff.mesh.position.y,
+      z: puff.mesh.position.z,
+      opacity: puff.mesh.material.opacity,
+      scale: puff.mesh.scale.x,
+    })),
+  };
 }
 
 function makeCrashedShipNoteMarker(): THREE.Group {

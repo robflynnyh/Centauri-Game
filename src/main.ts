@@ -13,7 +13,13 @@ import {
 } from "./diamond-biome";
 import { createFieldNotesHud, createFieldNotesState, type FieldNoteId, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
-import { createCrashedShipLandmark, createGlassDomeLandmark, createObservatoryLandmark, createTempleLandmark } from "./landmarks";
+import {
+  createCrashedShipLandmark,
+  createGlassDomeLandmark,
+  createObservatoryLandmark,
+  createTempleLandmark,
+  type CrashedShipSmokeState,
+} from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature, type NaturePerfState } from "./nature";
 import { createParamotorDevice, type ParamotorPlacementState } from "./paramotor";
@@ -100,6 +106,7 @@ type CrashedShipDebugState = {
   blockedSamples: Array<{ x: number; z: number; blocked: boolean }>;
   clearSamples: Array<{ x: number; z: number; blocked: boolean }>;
   nearestGeneratedObstacleDistance: number;
+  smoke: CrashedShipSmokeState;
 };
 
 type ParamotorDebugState = ParamotorPlacementState & {
@@ -1660,6 +1667,7 @@ function getCrashedShipDebugState(): CrashedShipDebugState {
       blocked: collisionWorld.isBlockedAt(sample.x, sample.z),
     })),
     nearestGeneratedObstacleDistance: nearestGeneratedObstacleDistanceTo(crashedShip.position),
+    smoke: crashedShip.getSmokeState(),
   };
 }
 
@@ -1812,6 +1820,7 @@ function animate(): void {
   footsteps.update(delta);
   temple.update(elapsed);
   observatory.update(elapsed);
+  crashedShip.update(elapsed);
   if (telescopeMode.active) {
     telescopeFloraFocus.set(observatory.telescope.viewPosition.x, 0, observatory.telescope.viewPosition.z);
   }
