@@ -313,6 +313,72 @@ test("starts near a visible beetle in beetle debug mode", async ({ page }) => {
   expect(debugState.beetles.nearestObstacleClearance).toBeGreaterThan(0.2);
 });
 
+test("watcher debug starts near a static outside-biome eye ball", async ({ page }) => {
+  await page.goto("/?debug=watcher&test=collision");
+  await expect(page.getByText("watcher debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getWatcherState));
+  await page.waitForTimeout(500);
+
+  const initial = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri watcher debug hook");
+    return {
+      player: debug.getPlayer(),
+      watchers: debug.getWatcherState(),
+      nature: debug.getNatureState(),
+    };
+  });
+
+  expect(initial.watchers.total).toBeGreaterThan(0);
+  expect(initial.watchers.nearbyUpdated).toBeGreaterThan(0);
+  expect(initial.watchers.nearest).toBeTruthy();
+  expect(initial.watchers.nearestDistance).toBeLessThan(10);
+  expect(initial.watchers.nearest?.outsideBiomeThreshold).toBe(true);
+  expect(initial.watchers.nearest?.nearestBiomePatchDistance).toBeGreaterThanOrEqual(72);
+  expect(initial.nature.nearestBiomePatchDistance).toBeGreaterThan(70);
+
+  const watcher = initial.watchers.nearest;
+  const spawn = initial.watchers.debugSpawn;
+  if (!watcher) throw new Error("Missing nearest watcher");
+  const frontX = spawn.x - spawn.watcherX;
+  const frontZ = spawn.z - spawn.watcherZ;
+  const frontLength = Math.hypot(frontX, frontZ) || 1;
+  const unitFront = { x: frontX / frontLength, z: frontZ / frontLength };
+  const unitSide = { x: unitFront.z, z: -unitFront.x };
+
+  const leftState = await page.evaluate(
+    ({ x, z }) => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri watcher debug hook");
+      debug.setPlayer(x, z);
+      return debug.getWatcherState();
+    },
+    {
+      x: watcher.x + unitFront.x * 6 + unitSide.x * 4.5,
+      z: watcher.z + unitFront.z * 6 + unitSide.z * 4.5,
+    }
+  );
+
+  const rightState = await page.evaluate(
+    ({ x, z }) => {
+      const debug = window.__centauriDebug;
+      if (!debug) throw new Error("Missing Centauri watcher debug hook");
+      debug.setPlayer(x, z);
+      return debug.getWatcherState();
+    },
+    {
+      x: watcher.x + unitFront.x * 6 - unitSide.x * 4.5,
+      z: watcher.z + unitFront.z * 6 - unitSide.z * 4.5,
+    }
+  );
+
+  expect(rightState.nearest?.bodyWorldX).toBeCloseTo(leftState.nearest?.bodyWorldX ?? 0, 6);
+  expect(rightState.nearest?.bodyWorldY).toBeCloseTo(leftState.nearest?.bodyWorldY ?? 0, 6);
+  expect(rightState.nearest?.bodyWorldZ).toBeCloseTo(leftState.nearest?.bodyWorldZ ?? 0, 6);
+  expect(Math.abs((rightState.nearest?.pupilOffsetX ?? 0) - (leftState.nearest?.pupilOffsetX ?? 0))).toBeGreaterThan(0.08);
+  expect(Math.abs((rightState.nearest?.eyeTargetAngle ?? 0) - (leftState.nearest?.eyeTargetAngle ?? 0))).toBeGreaterThan(0.6);
+});
+
 test("starts near mountain birds and triggers clear fleeing", async ({ page }) => {
   await page.goto("/?debug=birds&test=collision");
   await expect(page.getByText("birds debug")).toBeVisible();

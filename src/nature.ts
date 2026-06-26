@@ -108,6 +108,23 @@ const baseRocksPerChunk = 3;
 const basePoolChance = 0.22;
 const baseStreamChance = 0.12;
 
+export function nearestGeneratedBiomePatchDistanceAt(point: LocalPlanetPoint): number {
+  const normalized = normalizePlanetCoords(point.x, point.z);
+  const cellX = Math.floor(normalized.x / generatedBiomeCellSize);
+  const cellZ = Math.floor(normalized.z / generatedBiomeCellSize);
+  let nearest = Number.POSITIVE_INFINITY;
+
+  for (let z = cellZ - 2; z <= cellZ + 2; z += 1) {
+    for (let x = cellX - 2; x <= cellX + 2; x += 1) {
+      const patch = generatedBiomePatchAt(x, z);
+      if (!patch) continue;
+      nearest = Math.min(nearest, surfaceDistanceBetweenLocal(normalized, patch) - patch.radius);
+    }
+  }
+
+  return nearest;
+}
+
 export function populateNature(
   scene: THREE.Scene,
   heightAt: HeightSampler,
@@ -590,6 +607,23 @@ function chunkNatureDensity(chunkX: number, chunkZ: number): number {
   const broadWave = (Math.sin(chunkX * 0.91 + chunkZ * 0.37) + Math.cos(chunkZ * 0.73 - chunkX * 0.28) + 2) * 0.25;
   const pocket = createChunkRandom(chunkX + 101, chunkZ - 211)();
   return THREE.MathUtils.clamp(0.72 + broadWave * 0.42 + pocket * 0.28, 0.62, 1.34);
+}
+
+function generatedBiomePatchAt(biomeCellX: number, biomeCellZ: number): BiomePatch | null {
+  const random = createChunkRandom(biomeCellX * 7 + 3, biomeCellZ * 7 - 5);
+  const starterBiome = biomeCellX === starterBiomeCellX && biomeCellZ === starterBiomeCellZ;
+  const density = starterBiome ? 1.34 : chunkNatureDensity(biomeCellX, biomeCellZ);
+  if (!starterBiome && density < 0.88 && random() < 0.45) return null;
+
+  const x = starterBiome
+    ? starterBiomeCenter.x
+    : biomeCellX * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+  const z = starterBiome
+    ? starterBiomeCenter.z
+    : biomeCellZ * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
+  const radius = starterBiome ? 46 : 28 + random() * 18;
+  if (isInMassiveMountainFootprint(x, z, radius + 18)) return null;
+  return { x, z, radius };
 }
 
 function pointNear(x: number, z: number, radius: number, random: () => number): LocalPlanetPoint {

@@ -4,6 +4,8 @@
 
 Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed glints, stronger slow twinkle, and a steeper PR-demo sky gaze so the night sky feels richer and more alive without turning into random star noise.
 
+Added rare static outside-biome watcher balls with a single oval eye that tracks the player, plus `?debug=watcher`, debug state, and PR-demo visibility for review.
+
 ## 2026-06-25
 
 Added a deterministic hillside paramotor near the starting area, with a low-poly frame, canopy, propeller, mount prompt, gas/throttle/altitude HUD, forgiving spherical-planet flight, landing back to walking, `?debug=paramotor`, and PR-demo visibility.
