@@ -142,6 +142,7 @@ export function createPrDemoController(
     approachPosition: LocalPlanetPoint;
     dishes: Array<{ position: LocalPlanetPoint }>;
   },
+  talkingStatue?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
   mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] },
   paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number }
 ): { update: (elapsed: number, delta: number) => void } {
@@ -261,6 +262,25 @@ export function createPrDemoController(
 
       if (elapsed < 14.4) {
         showDiamondDemoRegion(camera, heightAt, onWalk, elapsed);
+        return;
+      }
+
+      if (elapsed < 15.8) {
+        const statuePosition = talkingStatue?.position ?? { x: 168, z: 346 };
+        const approach = talkingStatue?.approachPosition ?? { x: 158, z: 362 };
+        const beat = elapsed - 14.4;
+        const x = approach.x + Math.sin(beat * 1.4) * 1.2;
+        const z = approach.z + Math.cos(beat * 1.2) * 1.0;
+        onWalk?.(new THREE.Vector3(statuePosition.x, 0, statuePosition.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 4.8,
+          statuePosition.x,
+          statuePosition.z,
+          heightAt(statuePosition.x, statuePosition.z) + 5.8
+        );
         return;
       }
 

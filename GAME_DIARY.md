@@ -12,6 +12,8 @@ Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed g
 
 Added Amethyst Abyss as a third large swimmable ocean, with its own violet palette, carved basin depth, shared chunked rendering path, and `?debug=purple-ocean`/`?debug=ocean3` inspection routes.
 
+Added one large talking stone statue landmark with a stylised low-poly head/bust, proximity wake animation, an odd field-note line through the existing HUD, a `?debug=statue` review route, collision/debug coverage, and PR-demo visibility.
+
 ## 2026-06-25
 
 Added a deterministic hillside paramotor near the starting area, with a low-poly frame, canopy, propeller, mount prompt, gas/throttle/altitude HUD, forgiving spherical-planet flight, landing back to walking, `?debug=paramotor`, and PR-demo visibility.
