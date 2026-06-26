@@ -449,17 +449,18 @@ test("generates passable reactive bush clumps that wobble near the player", asyn
   const spawnState = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri debug hook");
-    debug.setPlayer(0, 24);
+    debug.setPlayer(118, 62);
     return debug.getNatureState();
   });
 
-  expect(spawnState.generatedBushClumps).toBeGreaterThan(20);
+  expect(spawnState.generatedBushClumps).toBeGreaterThan(10);
   expect(spawnState.generatedBushPockets).toBeGreaterThan(0);
-  expect(spawnState.nearestBushPocketDistance).toBeLessThan(36);
+  expect(spawnState.nearestBushPocketDistance).toBeLessThan(8);
   expect(spawnState.generatedBushForms).toBeGreaterThan(spawnState.generatedBushClumps * 3);
   expect(spawnState.generatedBushLumps).toBeGreaterThan(spawnState.generatedBushForms * 3);
   expect(spawnState.bushSamples.length).toBeGreaterThan(0);
-  expect(spawnState.bushSamples.some((sample) => sample.source === "bush-pocket")).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.source === "bush-pocket")).toBe(true);
+  expect(spawnState.bushSamples.every((sample) => sample.nearestBiomeEdgeDistance >= 14)).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.bushCount >= 3 && sample.bushCount <= 5)).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.lumpCount >= sample.bushCount * 3)).toBe(true);
   expect(spawnState.bushSamples.every((sample) => sample.minBushSpacing >= 1.15)).toBe(true);
@@ -467,7 +468,7 @@ test("generates passable reactive bush clumps that wobble near the player", asyn
   expect(spawnState.bushSamples.every((sample) => sample.flatness <= 0.86)).toBe(true);
 
   const bush =
-    spawnState.bushSamples.find((sample) => sample.source === "bush-pocket" && sample.pocketRadius > 0 && sample.x > 4 && sample.x < 26 && sample.z > 0 && sample.z < 24) ??
+    spawnState.bushSamples.find((sample) => sample.source === "bush-pocket" && sample.pocketRadius > 0 && sample.x > 96 && sample.x < 136 && sample.z > 42 && sample.z < 82) ??
     spawnState.bushSamples.find((sample) => sample.source === "bush-pocket") ??
     spawnState.bushSamples[0];
   expect(bush).toBeTruthy();

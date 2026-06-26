@@ -135,7 +135,7 @@ const generatedComplexFadeRadius = 292;
 const starterBiomeCellX = 0;
 const starterBiomeCellZ = 0;
 const starterBiomeCenter = { x: 8, z: 18 };
-const starterBushPocket = { x: 16, z: 12, radius: 22 };
+const starterBushPocket = { x: 118, z: 62, radius: 24 };
 const baseTreesPerChunk = 3;
 const baseReactiveFloraPerChunk = 9;
 const baseSproutsPerChunk = 6;
@@ -563,24 +563,6 @@ export function populateNature(
           generatedObjectCount += 1;
         }
 
-        const bushCount = Math.round((1 + fullness * 2.2) * complexObjectScale);
-        for (let i = 0; i < bushCount; i += 1) {
-          const point = pointNear(clusterX, clusterZ, clusterRadius * 0.82, random);
-          if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
-          const flatness = terrainFlatnessAt(heightAt, point.x, point.z);
-          if (flatness > bushMaxFlatness) continue;
-          addBushClumpAt(
-            point.x,
-            point.z,
-            Math.floor(random() * 100_000),
-            random() * Math.PI * 2,
-            flatness,
-            nearestBiomeEdgeDistanceAt(point.x, point.z, visibleBiomePatches),
-            "tree-biome"
-          );
-          generatedObjectCount += 1;
-        }
-
         for (let i = 0; i < Math.round((baseRocksPerChunk * 2 + fullness * 8) * nearObjectScale); i += 1) {
           const point = pointNear(clusterX, clusterZ, clusterRadius * 1.08, random);
           if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
@@ -640,6 +622,8 @@ export function populateNature(
         const radius = starterPocket ? starterBushPocket.radius : 16 + random() * 15;
         if (isInMassiveMountainFootprint(pocketX, pocketZ, radius + 12)) continue;
         if (isGeneratedNatureExcluded({ x: pocketX, z: pocketZ }, landmarkZones)) continue;
+        const pocketBiomeEdgeDistance = nearestBiomeEdgeDistanceAt(pocketX, pocketZ, visibleBiomePatches);
+        if (pocketBiomeEdgeDistance < 18) continue;
 
         const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x: pocketX, z: pocketZ });
         const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius * 0.9, generatedComplexFadeRadius);
@@ -659,6 +643,8 @@ export function populateNature(
             z: pocketZ + Math.sin(pocketAngle) * pocketDistance,
           };
           if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
+          const nearestBiomeEdgeDistance = nearestBiomeEdgeDistanceAt(point.x, point.z, visibleBiomePatches);
+          if (nearestBiomeEdgeDistance < 14) continue;
           const flatness = terrainFlatnessAt(heightAt, point.x, point.z);
           if (flatness > bushMaxFlatness) continue;
           addBushClumpAt(
@@ -667,7 +653,7 @@ export function populateNature(
             Math.floor(random() * 100_000),
             random() * Math.PI * 2,
             flatness,
-            nearestBiomeEdgeDistanceAt(point.x, point.z, visibleBiomePatches),
+            nearestBiomeEdgeDistance,
             "bush-pocket",
             radius
           );

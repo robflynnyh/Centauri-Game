@@ -310,7 +310,7 @@ const initialPlayerLocalPosition = enableTempleDebug
     : isBirdDebug
       ? new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8)
       : enableBushDebug
-        ? new THREE.Vector3(9.8, 0, 17.0)
+        ? new THREE.Vector3(108, 0, 72)
         : enableMountainDebug
           ? new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z)
           : enableOceanDebug
@@ -321,7 +321,7 @@ const initialPlayerLocalPosition = enableTempleDebug
 const initialPlayerYaw = isBirdDebug
   ? Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z)
   : enableBushDebug
-    ? Math.atan2(initialPlayerLocalPosition.x - 16, initialPlayerLocalPosition.z - 12)
+    ? Math.atan2(initialPlayerLocalPosition.x - 118, initialPlayerLocalPosition.z - 62)
     : enableMountainDebug
       ? Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z)
       : enableOceanDebug

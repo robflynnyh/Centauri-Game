@@ -132,7 +132,24 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 8.8) {
+      if (elapsed < 8.4) {
+        const focus = { x: 118, z: 62 };
+        const x = 108 + Math.sin(elapsed * 0.56) * 1.4;
+        const z = 72 + Math.cos(elapsed * 0.5) * 1.4;
+        onWalk?.(new THREE.Vector3(focus.x, 0, focus.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 4.2,
+          focus.x,
+          focus.z,
+          heightAt(focus.x, focus.z) + 1.4
+        );
+        return;
+      }
+
+      if (elapsed < 9.6) {
         const templePosition = temple?.position ?? { x: 260, z: -240 };
         const approach = temple?.approachPosition ?? { x: 278, z: -248 };
         onWalk?.(new THREE.Vector3(templePosition.x, 0, templePosition.z), 0);
@@ -148,7 +165,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 10.4) {
+      if (elapsed < 10.8) {
         showOceanDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
