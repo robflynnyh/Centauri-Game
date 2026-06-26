@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { lookAtPlanetPoint, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
+import { getDiamondDebugSpawn } from "./diamond-biome";
+import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
 import { getOceanRegions } from "./water";
 
@@ -11,6 +12,12 @@ function intervalPulse(value: number, start: number, peak: number, end: number):
   if (value < start || value > end) return 0;
   if (value < peak) return THREE.MathUtils.smoothstep(value, start, peak);
   return 1 - THREE.MathUtils.smoothstep(value, peak, end);
+}
+
+function setDemoFov(camera: THREE.PerspectiveCamera, fov: number): void {
+  if (Math.abs(camera.fov - fov) < 0.01) return;
+  camera.fov = fov;
+  camera.updateProjectionMatrix();
 }
 
 function headingFromYaw(yaw: number): LocalPlanetPoint {
@@ -88,8 +95,27 @@ function showOceanDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWa
   );
 }
 
+function showDiamondDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWalk: WalkObserver | undefined, elapsed: number): void {
+  const spawn = getDiamondDebugSpawn();
+  const orbit = elapsed * 0.42;
+  const x = spawn.x - 18 + Math.sin(orbit) * 3.2;
+  const z = spawn.z + 12 + Math.cos(orbit) * 2.4;
+  const targetX = spawn.x + 86;
+  const targetZ = spawn.z - 6;
+  onWalk?.(new THREE.Vector3(spawn.x + 42, 0, spawn.z - 4), 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + 5.2,
+    targetX,
+    targetZ,
+    heightAt(targetX, targetZ) + 1.4
+  );
+}
+
 export function createPrDemoController(
-  camera: THREE.Camera,
+  camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
   resolveMove: ResolveMove,
   onWalk?: WalkObserver,
@@ -101,6 +127,16 @@ export function createPrDemoController(
     entranceDirection: LocalPlanetPoint;
     radius: number;
   },
+  observatory?: {
+    position: LocalPlanetPoint;
+    approachPosition: LocalPlanetPoint;
+    telescope: {
+      viewPosition: LocalPlanetPoint;
+      viewHeight: number;
+      yaw: number;
+      pitch: number;
+    };
+  },
   mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] },
   paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number }
 ): { update: (elapsed: number, delta: number) => void } {
@@ -108,6 +144,7 @@ export function createPrDemoController(
 
   return {
     update: (elapsed, delta) => {
+      setDemoFov(camera, 68);
       if (elapsed < 3.6) {
         resolveMove(demoPlayer, new THREE.Vector3(-delta * 0.18, 0, -delta * 1.6));
         const crouchDip = intervalPulse(elapsed, 0.8, 1.25, 1.85) * 0.8;
@@ -161,11 +198,48 @@ export function createPrDemoController(
       }
 
       if (elapsed < 10.4) {
+        const observatoryPosition = observatory?.position ?? { x: -430, z: 312 };
+        const approach = observatory?.approachPosition ?? { x: -442, z: 324 };
+        onWalk?.(new THREE.Vector3(observatoryPosition.x, 0, observatoryPosition.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          approach.x,
+          approach.z,
+          heightAt(approach.x, approach.z) + 7.2,
+          observatoryPosition.x,
+          observatoryPosition.z,
+          heightAt(observatoryPosition.x, observatoryPosition.z) + 4.4
+        );
+        return;
+      }
+
+      if (elapsed < 11.8) {
+        const telescope = observatory?.telescope;
+        const viewPosition = telescope?.viewPosition ?? { x: -432, z: 316 };
+        setDemoFov(camera, 26);
+        onWalk?.(new THREE.Vector3(viewPosition.x, 0, viewPosition.z), 0);
+        setCameraOnPlanet(
+          camera,
+          viewPosition.x,
+          viewPosition.z,
+          telescope?.viewHeight ?? heightAt(viewPosition.x, viewPosition.z) + 2.35,
+          (telescope?.yaw ?? 0) + Math.sin(elapsed * 0.72) * 0.34,
+          (telescope?.pitch ?? 0.26) + Math.sin(elapsed * 0.55) * 0.12
+        );
+        return;
+      }
+
+      if (elapsed < 13.0) {
         showOceanDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
 
-      const shiftedElapsed = elapsed - 1.6;
+      if (elapsed < 14.4) {
+        showDiamondDemoRegion(camera, heightAt, onWalk, elapsed);
+        return;
+      }
+
+      const shiftedElapsed = elapsed - 3.8;
 
       if (shiftedElapsed < 10.6) {
         showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);

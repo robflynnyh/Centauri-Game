@@ -4,6 +4,10 @@
 
 Added a deterministic hillside paramotor near the starting area, with a low-poly frame, canopy, propeller, mount prompt, gas/throttle/altitude HUD, forgiving spherical-planet flight, landing back to walking, `?debug=paramotor`, and PR-demo visibility.
 
+## 2026-06-23
+
+Adjusted the observatory follow-up so the raised platform has a walkable height surface, the telescope marker is a single simple shard glyph, and unattached upright platform blocks are removed.
+
 ## 2026-06-22
 
 Added two large irregular swimmable oceans to the spherical planet, with carved deep basins, chunked ocean-surface rendering, slower in-water movement, underwater tinting, and a focused `?debug=ocean` review route.
@@ -13,6 +17,8 @@ Retuned ocean rendering after review so the water keeps a lo-fi shimmer without 
 Grounded ocean shorelines after review by blending low outside banks up toward the water surface and fading/clipping shoreline water vertices, preventing partial shoreline cells from reading as floating sheets.
 
 Slightly reduced player gravity so jumps and falls feel a touch floatier while keeping the existing movement model intact.
+
+Refined the observatory follow-up with terrain-contact foundation supports, a walkable platform with smaller pier/telescope blockers, hidden telescope geometry during scoped view, and a non-cross astronomical field-note glyph.
 
 Added debug-only performance instrumentation for frame/render/memory/object counts and terrain/nature rebuild timings, then removed obvious movement and sky update scratch allocations without changing gameplay or visuals.
 
@@ -29,6 +35,8 @@ Changed sky time to come from planet spin: the sun, stars, planets, ring, and me
 Added sparse mountain birds as tiny curved V-shaped flocks that circle high ridges, flee upward and away from nearby focus/player movement, expose `?debug=birds`, and appear in the deterministic PR demo for review.
 
 Distributed mountain bird flocks across repeated high-ridge regions so longer exploration can reveal more mountain-only bird groups beyond the initial debug/start flock.
+
+Added a single alien observatory landmark with a discoverable collection-order field note, an interactable zoomed telescope mode, `?debug=observatory`/`?debug=telescope` review routes, and PR-demo visibility.
 
 ## 2026-06-20
 
@@ -179,3 +187,9 @@ Added one massive planet-local mountain as terrain height-field geometry, with a
 Followed review feedback by keeping normal generated biome clusters off the massive mountain footprint and adding general terrain-slope slipperiness, with the massive mountain path overriding that slip so it remains the reliable climb route.
 
 Retuned the slope slipperiness so the mountain path is smooth enough to climb without a hard zero-slip exemption, and added a general grounded step-rise guard to avoid sudden camera pops on steep terrain discontinuities.
+
+## 2026-06-23
+
+Added a deterministic prismatic diamond biome with terrain-integrated pale spectral ground, many small embedded crystal fragments, a `?debug=diamond` review spawn, local half-gravity, and a smooth low-res prism vision pass that appears only inside the biome.
+
+Generalized the diamond biome into three deterministic planet regions with shared sampling/rendering helpers, distinct cyan and rose mineral variants, explicit debug spawns, and progressively lighter local gravity.

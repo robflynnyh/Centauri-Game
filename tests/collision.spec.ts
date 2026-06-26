@@ -931,7 +931,7 @@ test("discovers the dome field note as the next collected note from the entrance
   });
 
   expect(source.discoveredCount).toBe(0);
-  expect(source.total).toBe(3);
+  expect(source.total).toBe(4);
   expect(source.noteRadius).toBeGreaterThan(6);
 
   await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
@@ -964,6 +964,186 @@ test("discovers the dome field note as the next collected note from the entrance
   expect(secondDiscovered?.discovered[1]?.id).toBe("temple-gate");
   expect(secondDiscovered?.discovered[1]?.index).toBe(3);
   expect(secondDiscovered?.current.index).toBe(3);
+});
+
+test("discovers the observatory as the next collection-order field note", async ({ page }) => {
+  await page.goto("/?debug=observatory&test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("observatory debug")).toBeVisible();
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+
+  const source = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri observatory debug hook");
+    const observatory = debug.getObservatoryState();
+    const temple = debug.getTempleState();
+    const player = debug.getPlayer();
+    const notes = debug.getFieldNotesState();
+    return {
+      observatory,
+      templeNoteX: temple.noteX,
+      templeNoteZ: temple.noteZ,
+      playerClear: !debug.isBlockedAt(player.x, player.z),
+      observatoryBlocked: debug.isBlockedAt(observatory.x, observatory.z),
+      platformBlocked: observatory.platformSamples.map((sample) => debug.isBlockedAt(sample.x, sample.z)),
+      platformStanding: observatory.platformSurfaceSamples.map((sample) => {
+        debug.setPlayer(sample.x, sample.z);
+        const playerOnDeck = debug.getPlayer();
+        return {
+          surfaceY: sample.surfaceY,
+          deckAboveTerrain: sample.surfaceY - sample.terrainY,
+          cameraOffsetFromSurface: playerOnDeck.y - sample.surfaceY,
+          debugSurfaceY: debug.surfaceHeightAt(sample.x, sample.z),
+        };
+      }),
+      blockerBlocked: observatory.blockerSamples.map((sample) => ({
+        name: sample.name,
+        blocked: debug.isBlockedAt(sample.x, sample.z),
+      })),
+      observatoryIsOnLand: debug.terrainHeightAt(observatory.x, observatory.z) > 0.25,
+      discoveredCount: notes.discoveredCount,
+      total: notes.total,
+    };
+  });
+
+  expect(source.observatory.obstacleCount).toBe(1);
+  expect(source.observatory.noteRadius).toBeGreaterThan(6);
+  expect(source.observatory.telescopeInteractionRadius).toBeGreaterThan(5);
+  expect(source.playerClear).toBe(true);
+  expect(source.observatoryBlocked).toBe(true);
+  expect(source.platformBlocked.every((blocked) => !blocked)).toBe(true);
+  expect(source.platformStanding.every((sample) => sample.deckAboveTerrain > 0.2)).toBe(true);
+  expect(source.platformStanding.every((sample) => sample.cameraOffsetFromSurface > 1.5 && sample.cameraOffsetFromSurface < 1.8)).toBe(true);
+  expect(source.platformStanding.every((sample) => Math.abs(sample.debugSurfaceY - sample.surfaceY) < 0.001)).toBe(true);
+  expect(source.blockerBlocked.every((sample) => sample.blocked)).toBe(true);
+  expect(source.observatoryIsOnLand).toBe(true);
+  expect(source.discoveredCount).toBe(0);
+  expect(source.total).toBe(4);
+
+  await page.evaluate(({ observatory }) => window.__centauriDebug?.setPlayer(observatory.noteX, observatory.noteZ), source);
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
+  await expect(page.getByText("Field Note 002")).toBeVisible();
+  await expect(page.getByText(/little telescope on a quiet rim/)).toBeVisible();
+
+  const afterObservatory = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+  expect(afterObservatory?.discovered[0]?.id).toBe("observatory-sightline");
+  expect(afterObservatory?.discovered[0]?.index).toBe(2);
+  expect(afterObservatory?.current.index).toBe(2);
+
+  await page.evaluate(({ templeNoteX, templeNoteZ }) => window.__centauriDebug?.setPlayer(templeNoteX, templeNoteZ), source);
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 2);
+  const afterTemple = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+
+  expect(afterTemple?.discoveredCount).toBe(2);
+  expect(afterTemple?.discovered[0]?.id).toBe("observatory-sightline");
+  expect(afterTemple?.discovered[0]?.index).toBe(2);
+  expect(afterTemple?.discovered[1]?.id).toBe("temple-gate");
+  expect(afterTemple?.discovered[1]?.index).toBe(3);
+  expect(afterTemple?.current.index).toBe(3);
+});
+
+test("enters and exits telescope mode without moving the player body", async ({ page }) => {
+  await page.goto("/?debug=telescope&test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("telescope debug")).toBeVisible();
+  await expect(page.locator(".hud__look")).toHaveText("E telescope");
+
+  const spawn = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const observatory = debug.getObservatoryState();
+    const before = debug.getPlayer();
+    const awayX = before.x - observatory.x;
+    const awayZ = before.z - observatory.z;
+    const awayLength = Math.hypot(awayX, awayZ) || 1;
+    const moved = debug.attemptMove((awayX / awayLength) * 2, (awayZ / awayLength) * 2);
+    const travel = Math.hypot(moved.x - before.x, moved.z - before.z);
+    debug.setPlayer(observatory.telescopeUseX, observatory.telescopeUseZ);
+    return {
+      observatory,
+      useBlocked: debug.isBlockedAt(observatory.telescopeUseX, observatory.telescopeUseZ),
+      viewBlocked: debug.isBlockedAt(observatory.telescopeViewX, observatory.telescopeViewZ),
+      travel,
+    };
+  });
+
+  expect(spawn.observatory.nearby).toBe(true);
+  expect(spawn.useBlocked).toBe(false);
+  expect(spawn.viewBlocked).toBe(false);
+  expect(spawn.travel).toBeGreaterThan(1.4);
+
+  const entered = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const before = debug.getPlayer();
+    const observatory = debug.enterTelescope();
+    return { before, observatory };
+  });
+
+  expect(entered.observatory.telescopeActive).toBe(true);
+  expect(entered.observatory.observatoryVisible).toBe(false);
+  expect(entered.observatory.cameraFov).toBeLessThan(40);
+  expect(entered.observatory.nearby).toBe(true);
+  await expect(page.getByText(/telescope: E or Esc to exit/)).toBeVisible();
+
+  await page.keyboard.down("w");
+  await page.waitForTimeout(250);
+  const locked = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    return { player: debug.getPlayer(), view: debug.getViewState() };
+  });
+
+  expect(Math.hypot(locked.player.x - entered.before.x, locked.player.z - entered.before.z)).toBeLessThan(0.01);
+  expect(locked.view.telescopeActive).toBe(true);
+
+  const panned = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const before = debug.getViewState();
+    const observatory = debug.panTelescope(0.4, 0.18);
+    const after = debug.getViewState();
+    return { before, after, observatory, player: debug.getPlayer() };
+  });
+
+  expect(Math.abs(panned.after.yaw - panned.before.yaw)).toBeGreaterThan(0.1);
+  expect(Math.abs(panned.after.pitch - panned.before.pitch)).toBeGreaterThan(0.05);
+  expect(Math.hypot(panned.player.x - entered.before.x, panned.player.z - entered.before.z)).toBeLessThan(0.01);
+
+  const exited = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const observatory = debug.exitTelescope();
+    return { observatory, player: debug.getPlayer() };
+  });
+  await page.keyboard.up("w");
+
+  expect(exited.observatory.telescopeActive).toBe(false);
+  expect(exited.observatory.observatoryVisible).toBe(true);
+  expect(exited.observatory.cameraFov).toBeCloseTo(68, 1);
+  await expect(page.locator(".hud__look")).toHaveText("E telescope");
+
+  const afterExitMove = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri telescope debug hook");
+    const observatory = debug.getObservatoryState();
+    const before = debug.getPlayer();
+    const awayX = before.x - observatory.x;
+    const awayZ = before.z - observatory.z;
+    const awayLength = Math.hypot(awayX, awayZ) || 1;
+    const moved = debug.attemptMove((awayX / awayLength) * 2, (awayZ / awayLength) * 2);
+    return Math.hypot(moved.x - before.x, moved.z - before.z);
+  });
+  expect(afterExitMove).toBeGreaterThan(1.4);
+
+  await page.keyboard.press("Space");
+  await page.waitForFunction(
+    (startY) => {
+      const debug = window.__centauriDebug;
+      return Boolean(debug && debug.getPlayer().y > startY + 0.55 && !debug.getMovementState().grounded);
+    },
+    exited.player.y
+  );
 });
 
 test("uses pointer lock for continuous mouse-look and releases cleanly", async ({ page }) => {
