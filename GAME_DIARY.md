@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-26
+
+Added one deterministic crashed spaceship landmark with a rounded low-poly buried hull, composed debris, collision, reserved nature clearance, `?debug=ship`/`?debug=crash`, a collection-order field note, and PR demo/screenshot visibility.
+
 ## 2026-06-25
 
 Added a deterministic hillside paramotor near the starting area, with a low-poly frame, canopy, propeller, mount prompt, gas/throttle/altitude HUD, forgiving spherical-planet flight, landing back to walking, `?debug=paramotor`, and PR-demo visibility.

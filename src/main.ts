@@ -13,7 +13,7 @@ import {
 } from "./diamond-biome";
 import { createFieldNotesHud, createFieldNotesState, type FieldNoteId, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
-import { createGlassDomeLandmark, createObservatoryLandmark, createTempleLandmark } from "./landmarks";
+import { createCrashedShipLandmark, createGlassDomeLandmark, createObservatoryLandmark, createTempleLandmark } from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
 import { populateNature, type NaturePerfState } from "./nature";
 import { createParamotorDevice, type ParamotorPlacementState } from "./paramotor";
@@ -79,6 +79,27 @@ type ObservatoryDebugState = {
   cameraFov: number;
   nearby: boolean;
   obstacleCount: number;
+};
+
+type CrashedShipDebugState = {
+  x: number;
+  z: number;
+  approachX: number;
+  approachZ: number;
+  noteX: number;
+  noteZ: number;
+  noteRadius: number;
+  yaw: number;
+  hullLength: number;
+  hullWidth: number;
+  tiltPitch: number;
+  tiltRoll: number;
+  buriedDepth: number;
+  reservedRadius: number;
+  obstacleCount: number;
+  blockedSamples: Array<{ x: number; z: number; blocked: boolean }>;
+  clearSamples: Array<{ x: number; z: number; blocked: boolean }>;
+  nearestGeneratedObstacleDistance: number;
 };
 
 type ParamotorDebugState = ParamotorPlacementState & {
@@ -225,6 +246,7 @@ declare global {
         targetTimeMultiplier: number;
       };
       getObservatoryState: () => ObservatoryDebugState;
+      getCrashedShipState: () => CrashedShipDebugState;
       enterTelescope: () => ObservatoryDebugState;
       exitTelescope: () => ObservatoryDebugState;
       panTelescope: (yawDelta: number, pitchDelta: number) => ObservatoryDebugState;
@@ -293,6 +315,7 @@ const enableTempleDebug = params.get("debug") === "temple";
 const enableDomeDebug = params.get("debug") === "dome";
 const enableObservatoryDebug = params.get("debug") === "observatory";
 const enableTelescopeDebug = params.get("debug") === "telescope";
+const enableShipDebug = params.get("debug") === "ship" || params.get("debug") === "crash";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
@@ -316,6 +339,7 @@ const enableDebugTools =
   enableDomeDebug ||
   enableObservatoryDebug ||
   enableTelescopeDebug ||
+  enableShipDebug ||
   isBeetleDebug ||
   isBirdDebug ||
   enableMountainDebug ||
@@ -348,25 +372,27 @@ const hudBadgeText = isDemo
         ? "observatory debug"
         : enableTelescopeDebug
           ? "telescope debug"
-          : isBeetleDebug
-            ? "beetle debug"
-            : isBirdDebug
-              ? "birds debug"
-              : enableMountainDebug
-                ? "mountain debug"
-                : enableOceanDebug
-                  ? "ocean debug"
-                  : enableDiamondDebug
-                    ? `${diamondDebugName} debug`
-                    : enableParamotorDebug
-                      ? "paramotor debug"
-                      : enableSleepDebug
-                        ? "sleep debug"
-                        : enableIsolationDebug
-                          ? "isolation debug"
-                          : enablePerfDebug
-                            ? "perf debug"
-                            : "exploration mode";
+          : enableShipDebug
+            ? "ship debug"
+            : isBeetleDebug
+              ? "beetle debug"
+              : isBirdDebug
+                ? "birds debug"
+                : enableMountainDebug
+                  ? "mountain debug"
+                  : enableOceanDebug
+                    ? "ocean debug"
+                    : enableDiamondDebug
+                      ? `${diamondDebugName} debug`
+                      : enableParamotorDebug
+                        ? "paramotor debug"
+                        : enableSleepDebug
+                          ? "sleep debug"
+                          : enableIsolationDebug
+                            ? "isolation debug"
+                            : enablePerfDebug
+                              ? "perf debug"
+                              : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -454,6 +480,12 @@ const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
 const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone, ...massiveMountainReservedZones]);
 const observatory = createObservatoryLandmark(scene, heightAt, [temple.reservedZone, dome.reservedZone, ...massiveMountainReservedZones]);
+const crashedShip = createCrashedShipLandmark(scene, heightAt, [
+  temple.reservedZone,
+  dome.reservedZone,
+  observatory.reservedZone,
+  ...massiveMountainReservedZones,
+]);
 const domeFloorColour = new THREE.Color(0x273c78);
 const domeGroundingBandWidth = 16;
 const domeGroundingFlatShoulder = 0.25;
@@ -461,11 +493,13 @@ const fieldNoteSources: Array<{ noteId: FieldNoteId; position: { x: number; z: n
   temple.noteSource,
   dome.noteSource,
   observatory.noteSource,
+  crashedShip.noteSource,
 ];
 const paramotor = createParamotorDevice(scene, effectiveHeightAt, [
   temple.reservedZone,
   dome.reservedZone,
   observatory.reservedZone,
+  crashedShip.reservedZone,
   ...massiveMountainReservedZones,
 ]);
 const fieldNotes = createFieldNotesState();
@@ -486,6 +520,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableDomeDebug) return new THREE.Vector3(dome.approachPosition.x, 0, dome.approachPosition.z);
   if (enableTelescopeDebug) return new THREE.Vector3(observatory.telescope.usePosition.x, 0, observatory.telescope.usePosition.z);
   if (enableObservatoryDebug) return new THREE.Vector3(observatory.approachPosition.x, 0, observatory.approachPosition.z);
+  if (enableShipDebug) return new THREE.Vector3(crashedShip.approachPosition.x, 0, crashedShip.approachPosition.z);
   if (enableParamotorDebug) return new THREE.Vector3(paramotor.approachPosition.x, 0, paramotor.approachPosition.z);
   if (isBeetleDebug) return new THREE.Vector3(4.8, 0, 14.2);
   if (isBirdDebug) return new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8);
@@ -498,12 +533,17 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
 
 const initialPlayerLocalPosition = getInitialPlayerLocalPosition();
 const initialPlayerYaw = enableTelescopeDebug
-  ? observatory.telescope.yaw
+    ? observatory.telescope.yaw
   : enableObservatoryDebug
       ? Math.atan2(
         initialPlayerLocalPosition.x - observatory.position.x,
         initialPlayerLocalPosition.z - observatory.position.z
       )
+    : enableShipDebug
+      ? Math.atan2(
+          initialPlayerLocalPosition.x - crashedShip.position.x,
+          initialPlayerLocalPosition.z - crashedShip.position.z
+        )
     : enableParamotorDebug
       ? Math.atan2(
           -(paramotor.position.x - initialPlayerLocalPosition.x),
@@ -526,17 +566,19 @@ const initialPlayerPitch = enableTelescopeDebug
     ? -0.36
     : enableObservatoryDebug
       ? -0.08
-      : enableParamotorDebug
-        ? -0.2
-        : isBirdDebug
-          ? 0.18
-          : enableMountainDebug
-            ? 0.08
-            : enableOceanDebug
-              ? -0.05
-              : enableDiamondDebug
-                ? 0.2
-                : -0.12;
+      : enableShipDebug
+        ? -0.14
+        : enableParamotorDebug
+          ? -0.2
+          : isBirdDebug
+            ? 0.18
+            : enableMountainDebug
+              ? 0.08
+              : enableOceanDebug
+                ? -0.05
+                : enableDiamondDebug
+                  ? 0.2
+                  : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -610,13 +652,21 @@ scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
 collisionWorld.addObstacle(dome.collision);
 collisionWorld.addObstacle(observatory.collision);
+collisionWorld.addObstacle(crashedShip.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerfState } = populateNature(
   scene,
   effectiveHeightAt,
   collisionWorld.addObstacle,
   collisionWorld.replaceDynamicObstacles,
-  [temple.reservedZone, dome.reservedZone, observatory.reservedZone, paramotor.reservedZone, ...massiveMountainReservedZones]
+  [
+    temple.reservedZone,
+    dome.reservedZone,
+    observatory.reservedZone,
+    crashedShip.reservedZone,
+    paramotor.reservedZone,
+    ...massiveMountainReservedZones,
+  ]
 );
 const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
@@ -638,7 +688,7 @@ let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome, observatory, mountainDebugState, paramotor);
+}, temple, dome, observatory, crashedShip, mountainDebugState, paramotor);
 let skyElapsed = clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
@@ -756,6 +806,7 @@ if (enableDebugTools) {
 	      targetTimeMultiplier: domeTargetTimeMultiplier,
 	    }),
 	    getObservatoryState: getObservatoryDebugState,
+	    getCrashedShipState: getCrashedShipDebugState,
 	    enterTelescope: () => {
 	      enterTelescopeMode(true);
 	      return getObservatoryDebugState();
@@ -1579,6 +1630,46 @@ function getObservatoryDebugState(): ObservatoryDebugState {
     nearby: isNearTelescope(),
     obstacleCount: collisionWorld.obstacles.filter((obstacle) => obstacle.kind === "observatory").length,
   };
+}
+
+function getCrashedShipDebugState(): CrashedShipDebugState {
+  return {
+    x: crashedShip.position.x,
+    z: crashedShip.position.z,
+    approachX: crashedShip.approachPosition.x,
+    approachZ: crashedShip.approachPosition.z,
+    noteX: crashedShip.noteSource.position.x,
+    noteZ: crashedShip.noteSource.position.z,
+    noteRadius: crashedShip.noteSource.radius,
+    yaw: crashedShip.yaw,
+    hullLength: crashedShip.hullLength,
+    hullWidth: crashedShip.hullWidth,
+    tiltPitch: crashedShip.tiltPitch,
+    tiltRoll: crashedShip.tiltRoll,
+    buriedDepth: crashedShip.buriedDepth,
+    reservedRadius: crashedShip.reservedZone.radius,
+    obstacleCount: collisionWorld.obstacles.filter((obstacle) => obstacle.kind === "crashed-ship").length,
+    blockedSamples: crashedShip.collisionSamples.blocked.map((sample) => ({
+      x: sample.x,
+      z: sample.z,
+      blocked: collisionWorld.isBlockedAt(sample.x, sample.z),
+    })),
+    clearSamples: crashedShip.collisionSamples.clear.map((sample) => ({
+      x: sample.x,
+      z: sample.z,
+      blocked: collisionWorld.isBlockedAt(sample.x, sample.z),
+    })),
+    nearestGeneratedObstacleDistance: nearestGeneratedObstacleDistanceTo(crashedShip.position),
+  };
+}
+
+function nearestGeneratedObstacleDistanceTo(point: { x: number; z: number }): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const obstacle of collisionWorld.obstacles) {
+    if (!obstacle.dynamic) continue;
+    nearest = Math.min(nearest, surfaceDistanceBetweenLocal(point, obstacle) - obstacle.radius);
+  }
+  return nearest;
 }
 
 function updateExploration(delta: number): { horizontalSpeed: number } {

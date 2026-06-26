@@ -94,6 +94,29 @@ export type ObservatoryLandmark = {
   update: (elapsed: number) => void;
 };
 
+export type CrashedShipLandmark = {
+  group: THREE.Group;
+  position: LocalPlanetPoint;
+  approachPosition: LocalPlanetPoint;
+  noteSource: {
+    noteId: "crashed-ship-log";
+    position: LocalPlanetPoint;
+    radius: number;
+  };
+  yaw: number;
+  hullLength: number;
+  hullWidth: number;
+  tiltPitch: number;
+  tiltRoll: number;
+  buriedDepth: number;
+  collision: CollisionObstacle;
+  collisionSamples: {
+    blocked: LocalPlanetPoint[];
+    clear: LocalPlanetPoint[];
+  };
+  reservedZone: LandmarkZone;
+};
+
 const templeSeed = "centauri-field-note-001-temple";
 const templeClearanceRadius = 24;
 const templeCollisionRadius = 5.8;
@@ -118,6 +141,16 @@ const telescopeViewDistance = observatoryCollisionRadius + 1.25;
 const observatoryAnchorOffset = 0.04;
 const observatoryDeckTopLocalY = 0.78;
 const observatoryStepTopLocalY = 0.5;
+const crashedShipSeed = "centauri-field-note-crashed-ship";
+const crashedShipClearanceRadius = 42;
+const crashedShipHullLength = 24;
+const crashedShipHullWidth = 9.2;
+const crashedShipCollisionHalfLength = 9.3;
+const crashedShipCollisionRadius = 4.15;
+const crashedShipNoteRadius = 11.5;
+const crashedShipTiltPitch = -0.32;
+const crashedShipTiltRoll = 0.22;
+const crashedShipBuriedDepth = 1.15;
 
 type DomeDoorwayAperture = {
   shellGapAngle: number;
@@ -314,6 +347,69 @@ export function createObservatoryLandmark(
   };
 }
 
+export function createCrashedShipLandmark(
+  scene: THREE.Scene,
+  heightAt: HeightSampler,
+  avoidZones: LandmarkZone[] = []
+): CrashedShipLandmark {
+  const position = chooseCrashedShipPosition(heightAt, avoidZones);
+  const yaw = seededUnit(`${crashedShipSeed}:yaw`) * Math.PI * 2 - 0.45;
+  const approachPosition = crashedShipLocalToWorld(position, yaw, -16, 19);
+  const notePosition = crashedShipLocalToWorld(position, yaw, -8.4, 2.8);
+  const altitude = heightAt(position.x, position.z);
+  const group = makeCrashedShip(position, yaw, altitude, heightAt);
+  placeObjectOnPlanet(
+    group,
+    position.x,
+    position.z,
+    altitude + 0.04,
+    new THREE.Euler(crashedShipTiltPitch, yaw, crashedShipTiltRoll)
+  );
+  scene.add(group);
+
+  const noteMarker = makeCrashedShipNoteMarker();
+  placeObjectOnPlanet(
+    noteMarker,
+    notePosition.x,
+    notePosition.z,
+    heightAt(notePosition.x, notePosition.z) + 0.04,
+    new THREE.Euler(0, yaw - Math.PI * 0.5, 0)
+  );
+  scene.add(noteMarker);
+
+  return {
+    group,
+    position,
+    approachPosition,
+    noteSource: {
+      noteId: "crashed-ship-log",
+      position: notePosition,
+      radius: crashedShipNoteRadius,
+    },
+    yaw,
+    hullLength: crashedShipHullLength,
+    hullWidth: crashedShipHullWidth,
+    tiltPitch: crashedShipTiltPitch,
+    tiltRoll: crashedShipTiltRoll,
+    buriedDepth: crashedShipBuriedDepth,
+    collision: createCrashedShipCollision(position, yaw),
+    collisionSamples: {
+      blocked: [
+        crashedShipLocalToWorld(position, yaw, 0, 0),
+        crashedShipLocalToWorld(position, yaw, -2.6, -5.8),
+        crashedShipLocalToWorld(position, yaw, 2.4, 5.6),
+      ],
+      clear: [
+        approachPosition,
+        notePosition,
+        crashedShipLocalToWorld(position, yaw, 9.5, -4.8),
+        crashedShipLocalToWorld(position, yaw, -11.2, 9.8),
+      ],
+    },
+    reservedZone: { x: position.x, z: position.z, radius: crashedShipClearanceRadius },
+  };
+}
+
 export function isInLandmarkZone(point: LocalPlanetPoint, zones: LandmarkZone[]): boolean {
   return zones.some((zone) => surfaceDistanceBetweenLocal(point, zone) < zone.radius);
 }
@@ -415,6 +511,59 @@ function isValidObservatoryTerrain(point: LocalPlanetPoint, heightAt: HeightSamp
     heightAt(point.x - 8, point.z - 8),
   ];
   return samples.every((height) => height > 0.25 && Math.abs(height - centerHeight) < 6.4);
+}
+
+function chooseCrashedShipPosition(heightAt: HeightSampler, avoidZones: LandmarkZone[]): LocalPlanetPoint {
+  const random = createSeededRandom(crashedShipSeed);
+  const inflatedAvoidZones = avoidZones.map((zone) => ({ ...zone, radius: zone.radius + crashedShipClearanceRadius }));
+  const fallbackPositions = [
+    normalizePlanetCoords(166, 386),
+    normalizePlanetCoords(318, 132),
+    normalizePlanetCoords(-214, -326),
+  ];
+
+  for (let i = 0; i < 128; i += 1) {
+    const angle = random() * Math.PI * 2;
+    const radius = 250 + random() * 310;
+    const candidate = normalizePlanetCoords(Math.cos(angle) * radius + 110, Math.sin(angle) * radius + 340);
+    if (isInLandmarkZone(candidate, inflatedAvoidZones)) continue;
+    if (!isValidCrashedShipTerrain(candidate, heightAt)) continue;
+    return candidate;
+  }
+
+  return fallbackPositions.find((point) => !isInLandmarkZone(point, inflatedAvoidZones) && isValidCrashedShipTerrain(point, heightAt)) ?? fallbackPositions[0];
+}
+
+function isValidCrashedShipTerrain(point: LocalPlanetPoint, heightAt: HeightSampler): boolean {
+  const centerHeight = heightAt(point.x, point.z);
+  if (centerHeight < 0.75) return false;
+
+  const samples = [
+    heightAt(point.x + 12, point.z),
+    heightAt(point.x - 12, point.z),
+    heightAt(point.x, point.z + 12),
+    heightAt(point.x, point.z - 12),
+    heightAt(point.x + 16, point.z - 7),
+    heightAt(point.x - 11, point.z + 14),
+  ];
+  return samples.every((height) => height > 0.2 && Math.abs(height - centerHeight) < 7.2);
+}
+
+function createCrashedShipCollision(position: LocalPlanetPoint, yaw: number): CollisionObstacle {
+  return {
+    kind: "crashed-ship",
+    x: position.x,
+    z: position.z,
+    radius: crashedShipCollisionHalfLength + crashedShipCollisionRadius,
+    blocksAt: (x, z, playerRadius) => {
+      const local = crashedShipWorldToLocal(position, yaw, x, z);
+      const closestZ = THREE.MathUtils.clamp(local.z, -crashedShipCollisionHalfLength, crashedShipCollisionHalfLength * 0.88);
+      const dx = local.x;
+      const dz = local.z - closestZ;
+      const hullRadius = crashedShipCollisionRadius + playerRadius;
+      return dx * dx + dz * dz < hullRadius * hullRadius;
+    },
+  };
 }
 
 function createObservatoryCollision(position: LocalPlanetPoint, yaw: number): CollisionObstacle {
@@ -527,6 +676,22 @@ function observatoryPlatformSurfaceHeightAt(
 
   const onSteps = Math.abs(local.x) <= 1.55 && local.z >= 3.75 && local.z <= 5.35;
   return onSteps ? anchorAltitude + observatoryStepTopLocalY : null;
+}
+
+function crashedShipLocalToWorld(position: LocalPlanetPoint, yaw: number, localX: number, localZ: number): LocalPlanetPoint {
+  return normalizePlanetCoords(
+    position.x + localX * Math.cos(yaw) + localZ * Math.sin(yaw),
+    position.z - localX * Math.sin(yaw) + localZ * Math.cos(yaw)
+  );
+}
+
+function crashedShipWorldToLocal(position: LocalPlanetPoint, yaw: number, x: number, z: number): { x: number; z: number } {
+  const dx = x - position.x;
+  const dz = z - position.z;
+  return {
+    x: dx * Math.cos(yaw) - dz * Math.sin(yaw),
+    z: dx * Math.sin(yaw) + dz * Math.cos(yaw),
+  };
 }
 
 function offsetLocal(origin: LocalPlanetPoint, direction: LocalPlanetPoint, distance: number): LocalPlanetPoint {
@@ -980,6 +1145,203 @@ function makeObservatoryNoteMarker(): THREE.Group {
   glyph.position.set(0.12, 1.14, 0.34);
   glyph.rotation.set(0.04, 0.1, -0.62);
   group.add(glyph);
+
+  return group;
+}
+
+type CrashedShipTerrainOffsetSampler = (localX: number, localZ: number) => number;
+
+function makeCrashedShip(
+  position: LocalPlanetPoint,
+  yaw: number,
+  anchorAltitude: number,
+  heightAt: HeightSampler
+): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "single-crashed-spaceship-landmark";
+
+  const terrainOffsetAt: CrashedShipTerrainOffsetSampler = (localX, localZ) => {
+    const world = crashedShipLocalToWorld(position, yaw, localX, localZ);
+    return heightAt(world.x, world.z) - anchorAltitude;
+  };
+
+  const hullMaterial = new THREE.MeshBasicMaterial({ color: 0x74d9c5 });
+  const hullShadeMaterial = new THREE.MeshBasicMaterial({ color: 0x4396b7 });
+  const warmPanelMaterial = new THREE.MeshBasicMaterial({ color: 0xffd06f });
+  const coralMaterial = new THREE.MeshBasicMaterial({ color: 0xff6f9f });
+  const glassMaterial = new THREE.MeshBasicMaterial({
+    color: 0x9bfff1,
+    transparent: true,
+    opacity: 0.68,
+    depthWrite: false,
+  });
+  const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x1c275f });
+  const pipeMaterial = new THREE.MeshBasicMaterial({ color: 0xf6f07c });
+  const groundMaterial = new THREE.MeshBasicMaterial({ color: 0x9b63c4 });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8dffe0,
+    transparent: true,
+    opacity: 0.28,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  addCrashedShipGroundPatch(group, terrainOffsetAt, 0, -7.2, 7.2, 10.8, groundMaterial, -0.08);
+  addCrashedShipGroundPatch(group, terrainOffsetAt, -4.2, -3.8, 3.4, 4.4, groundMaterial, 0.32);
+
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), hullMaterial);
+  hull.position.set(0, terrainOffsetAt(0, 0) + 1.78 - crashedShipBuriedDepth * 0.22, 0);
+  hull.scale.set(crashedShipHullWidth * 0.5, 2.56, crashedShipHullLength * 0.46);
+  hull.rotation.set(0.02, 0, -0.04);
+  group.add(hull);
+
+  const belly = new THREE.Mesh(new THREE.BoxGeometry(6.9, 0.44, 12.6), hullShadeMaterial);
+  belly.position.set(0.1, terrainOffsetAt(0, 1.6) + 0.88, 1.6);
+  belly.rotation.z = 0.03;
+  group.add(belly);
+
+  const canopy = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6), glassMaterial);
+  canopy.position.set(-0.35, terrainOffsetAt(-0.4, -3.0) + 3.8, -3.0);
+  canopy.scale.set(2.15, 0.9, 2.72);
+  canopy.rotation.set(0.05, 0.05, -0.08);
+  canopy.renderOrder = 2;
+  group.add(canopy);
+
+  addShipWindow(group, -4.42, terrainOffsetAt(-4.4, -3.6) + 2.75, -3.6, glassMaterial);
+  addShipWindow(group, -4.68, terrainOffsetAt(-4.7, -0.9) + 2.78, -0.9, glassMaterial);
+  addShipWindow(group, -4.36, terrainOffsetAt(-4.4, 1.8) + 2.62, 1.8, glassMaterial);
+
+  const sideBreach = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.0, 3.8), darkMaterial);
+  sideBreach.position.set(-4.72, terrainOffsetAt(-4.7, -0.6) + 2.12, -0.6);
+  sideBreach.rotation.set(0.04, 0.02, -0.12);
+  group.add(sideBreach);
+
+  for (let i = 0; i < 4; i += 1) {
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.1 + i * 0.018, 0.12 + i * 0.014, 3.05 - i * 0.18, 5), pipeMaterial);
+    pipe.geometry.rotateX(Math.PI / 2);
+    pipe.position.set(-4.84, terrainOffsetAt(-4.8, -0.8 + i * 0.42) + 1.58 + i * 0.32, -0.8 + i * 0.42);
+    pipe.rotation.set(0.08, 0.16, -0.2 + i * 0.07);
+    group.add(pipe);
+  }
+
+  const leftWing = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.38, 2.25), coralMaterial);
+  leftWing.position.set(-6.15, terrainOffsetAt(-6.2, 2.2) + 1.44, 2.2);
+  leftWing.rotation.set(0.03, -0.16, -0.12);
+  group.add(leftWing);
+
+  const rightWingRoot = new THREE.Mesh(new THREE.BoxGeometry(3.95, 0.36, 1.85), coralMaterial);
+  rightWingRoot.position.set(5.0, terrainOffsetAt(5, 2.8) + 1.36, 2.8);
+  rightWingRoot.rotation.set(-0.08, 0.28, 0.42);
+  group.add(rightWingRoot);
+
+  addCrashedShipDebrisPanel(group, terrainOffsetAt, 8.6, 6.8, 4.4, 1.55, 0.34, coralMaterial, -0.52);
+  addCrashedShipDebrisPanel(group, terrainOffsetAt, -8.9, -5.7, 3.2, 1.18, 0.22, hullShadeMaterial, 0.36);
+  addCrashedShipDebrisPanel(group, terrainOffsetAt, 5.7, -7.8, 2.6, 1.0, 0.2, warmPanelMaterial, 0.12);
+  addCrashedShipDebrisPanel(group, terrainOffsetAt, -10.8, 8.4, 2.8, 1.08, 0.22, hullMaterial, -0.18);
+
+  const tailMaterial = new THREE.MeshBasicMaterial({ color: 0x31407e });
+  for (const engineX of [-1.72, 1.72]) {
+    const engine = new THREE.Mesh(new THREE.CylinderGeometry(0.98, 1.36, 1.55, 7), tailMaterial);
+    engine.geometry.rotateX(Math.PI / 2);
+    engine.position.set(engineX, terrainOffsetAt(engineX, 10.25) + 2.05, 10.25);
+    engine.rotation.z = engineX < 0 ? -0.08 : 0.08;
+    group.add(engine);
+
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(0.84, 8), glowMaterial.clone());
+    glow.position.set(engineX, terrainOffsetAt(engineX, 11.08) + 2.05, 11.1);
+    glow.rotation.x = Math.PI;
+    group.add(glow);
+  }
+
+  const upperFin = new THREE.Mesh(new THREE.ConeGeometry(1.12, 3.4, 4), coralMaterial);
+  upperFin.position.set(0.2, terrainOffsetAt(0.2, 7.0) + 4.25, 7.0);
+  upperFin.rotation.set(0.24, Math.PI * 0.25, 0.16);
+  upperFin.scale.set(0.74, 1, 1.34);
+  group.add(upperFin);
+
+  const crackedBand = new THREE.Mesh(new THREE.TorusGeometry(3.62, 0.11, 5, 18), warmPanelMaterial);
+  crackedBand.position.set(0, terrainOffsetAt(0, -8.15) + 1.88, -8.15);
+  crackedBand.rotation.set(Math.PI / 2, 0.08, 0.14);
+  crackedBand.scale.y = 0.7;
+  group.add(crackedBand);
+
+  return group;
+}
+
+function addCrashedShipGroundPatch(
+  group: THREE.Group,
+  terrainOffsetAt: CrashedShipTerrainOffsetSampler,
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  material: THREE.Material,
+  rotation: number
+): void {
+  const patch = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.12, 8), material);
+  patch.position.set(x, terrainOffsetAt(x, z) + 0.03, z);
+  patch.scale.set(width * 0.5, 1, depth * 0.5);
+  patch.rotation.y = rotation;
+  group.add(patch);
+}
+
+function addCrashedShipDebrisPanel(
+  group: THREE.Group,
+  terrainOffsetAt: CrashedShipTerrainOffsetSampler,
+  x: number,
+  z: number,
+  width: number,
+  depth: number,
+  height: number,
+  material: THREE.Material,
+  rotation: number
+): void {
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+  panel.position.set(x, terrainOffsetAt(x, z) + height * 0.5 + 0.04, z);
+  panel.rotation.set(0.06, rotation, (Math.sin(x + z) * 0.5 + 0.5) * 0.18 - 0.09);
+  group.add(panel);
+}
+
+function addShipWindow(group: THREE.Group, x: number, y: number, z: number, material: THREE.Material): void {
+  const window = new THREE.Mesh(new THREE.CircleGeometry(0.62, 7), material);
+  window.position.set(x, y, z);
+  window.rotation.y = -Math.PI / 2;
+  window.scale.set(1, 0.74, 1);
+  window.renderOrder = 3;
+  group.add(window);
+}
+
+function makeCrashedShipNoteMarker(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "crashed-ship-field-note-marker";
+
+  const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x1c275f });
+  const plateMaterial = new THREE.MeshBasicMaterial({ color: 0xffd06f });
+  const glyphMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8dffe0,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 1.14, 0.3, 6), baseMaterial);
+  base.position.y = 0.15;
+  group.add(base);
+
+  const recorder = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.68, 0.42), plateMaterial);
+  recorder.position.set(0, 0.76, 0);
+  recorder.rotation.set(0.12, 0.28, -0.08);
+  group.add(recorder);
+
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.06, 1.22, 5), glyphMaterial);
+  antenna.position.set(0.38, 1.42, 0.02);
+  antenna.rotation.z = -0.18;
+  group.add(antenna);
+
+  const signal = new THREE.Mesh(new THREE.TorusGeometry(0.48, 0.035, 4, 18, Math.PI * 1.35), glyphMaterial.clone());
+  signal.position.set(0.48, 1.78, 0.02);
+  signal.rotation.set(Math.PI * 0.5, 0, -0.45);
+  group.add(signal);
 
   return group;
 }

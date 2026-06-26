@@ -617,6 +617,94 @@ test("discovers the temple field note once from the temple glyph source", async 
   expect(afterDome?.current.index).toBe(3);
 });
 
+test("starts ship debug route near one grounded crashed spaceship landmark", async ({ page }) => {
+  await page.goto("/?debug=ship&test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("ship debug")).toBeVisible();
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri ship debug hook");
+    const ship = debug.getCrashedShipState();
+    const player = debug.getPlayer();
+    const side = { x: Math.cos(ship.yaw), z: -Math.sin(ship.yaw) };
+    const sideStart = {
+      x: ship.x + side.x * (ship.hullWidth * 0.5 + 1.3),
+      z: ship.z + side.z * (ship.hullWidth * 0.5 + 1.3),
+    };
+    debug.setPlayer(sideStart.x, sideStart.z);
+    const before = debug.getPlayer();
+    const blockedMove = debug.attemptMove(-side.x * 4.2, -side.z * 4.2);
+
+    debug.setPlayer(ship.x, ship.z);
+    const afterNatureRefresh = debug.getCrashedShipState();
+
+    return {
+      ship,
+      approachDistance: Math.hypot(player.x - ship.x, player.z - ship.z),
+      noteDistance: Math.hypot(player.x - ship.noteX, player.z - ship.noteZ),
+      playerStartsClear: !debug.isBlockedAt(player.x, player.z),
+      centerBlocked: debug.isBlockedAt(ship.x, ship.z),
+      blockedSamplesBlocked: ship.blockedSamples.every((sample) => sample.blocked),
+      clearSamplesClear: ship.clearSamples.every((sample) => !sample.blocked),
+      collisionTravel: Math.hypot(blockedMove.x - before.x, blockedMove.z - before.z),
+      shipIsOnLand: debug.terrainHeightAt(ship.x, ship.z) > 0.25,
+      nearestGeneratedObstacleDistance: afterNatureRefresh.nearestGeneratedObstacleDistance,
+    };
+  });
+
+  expect(result.ship.obstacleCount).toBe(1);
+  expect(result.ship.hullLength).toBeGreaterThan(20);
+  expect(result.ship.hullWidth).toBeGreaterThan(8);
+  expect(result.ship.buriedDepth).toBeGreaterThan(0.75);
+  expect(result.ship.tiltPitch).toBeLessThan(-0.15);
+  expect(Math.abs(result.ship.tiltRoll)).toBeGreaterThan(0.1);
+  expect(result.approachDistance).toBeGreaterThan(result.ship.hullWidth);
+  expect(result.approachDistance).toBeLessThan(result.ship.reservedRadius);
+  expect(result.noteDistance).toBeGreaterThan(result.ship.noteRadius);
+  expect(result.playerStartsClear).toBe(true);
+  expect(result.centerBlocked).toBe(true);
+  expect(result.blockedSamplesBlocked).toBe(true);
+  expect(result.clearSamplesClear).toBe(true);
+  expect(result.collisionTravel).toBeLessThan(1.35);
+  expect(result.shipIsOnLand).toBe(true);
+  expect(result.nearestGeneratedObstacleDistance).toBeGreaterThan(result.ship.reservedRadius);
+});
+
+test("discovers the crashed ship field note with the existing collection card", async ({ page }) => {
+  await page.goto("/?debug=crash&test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+  await expect(page.getByText("ship debug")).toBeVisible();
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+
+  const source = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri ship debug hook");
+    const ship = debug.getCrashedShipState();
+    const notes = debug.getFieldNotesState();
+    return {
+      noteX: ship.noteX,
+      noteZ: ship.noteZ,
+      discoveredCount: notes.discoveredCount,
+      total: notes.total,
+    };
+  });
+
+  expect(source.discoveredCount).toBe(0);
+  expect(source.total).toBe(5);
+
+  await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
+  await expect(page.getByText("Field Note 002")).toBeVisible();
+  await expect(page.getByText(/Rounded hull half under the grass/)).toBeVisible();
+  await expect(page.getByText(/recovered/)).toHaveCount(0);
+
+  const discovered = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+  expect(discovered?.discovered[0]?.id).toBe("crashed-ship-log");
+  expect(discovered?.discovered[0]?.index).toBe(2);
+  expect(discovered?.current.index).toBe(2);
+});
+
 test("creates one large glass dome with a passable entrance and blocking shell", async ({ page }) => {
   await page.goto("/?debug=dome");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
@@ -931,7 +1019,7 @@ test("discovers the dome field note as the next collected note from the entrance
   });
 
   expect(source.discoveredCount).toBe(0);
-  expect(source.total).toBe(4);
+  expect(source.total).toBe(5);
   expect(source.noteRadius).toBeGreaterThan(6);
 
   await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
@@ -1018,7 +1106,7 @@ test("discovers the observatory as the next collection-order field note", async 
   expect(source.blockerBlocked.every((sample) => sample.blocked)).toBe(true);
   expect(source.observatoryIsOnLand).toBe(true);
   expect(source.discoveredCount).toBe(0);
-  expect(source.total).toBe(4);
+  expect(source.total).toBe(5);
 
   await page.evaluate(({ observatory }) => window.__centauriDebug?.setPlayer(observatory.noteX, observatory.noteZ), source);
   await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
