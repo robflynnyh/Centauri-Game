@@ -50,6 +50,7 @@ import {
   oceanStateAt,
   type OceanDebugState,
   type OceanPerfState,
+  type OceanRegion,
   type OceanState,
 } from "./water";
 import "./style.css";
@@ -317,7 +318,11 @@ const enableTelescopeDebug = params.get("debug") === "telescope";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
-const enableOceanDebug = params.get("debug") === "ocean";
+const oceanDebugRoute = params.get("debug");
+const oceanDebugRegionId: OceanRegion["id"] =
+  oceanDebugRoute === "ocean3" || oceanDebugRoute === "purple-ocean" ? "amethyst" : "vermilion";
+const enableOceanDebug =
+  oceanDebugRoute === "ocean" || oceanDebugRoute === "ocean3" || oceanDebugRoute === "purple-ocean";
 const diamondDebugRoute = params.get("debug");
 const diamondDebugName =
   diamondDebugRoute === "diamond2" || diamondDebugRoute === "diamond3" ? diamondDebugRoute : "diamond";
@@ -376,7 +381,9 @@ const hudBadgeText = isDemo
               : enableMountainDebug
                 ? "mountain debug"
                 : enableOceanDebug
-                  ? "ocean debug"
+                  ? oceanDebugRegionId === "amethyst"
+                    ? "purple ocean debug"
+                    : "ocean debug"
                   : enableDiamondDebug
                     ? `${diamondDebugName} debug`
                     : enableParamotorDebug
@@ -499,7 +506,7 @@ const fieldNotesHud = createFieldNotesHud(fieldNotesHeading, fieldNotesBody, fie
 const mountainBirds = createMountainBirds(scene, heightAt);
 const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
-const oceanDebugSpawn = getOceanDebugSpawn();
+const oceanDebugSpawn = getOceanDebugSpawn(oceanDebugRegionId);
 const diamondDebugSpawn = getDiamondDebugSpawn(diamondDebugName);
 
 function getInitialPlayerLocalPosition(): THREE.Vector3 {
