@@ -135,6 +135,13 @@ declare global {
         nature: NaturePerfState;
         ocean: OceanPerfState;
       };
+      getTimeState: () => {
+        skyElapsed: number;
+        domeTimeMultiplier: number;
+        domeTargetTimeMultiplier: number;
+        sleepTimeMultiplier: number;
+        effectiveTimeMultiplier: number;
+      };
       getTerrainState: () => {
         centerX: number;
         centerZ: number;
@@ -269,6 +276,20 @@ declare global {
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
+      advanceGameTime: (
+        delta: number,
+        input?: Partial<SleepUpdateInput>
+      ) => {
+        sleep: SleepDebugState;
+        sky: SkyDebugState;
+        time: {
+          skyElapsed: number;
+          domeTimeMultiplier: number;
+          domeTargetTimeMultiplier: number;
+          sleepTimeMultiplier: number;
+          effectiveTimeMultiplier: number;
+        };
+      };
       getSkyState: () => SkyDebugState;
       setSkyElapsed: (elapsed: number) => SkyDebugState;
       setPlayer: (x: number, z: number) => void;
@@ -642,6 +663,8 @@ const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMo
 let skyElapsed = clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
+let sleepTimeMultiplier = 1;
+let effectiveTimeMultiplier = 1;
 
 terrain.update(player.localPosition.x, player.localPosition.z);
 oceans.update(player.localPosition.x, player.localPosition.z);
@@ -701,6 +724,13 @@ if (enableDebugTools) {
         ocean: oceans.getOceanPerfState(),
       };
     },
+    getTimeState: () => ({
+      skyElapsed,
+      domeTimeMultiplier,
+      domeTargetTimeMultiplier,
+      sleepTimeMultiplier,
+      effectiveTimeMultiplier,
+    }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
     getVisionState: () => ({ ...visionState }),
@@ -812,6 +842,28 @@ if (enableDebugTools) {
       });
       updateSleepHud(state);
       return state;
+    },
+    advanceGameTime: (delta: number, input: Partial<SleepUpdateInput> = {}) => {
+      const moving = input.moving ?? hasMovementInput();
+      const movementAmount = input.movementAmount ?? (moving ? 1 : 0);
+      const grounded = input.grounded ?? player.grounded;
+      const wantsSleep = input.wantsSleep ?? isSleepPressed();
+      const sleepState = sleep.update(delta, {
+        wantsSleep,
+        moving,
+        grounded,
+        movementAmount,
+        crouching: input.crouching ?? isCrouchPressed(),
+        airborne: input.airborne ?? !grounded,
+      });
+      updateSleepHud(sleepState);
+      const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, player.localPosition);
+      sleepTimeMultiplier = getSleepTimeMultiplier(sleepState);
+      effectiveTimeMultiplier = activeDomeTimeMultiplier * sleepTimeMultiplier;
+      skyElapsed += delta * effectiveTimeMultiplier;
+      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, skyElapsed));
+      dome.update(clock.elapsedTime, activeDomeTimeMultiplier);
+      return { sleep: sleepState, sky: sky.getDebugState(), time: window.__centauriDebug!.getTimeState() };
     },
     setPlayer: (x: number, z: number) => {
       if (telescopeMode.active) exitTelescopeMode(false);
@@ -1324,6 +1376,10 @@ function updateDomeTimeMultiplier(delta: number, focus: { x: number; z: number }
   return domeTimeMultiplier;
 }
 
+function getSleepTimeMultiplier(state: SleepDebugState): number {
+  return state.sleeping ? 8 : 1;
+}
+
 function effectiveHeightAt(x: number, z: number): number {
   const platformHeight = observatory.platformSurfaceHeightAt(x, z);
   if (platformHeight !== null) return platformHeight;
@@ -1730,7 +1786,9 @@ function animate(): void {
   mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, templeFocus);
-  skyElapsed += delta * activeDomeTimeMultiplier;
+  sleepTimeMultiplier = getSleepTimeMultiplier(sleepState);
+  effectiveTimeMultiplier = activeDomeTimeMultiplier * sleepTimeMultiplier;
+  skyElapsed += delta * effectiveTimeMultiplier;
   updateFieldNoteDiscovery(templeFocus, elapsed);
   dome.update(elapsed, activeDomeTimeMultiplier);
   sky.update(skyElapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));

@@ -13,6 +13,13 @@ type SleepState = {
   message: string;
 };
 
+type TimeState = {
+  skyElapsed: number;
+  domeTimeMultiplier: number;
+  sleepTimeMultiplier: number;
+  effectiveTimeMultiplier: number;
+};
+
 test("drains the sleep meter with accelerated debug timing", async ({ page }) => {
   await page.goto("/?test=sleep");
   await waitForSleepDebug(page);
@@ -88,6 +95,39 @@ test("refills only after the player holds still to sleep", async ({ page }) => {
 
   expect(refilled.amount).toBeGreaterThan(0.82);
   expect(refilled.blackout).toBe(false);
+});
+
+test("advances game time 8x while actively sleeping", async ({ page }) => {
+  await page.goto("/?test=sleep");
+  await waitForSleepDebug(page);
+  await setSkyElapsed(page, 20);
+  await setSleepAmount(page, 0.5);
+
+  const idle = await advanceGameTime(page, 0.1, { wantsSleep: false, moving: false, grounded: true });
+
+  expect(idle.sleep.sleeping).toBe(false);
+  expect(idle.time.domeTimeMultiplier).toBeCloseTo(1, 2);
+  expect(idle.time.sleepTimeMultiplier).toBe(1);
+  expect(idle.time.effectiveTimeMultiplier).toBeCloseTo(1, 2);
+  expect(idle.time.skyElapsed).toBeCloseTo(20.1, 4);
+
+  await setSkyElapsed(page, 40);
+  await setSleepAmount(page, 0.5);
+  const sleeping = await advanceGameTime(page, 0.1, { wantsSleep: true, moving: false, grounded: true });
+
+  expect(sleeping.sleep.sleeping).toBe(true);
+  expect(sleeping.time.domeTimeMultiplier).toBeCloseTo(1, 2);
+  expect(sleeping.time.sleepTimeMultiplier).toBe(8);
+  expect(sleeping.time.effectiveTimeMultiplier).toBeCloseTo(8, 2);
+  expect(sleeping.time.skyElapsed).toBeCloseTo(40.8, 4);
+
+  await setSkyElapsed(page, 60);
+  await setSleepAmount(page, 1);
+  const rested = await advanceGameTime(page, 0.1, { wantsSleep: true, moving: false, grounded: true });
+
+  expect(rested.sleep.sleeping).toBe(false);
+  expect(rested.time.sleepTimeMultiplier).toBe(1);
+  expect(rested.time.skyElapsed).toBeCloseTo(60.1, 4);
 });
 
 test("animates voluntary sleep eyelids closed and open", async ({ page }) => {
@@ -179,6 +219,36 @@ async function advanceSleep(
       const debug = window.__centauriDebug;
       if (!debug?.advanceSleep) throw new Error("Missing Centauri sleep advance debug hook");
       return debug.advanceSleep(deltaSeconds, updateInput);
+    },
+    { deltaSeconds: delta, updateInput: input }
+  );
+}
+
+async function setSkyElapsed(page: Page, elapsed: number): Promise<void> {
+  await page.evaluate((value) => {
+    const debug = window.__centauriDebug;
+    if (!debug?.setSkyElapsed) throw new Error("Missing Centauri sky elapsed debug hook");
+    debug.setSkyElapsed(value);
+  }, elapsed);
+}
+
+async function advanceGameTime(
+  page: Page,
+  delta: number,
+  input: Partial<{
+    wantsSleep: boolean;
+    moving: boolean;
+    grounded: boolean;
+    movementAmount: number;
+    crouching: boolean;
+    airborne: boolean;
+  }>
+): Promise<{ sleep: SleepState; time: TimeState }> {
+  return page.evaluate(
+    ({ deltaSeconds, updateInput }) => {
+      const debug = window.__centauriDebug;
+      if (!debug?.advanceGameTime) throw new Error("Missing Centauri game-time advance debug hook");
+      return debug.advanceGameTime(deltaSeconds, updateInput);
     },
     { deltaSeconds: delta, updateInput: input }
   );
