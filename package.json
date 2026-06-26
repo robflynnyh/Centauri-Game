@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "playwright test",
     "demo:screenshot": "playwright test tests/screenshot.spec.ts --project=chromium",
-    "demo:video": "playwright test tests/demo.spec.ts --project=chromium"
+    "demo:video": "playwright test tests/demo.spec.ts --project=chromium",
+    "readme:screenshot": "playwright test tests/readme-screenshot.spec.ts --project=chromium"
   },
   "dependencies": {
     "three": "^0.179.1"

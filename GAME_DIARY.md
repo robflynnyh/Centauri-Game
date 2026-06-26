@@ -205,3 +205,7 @@ Generalized the diamond biome into three deterministic planet regions with share
 ## 2026-06-25
 
 Made active sleep/rest advance the shared game-time sky clock at 8x speed while composing with the existing glass-dome time multiplier and leaving the sleep meter, eyelids, blackout, and controls intact.
+
+## 2026-06-26
+
+Added a stable README screenshot capture for the starter tree-biome landscape so repository visitors can see the current lo-fi exploration look without relying on transient PR demo artifacts.
