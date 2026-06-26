@@ -120,13 +120,13 @@ const floraReactionRadius = 12;
 const floraReactionFullRadius = 5.5;
 const seaweedReactionRadius = 16;
 const seaweedReactionFullRadius = 7;
-const bushReactionRadius = 14;
-const bushReactionFullRadius = 5.5;
+const bushReactionRadius = 4.2;
+const bushReactionFullRadius = 1.45;
 const seaweedCellSize = 48;
 const seaweedBiomeClearance = 38;
 const seaweedMaxFlatness = 0.72;
 const bushMaxFlatness = 0.86;
-const bushPocketCellSize = 144;
+const bushPocketCellSize = 118;
 const generatedNatureChunkSize = 96;
 const generatedNatureChunkRadius = 3;
 const generatedBiomeCellSize = generatedNatureChunkSize * 2;
@@ -135,7 +135,7 @@ const generatedComplexFadeRadius = 292;
 const starterBiomeCellX = 0;
 const starterBiomeCellZ = 0;
 const starterBiomeCenter = { x: 8, z: 18 };
-const starterBushPocket = { x: 118, z: 62, radius: 24 };
+const starterBushPocket = { x: 118, z: 62, radius: 46 };
 const baseTreesPerChunk = 3;
 const baseReactiveFloraPerChunk = 9;
 const baseSproutsPerChunk = 6;
@@ -152,7 +152,7 @@ export function populateNature(
 ): {
   floraGroup: THREE.Group;
   natureGroup: THREE.Group;
-  updateFloraReactivity: (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void;
+  updateFloraReactivity: (playerPosition: LocalPlanetPoint, delta: number, elapsed: number, bushMotionAmount?: number) => void;
   updateNatureChunks: (centerX: number, centerZ: number) => void;
   getNatureState: () => NatureState;
 } {
@@ -611,7 +611,7 @@ export function populateNature(
       for (let cellX = minBushPocketCellX; cellX <= maxBushPocketCellX; cellX += 1) {
         const starterPocket = cellX === 0 && cellZ === 0;
         const random = createChunkRandom(cellX + 911, cellZ - 607);
-        if (!starterPocket && random() > 0.36) continue;
+        if (!starterPocket && random() > 0.62) continue;
 
         const pocketX = starterPocket
           ? starterBushPocket.x
@@ -619,7 +619,7 @@ export function populateNature(
         const pocketZ = starterPocket
           ? starterBushPocket.z
           : cellZ * bushPocketCellSize + (0.26 + random() * 0.48) * bushPocketCellSize;
-        const radius = starterPocket ? starterBushPocket.radius : 16 + random() * 15;
+        const radius = starterPocket ? starterBushPocket.radius : 30 + random() * 28;
         if (isInMassiveMountainFootprint(pocketX, pocketZ, radius + 12)) continue;
         if (isGeneratedNatureExcluded({ x: pocketX, z: pocketZ }, landmarkZones)) continue;
         const pocketBiomeEdgeDistance = nearestBiomeEdgeDistanceAt(pocketX, pocketZ, visibleBiomePatches);
@@ -629,11 +629,11 @@ export function populateNature(
         const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius * 0.9, generatedComplexFadeRadius);
         if (detailAmount <= 0.03) continue;
 
-        const strength = starterPocket ? 1.2 : 0.7 + random() * 0.65;
+        const strength = starterPocket ? 1.35 : 0.85 + random() * 0.75;
         generatedBushPocketCount += 1;
         nearestBushPocketDistance = Math.min(nearestBushPocketDistance, distanceToFocus);
 
-        const clumpCount = Math.max(2, Math.round((starterPocket ? 8 : 3 + strength * 4 + random() * 3) * Math.max(0.45, detailAmount)));
+        const clumpCount = Math.max(4, Math.round((starterPocket ? 18 : 6 + strength * 7 + random() * 5) * Math.max(0.45, detailAmount)));
         for (let i = 0; i < clumpCount; i += 1) {
           const pocketAngle = random() * Math.PI * 2;
           const pocketDistance = Math.pow(random(), 0.58) * radius * (0.28 + random() * 0.56);
@@ -738,9 +738,10 @@ function createFloraReactivityUpdater(
   reactiveBushClumps: ReactiveBushClump[],
   setSeaweedFocusState: (distance: number, freezeAmount: number) => void,
   setBushFocusState: (distance: number, wobbleAmount: number) => void
-): (playerPosition: LocalPlanetPoint, delta: number, elapsed: number) => void {
-  return (playerPosition, delta, elapsed) => {
+): (playerPosition: LocalPlanetPoint, delta: number, elapsed: number, bushMotionAmount?: number) => void {
+  return (playerPosition, delta, elapsed, bushMotionAmount = 1) => {
     const fade = 1 - Math.exp(-delta * 9);
+    const bushMotion = THREE.MathUtils.clamp(bushMotionAmount, 0, 1);
     let nearestSeaweedDistance = Number.POSITIVE_INFINITY;
     let nearestSeaweedFreezeAmount = 0;
     let nearestBushDistance = Number.POSITIVE_INFINITY;
@@ -784,8 +785,10 @@ function createFloraReactivityUpdater(
 
     reactiveBushClumps.forEach((clump, clumpIndex) => {
       const distance = surfaceDistanceBetweenLocal(playerPosition, clump);
-      const target = 1 - THREE.MathUtils.smoothstep(distance, bushReactionFullRadius, bushReactionRadius);
-      clump.reaction = THREE.MathUtils.lerp(clump.reaction, target, fade);
+      const proximity = 1 - THREE.MathUtils.smoothstep(distance, bushReactionFullRadius, bushReactionRadius);
+      const target = proximity * bushMotion;
+      const bushFade = 1 - Math.exp(-delta * (target > clump.reaction ? 12 : 18));
+      clump.reaction = THREE.MathUtils.lerp(clump.reaction, target, bushFade);
       if (distance < nearestBushDistance) {
         nearestBushDistance = distance;
         nearestBushWobbleAmount = clump.reaction;
@@ -871,7 +874,38 @@ function makeBushFootprintPositions(count: number, random: () => number): THREE.
     positions.push(chosen);
   }
 
+  const bounds = footprintBounds(positions);
+  const spreadX = bounds.maxX - bounds.minX;
+  const spreadZ = bounds.maxZ - bounds.minZ;
+  const wider = Math.max(spreadX, spreadZ);
+  const narrower = Math.max(0.1, Math.min(spreadX, spreadZ));
+  if (wider / narrower > 2.6) {
+    const widenX = spreadX < spreadZ;
+    positions.forEach((position, index) => {
+      const offset = (index % 2 === 0 ? -1 : 1) * (wider * 0.18 + random() * 0.22);
+      if (widenX) position.x += offset;
+      else position.z += offset;
+    });
+  }
+
   return positions;
+}
+
+function footprintBounds(positions: THREE.Vector3[]): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  return positions.reduce(
+    (bounds, position) => ({
+      minX: Math.min(bounds.minX, position.x),
+      maxX: Math.max(bounds.maxX, position.x),
+      minZ: Math.min(bounds.minZ, position.z),
+      maxZ: Math.max(bounds.maxZ, position.z),
+    }),
+    {
+      minX: Number.POSITIVE_INFINITY,
+      maxX: Number.NEGATIVE_INFINITY,
+      minZ: Number.POSITIVE_INFINITY,
+      maxZ: Number.NEGATIVE_INFINITY,
+    }
+  );
 }
 
 function isGeneratedNatureExcluded(point: LocalPlanetPoint, landmarkZones: LandmarkZone[]): boolean {

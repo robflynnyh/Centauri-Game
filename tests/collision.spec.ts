@@ -350,16 +350,16 @@ test("keeps chunked spherical terrain under the player beyond the starting field
       hasChunkedSurface: terrain.chunkCount > 1,
       generatedNatureAwayFromStart:
         nature.generatedObjects > 380 &&
-        nature.generatedObjects < 620 &&
+        nature.generatedObjects < 780 &&
         nature.generatedReactiveFlora > 160 &&
         nature.generatedObstacles > 90 &&
         nature.generatedBiomePatches >= 6 &&
         movedNature.generatedObjects > 380 &&
-        movedNature.generatedObjects < 620 &&
+        movedNature.generatedObjects < 780 &&
         debug.obstacles.some((obstacle) => obstacle.dynamic),
       generatedSpawnNature:
         spawnNature.generatedObjects > 380 &&
-        spawnNature.generatedObjects < 620 &&
+        spawnNature.generatedObjects < 780 &&
         spawnNature.generatedReactiveFlora > 160 &&
         spawnNature.generatedObstacles > 90 &&
         spawnNature.generatedBiomePatches >= 6,
@@ -453,9 +453,10 @@ test("generates passable reactive bush clumps that wobble near the player", asyn
     return debug.getNatureState();
   });
 
-  expect(spawnState.generatedBushClumps).toBeGreaterThan(10);
+  expect(spawnState.generatedBushClumps).toBeGreaterThan(20);
   expect(spawnState.generatedBushPockets).toBeGreaterThan(0);
   expect(spawnState.nearestBushPocketDistance).toBeLessThan(8);
+  expect(spawnState.bushSamples.some((sample) => sample.pocketRadius >= 40)).toBe(true);
   expect(spawnState.generatedBushForms).toBeGreaterThan(spawnState.generatedBushClumps * 3);
   expect(spawnState.generatedBushLumps).toBeGreaterThan(spawnState.generatedBushForms * 3);
   expect(spawnState.bushSamples.length).toBeGreaterThan(0);
@@ -489,30 +490,41 @@ test("generates passable reactive bush clumps that wobble near the player", asyn
   expect(passable.centerClear).toBe(true);
   expect(passable.crossedTowardCenter).toBe(true);
 
-  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), bush);
+  await page.evaluate((sample) => {
+    window.__centauriDebug?.setBushMotionOverride(0);
+    window.__centauriDebug?.setPlayer(sample.x + 7, sample.z);
+  }, bush);
   await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getNatureState();
-    return Boolean(state && state.nearestBushDistance > 14 && state.nearestBushWobbleAmount < 0.08);
+    return Boolean(state && state.nearestBushWobbleAmount < 0.08);
   });
-  const farBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+  const stoppedPocketState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
 
   await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 1.2, sample.z + 1.1), bush);
   await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getNatureState();
-    return Boolean(state && state.nearestBushDistance < 5.5 && state.nearestBushWobbleAmount > 0.72);
+    return Boolean(state && state.nearestBushDistance < 2.4 && state.nearestBushWobbleAmount < 0.08);
+  });
+  const stoppedNearBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
+
+  await page.evaluate(() => window.__centauriDebug?.setBushMotionOverride(1));
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getNatureState();
+    return Boolean(state && state.nearestBushDistance < 2.4 && state.nearestBushWobbleAmount > 0.72);
   });
   const nearBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
 
-  await page.evaluate((sample) => window.__centauriDebug?.setPlayer(sample.x + 22, sample.z), bush);
+  await page.evaluate(() => window.__centauriDebug?.setBushMotionOverride(0));
   await page.waitForFunction(() => {
     const state = window.__centauriDebug?.getNatureState();
-    return Boolean(state && state.nearestBushDistance > 14 && state.nearestBushWobbleAmount < 0.16);
+    return Boolean(state && state.nearestBushDistance < 2.4 && state.nearestBushWobbleAmount < 0.16);
   });
   const settledBushState = await page.evaluate(() => window.__centauriDebug?.getNatureState());
 
-  expect(farBushState?.nearestBushDistance).toBeGreaterThan(14);
-  expect(farBushState?.nearestBushWobbleAmount).toBeLessThan(0.08);
-  expect(nearBushState?.nearestBushDistance).toBeLessThan(5.5);
+  expect(stoppedPocketState?.nearestBushWobbleAmount).toBeLessThan(0.08);
+  expect(stoppedNearBushState?.nearestBushDistance).toBeLessThan(2.4);
+  expect(stoppedNearBushState?.nearestBushWobbleAmount).toBeLessThan(0.08);
+  expect(nearBushState?.nearestBushDistance).toBeLessThan(2.4);
   expect(nearBushState?.nearestBushWobbleAmount).toBeGreaterThan(0.72);
   expect(settledBushState?.nearestBushWobbleAmount).toBeLessThan(0.16);
 });

@@ -108,6 +108,7 @@ declare global {
           nearestBiomeEdgeDistance: number;
         }[];
       };
+      setBushMotionOverride: (amount: number | null) => void;
       getVisionState: () => {
         isolationAmount: number;
         targetIsolationAmount: number;
@@ -380,6 +381,7 @@ const visionState = {
   nearestBiomePatchDistance: 0,
 };
 let isolationOverrideAmount: number | null = null;
+let bushMotionOverrideAmount: number | null = null;
 const prDemo = createPrDemoController(camera, heightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
@@ -420,6 +422,9 @@ if (enableDebugTools) {
     }),
     getTerrainState: terrain.getTerrainState,
     getNatureState,
+    setBushMotionOverride: (amount: number | null) => {
+      bushMotionOverrideAmount = amount === null || !Number.isFinite(amount) ? null : THREE.MathUtils.clamp(amount, 0, 1);
+    },
     getVisionState: () => ({ ...visionState }),
     setIsolationOverride: (amount: number | null) => {
       if (amount === null || !Number.isFinite(amount)) {
@@ -834,7 +839,8 @@ function animate(): void {
   terrain.update(floraFocus.x, floraFocus.z);
   oceans.update(floraFocus.x, floraFocus.z);
   updateNatureChunks(floraFocus.x, floraFocus.z);
-  updateFloraReactivity(floraFocus, delta, elapsed);
+  const bushMotionAmount = bushMotionOverrideAmount ?? (isDemo ? 1 : movementAmount);
+  updateFloraReactivity(floraFocus, delta, elapsed, bushMotionAmount);
   updateVisionState(delta);
   mist.update(elapsed, floraFocus);
   if (!isDemo) updateUnderwaterCue();
