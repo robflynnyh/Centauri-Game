@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-26
+
+Added a deterministic floating-mountain archipelago region with asymmetric hovering rock islands, flat-colour foliage, dangling roots, mistfall strands, a `?debug=floating-mountains` airborne paramotor review route, debug state, reserved-zone avoidance, and PR-demo visibility.
+
 ## 2026-06-25
 
 Added a deterministic hillside paramotor near the starting area, with a low-poly frame, canopy, propeller, mount prompt, gas/throttle/altitude HUD, forgiving spherical-planet flight, landing back to walking, `?debug=paramotor`, and PR-demo visibility.

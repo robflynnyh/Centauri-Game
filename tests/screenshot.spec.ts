@@ -8,12 +8,78 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?debug=paramotor&test=collision");
+  await page.goto("/?debug=floating-mountains&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("paramotor debug")).toBeVisible();
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
   await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+});
+
+test("floating mountains debug starts airborne near a framed archipelago", async ({ page }) => {
+  await page.goto("/?debug=floating-mountains&test=collision");
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getFloatingMountainsState));
+  await page.waitForTimeout(700);
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri floating mountains debug hook");
+    const floating = debug.getFloatingMountainsState();
+    const player = debug.getPlayer();
+    const paramotor = debug.getParamotorState();
+    return {
+      floating,
+      player,
+      paramotor,
+      centerBlocked: debug.isBlockedAt(floating.center.x, floating.center.z),
+      centerSurfaceHeight: debug.surfaceHeightAt(floating.center.x, floating.center.z),
+      uniqueIslandIds: new Set(floating.islands.map((island) => island.id)).size,
+      heroCount: floating.islands.filter((island) => island.hero).length,
+    };
+  });
+
+  expect(result.floating.islandCount).toBe(10);
+  expect(result.uniqueIslandIds).toBe(10);
+  expect(result.heroCount).toBeGreaterThanOrEqual(2);
+  expect(result.floating.altitudeRange.min).toBeGreaterThanOrEqual(35);
+  expect(result.floating.altitudeRange.max).toBeLessThanOrEqual(120);
+  expect(result.floating.altitudeRange.max - result.floating.altitudeRange.min).toBeGreaterThan(55);
+  expect(result.floating.bottomClearanceRange.min).toBeGreaterThan(10);
+  expect(result.floating.nearestDistanceToPlayer).toBeLessThan(260);
+  expect(result.floating.debugSpawnHasLineOfSight).toBe(true);
+  expect(result.floating.debugViewFramed).toBe(true);
+  expect(result.floating.debugView.angularOffset).toBeLessThan(0.16);
+  expect(result.floating.avoidance.distanceFromStart).toBeGreaterThan(720);
+  expect(result.floating.avoidance.nearestOceanShoreDistance).toBeGreaterThan(80);
+  expect(result.floating.avoidance.nearestDiamondBiomeClearance).toBeGreaterThan(240);
+  expect(result.floating.avoidance.nearestReservedZoneClearance).toBeGreaterThan(40);
+  expect(result.floating.reservedZones).toHaveLength(1);
+  expect(result.centerBlocked).toBe(false);
+  expect(Number.isFinite(result.centerSurfaceHeight)).toBe(true);
+  expect(result.paramotor.mounted).toBe(true);
+  expect(result.paramotor.airborne).toBe(true);
+  expect(result.paramotor.altitudeAboveGround).toBeGreaterThan(70);
+  expect(Math.hypot(result.player.x - result.floating.debugSpawn.x, result.player.z - result.floating.debugSpawn.z)).toBeLessThan(8);
+});
+
+test("floating mountains debug renders a nonblank visible archipelago", async ({ page }, testInfo) => {
+  await page.goto("/?debug=floating-mountains&test=collision");
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getFloatingMountainsState));
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+  await page.waitForTimeout(1_000);
+
+  const signal = await getCanvasSignal(page, testInfo.outputPath("floating-mountains-debug.png"));
+  const state = await page.evaluate(() => window.__centauriDebug?.getFloatingMountainsState());
+
+  expect(signal.width).toBe(1280);
+  expect(signal.height).toBe(720);
+  expect(signal.litPixels).toBeGreaterThan(2_000);
+  expect(signal.meanBrightness).toBeGreaterThan(18);
+  expect(signal.variance).toBeGreaterThan(40);
+  expect(state?.debugViewFramed).toBe(true);
+  expect(state?.debugView.targetDistance).toBeGreaterThan(120);
 });
 
 test("ocean debug exposes two large irregular deep oceans", async ({ page }) => {
