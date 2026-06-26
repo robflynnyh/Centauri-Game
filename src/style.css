@@ -97,6 +97,57 @@ canvas {
   transition: width 0.22s linear;
 }
 
+.hud__flight {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  width: 188px;
+  padding: 8px 10px 9px;
+  border: 1px solid rgba(244, 239, 227, 0.2);
+  background: rgba(7, 9, 20, 0.38);
+  box-shadow: 0 0 18px rgba(70, 225, 196, 0.12);
+}
+
+.hud__flight-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: rgba(244, 239, 227, 0.72);
+  text-transform: uppercase;
+}
+
+.hud__flight-track {
+  width: 100%;
+  height: 7px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(216, 251, 255, 0.24);
+  background: rgba(3, 24, 42, 0.62);
+}
+
+.hud__flight-fill {
+  width: 0;
+  height: 100%;
+  transition: width 0.16s linear;
+}
+
+.hud__flight-fill--gas {
+  background: linear-gradient(90deg, #ff7a84 0%, #ffb15e 58%, #f1ec72 100%);
+  box-shadow: 0 0 10px rgba(255, 177, 94, 0.34);
+}
+
+.hud__flight-fill--throttle {
+  background: linear-gradient(90deg, #46e1c4 0%, #7d62ff 100%);
+  box-shadow: 0 0 10px rgba(70, 225, 196, 0.34);
+}
+
+.hud__flight-altitude {
+  font-size: 11px;
+  color: rgba(216, 251, 255, 0.78);
+  text-transform: uppercase;
+}
+
 .hud__badge {
   position: fixed;
   right: 18px;
@@ -170,6 +221,26 @@ canvas {
 .telescope-scope__cross--horizontal {
   width: min(30vw, 30vh);
   height: 2px;
+}
+
+.hud__prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 58px;
+  transform: translateX(-50%);
+  min-width: 0;
+  max-width: min(280px, calc(100vw - 36px));
+  padding: 8px 11px;
+  border: 1px solid rgba(244, 239, 227, 0.2);
+  background: rgba(7, 9, 20, 0.42);
+  color: rgba(244, 239, 227, 0.72);
+  font-size: 11px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.hud__prompt:empty {
+  display: none;
 }
 
 .eyelids {
@@ -265,6 +336,12 @@ canvas {
     width: min(188px, calc(100vw - 24px));
   }
 
+  .hud__flight {
+    top: 12px;
+    right: 12px;
+    width: min(172px, calc(100vw - 24px));
+  }
+
   .hud__badge {
     right: 12px;
     bottom: 12px;
@@ -273,5 +350,10 @@ canvas {
   .hud__look {
     left: 12px;
     bottom: 12px;
+  }
+
+  .hud__prompt {
+    bottom: 54px;
+    max-width: calc(100vw - 24px);
   }
 }

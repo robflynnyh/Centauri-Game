@@ -20,6 +20,10 @@ function setDemoFov(camera: THREE.PerspectiveCamera, fov: number): void {
   camera.updateProjectionMatrix();
 }
 
+function headingFromYaw(yaw: number): LocalPlanetPoint {
+  return { x: -Math.sin(yaw), z: -Math.cos(yaw) };
+}
+
 function showSkyRegion(
   camera: THREE.Camera,
   heightAt: HeightSampler,
@@ -133,7 +137,8 @@ export function createPrDemoController(
       pitch: number;
     };
   },
-  mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] }
+  mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] },
+  paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number }
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -280,18 +285,30 @@ export function createPrDemoController(
       }
 
       if (shiftedElapsed < 18.8) {
-        const focus = { x: 12.9, z: -73.4 };
-        const x = 23 + Math.sin(elapsed * 0.62) * 1.1;
-        const z = -62 + Math.cos(elapsed * 0.54) * 1.1;
-        onWalk?.(new THREE.Vector3(focus.x + 70, 0, focus.z + 70), 0);
+        const device = paramotor ?? { position: { x: 74, z: 34 }, approachPosition: { x: 66, z: 42 }, takeoffYaw: -0.4 };
+        const beat = shiftedElapsed - 17.6;
+        const heading = headingFromYaw(device.takeoffYaw);
+        const side = { x: heading.z, z: -heading.x };
+        const flightDistance = 12 + beat * 36;
+        const x =
+          beat < 0.44
+            ? device.approachPosition.x + side.x * Math.sin(elapsed * 0.9) * 0.6
+            : device.position.x + heading.x * flightDistance + side.x * Math.sin(elapsed * 0.7) * 2.2;
+        const z =
+          beat < 0.44
+            ? device.approachPosition.z + side.z * Math.sin(elapsed * 0.9) * 0.6
+            : device.position.z + heading.z * flightDistance + side.z * Math.sin(elapsed * 0.7) * 2.2;
+        const targetX = device.position.x + heading.x * (beat < 0.44 ? 0 : 24);
+        const targetZ = device.position.z + heading.z * (beat < 0.44 ? 0 : 24);
+        onWalk?.(new THREE.Vector3(x, 0, z), 0);
         lookAtPlanetPoint(
           camera,
           x,
           z,
-          heightAt(x, z) + 7.8,
-          focus.x,
-          focus.z,
-          heightAt(focus.x, focus.z) + 3.5
+          heightAt(x, z) + (beat < 0.44 ? 4.4 : 8 + beat * 12),
+          targetX,
+          targetZ,
+          heightAt(targetX, targetZ) + (beat < 0.44 ? 3.6 : 10)
         );
         return;
       }

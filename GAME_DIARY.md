@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-25
+
+Added a deterministic hillside paramotor near the starting area, with a low-poly frame, canopy, propeller, mount prompt, gas/throttle/altitude HUD, forgiving spherical-planet flight, landing back to walking, `?debug=paramotor`, and PR-demo visibility.
+
 ## 2026-06-23
 
 Adjusted the observatory follow-up so the raised platform has a walkable height surface, the telescope marker is a single simple shard glyph, and unattached upright platform blocks are removed.

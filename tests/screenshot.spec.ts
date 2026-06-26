@@ -8,9 +8,9 @@ test.use({
 test.describe.configure({ mode: "serial" });
 
 test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
-  await page.goto("/?debug=diamond&test=collision");
+  await page.goto("/?debug=paramotor&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("diamond debug")).toBeVisible();
+  await expect(page.getByText("paramotor debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
   await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
