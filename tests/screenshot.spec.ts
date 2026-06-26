@@ -7,7 +7,7 @@ test.use({
 
 test.describe.configure({ mode: "serial" });
 
-test("captures a deterministic Centauri PR screenshot", async ({ page }) => {
+test("captures a deterministic Centauri PR screenshot with floating mountains", async ({ page }) => {
   await page.goto("/?debug=floating-mountains&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
   await expect(page.getByText("floating mountains debug")).toBeVisible();
@@ -323,6 +323,28 @@ test("PR demo traverses day, twilight, and night sky regions", async ({ page }) 
   expect(twilightEdge?.twilightAmount).toBeGreaterThan(0.45);
   expect(nightSide?.dayAmount).toBeLessThan(0.25);
   expect((daySide?.dayAmount ?? 0) - (nightSide?.dayAmount ?? 0)).toBeGreaterThan(0.6);
+});
+
+test("PR demo exposes patterned star clusters only in night sky", async ({ page }) => {
+  await page.goto("/?demo=pr&test=collision");
+  await expect(page.getByText("PR demo mode")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const daySide = await page.evaluate(() => window.__centauriDebug?.setSkyElapsed(2));
+  const nightSide = await page.evaluate(() => window.__centauriDebug?.setSkyElapsed(10));
+
+  expect(daySide?.dayAmount).toBeGreaterThan(0.75);
+  expect(daySide?.patternedStarClusters).toBeGreaterThanOrEqual(30);
+  expect(daySide?.patternedStarCloudBands).toBeGreaterThanOrEqual(12);
+  expect(daySide?.patternedStarGlints).toBeGreaterThanOrEqual(55);
+  expect(daySide?.patternedStars).toBeGreaterThanOrEqual(520);
+  expect(daySide?.patternedStarNorthernFeatures).toBeGreaterThanOrEqual(220);
+  expect(daySide?.patternedStarSouthernFeatures).toBeGreaterThanOrEqual(220);
+  expect(daySide?.patternedStarMinLatitude).toBeLessThan(-0.8);
+  expect(daySide?.patternedStarMaxLatitude).toBeGreaterThan(0.8);
+  expect(daySide?.starVisibility).toBeLessThan(0.22);
+  expect(nightSide?.dayAmount).toBeLessThan(0.25);
+  expect(nightSide?.starVisibility).toBeGreaterThan(0.55);
 });
 
 test("starts near a visible beetle in beetle debug mode", async ({ page }) => {

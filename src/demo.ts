@@ -70,10 +70,10 @@ function showSkyRegionAtLongitude(
     camera,
     x,
     z,
-    heightAt(x, z) + 36,
+    heightAt(x, z) + 18,
     targetX,
     targetZ,
-    heightAt(targetX, targetZ) + 16
+    heightAt(targetX, targetZ) + 190
   );
 }
 
@@ -294,7 +294,7 @@ export function createPrDemoController(
       }
 
       if (shiftedElapsed < 16.0) {
-        showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, Math.PI, 0.16, -0.18);
+        showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, Math.PI, 0.16, 0.72);
         return;
       }
 
