@@ -4,7 +4,11 @@
 
 Added a massive three-dish radio telescope array on a flat reserved site, with separate dish directions, precise base collision, `?debug=radio`/`?debug=radio-telescope`, PR-demo visibility, and a collection-order field note.
 
+Updated the floating-mountain archipelago so island tops are elevated landing surfaces and the tapered bodies block airborne paramotor flight without adding invisible blockers on the ground below.
+
 ## 2026-06-26
+
+Added a deterministic floating-mountain archipelago region with asymmetric hovering rock islands, flat-colour foliage, dangling roots, mistfall strands, a `?debug=floating-mountains` airborne paramotor review route, debug state, reserved-zone avoidance, and PR-demo visibility.
 
 Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/idle stamina recovery, and a running fatigue multiplier so sleep drains faster during sustained exertion.
 

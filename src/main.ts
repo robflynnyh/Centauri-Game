@@ -12,6 +12,7 @@ import {
   type DiamondBiomeState,
 } from "./diamond-biome";
 import { createFieldNotesHud, createFieldNotesState, type FieldNoteId, type FieldNotesSnapshot } from "./field-notes";
+import { createFloatingMountainsRegion, type FloatingMountainsDebugState } from "./floating-mountains";
 import { createFootstepTrail } from "./footsteps";
 import {
   createGlassDomeLandmark,
@@ -329,6 +330,8 @@ declare global {
         steepFaceSamples: { x: number; z: number; height: number; slope: number; slipperiness: number; downhillX: number; downhillZ: number }[];
         reservedZones: { x: number; z: number; radius: number }[];
       };
+      getFloatingMountainsState: () => FloatingMountainsDebugState;
+      floatingMountainBodyBlocksAt: (x: number, z: number, altitude: number, clearance?: number) => boolean;
       getOceanState: () => OceanState;
       getOceanStateAt: (x: number, z: number) => OceanState;
       getOceanDebugState: () => OceanDebugState;
@@ -384,6 +387,7 @@ const enableStatueDebug = params.get("debug") === "statue";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
+const enableFloatingMountainsDebug = params.get("debug") === "floating-mountains" || params.get("debug") === "hallelujah";
 const oceanDebugRoute = params.get("debug");
 const oceanDebugRegionId: OceanRegion["id"] =
   oceanDebugRoute === "ocean3" || oceanDebugRoute === "purple-ocean" ? "amethyst" : "vermilion";
@@ -413,6 +417,7 @@ const enableDebugTools =
   isBeetleDebug ||
   isBirdDebug ||
   enableMountainDebug ||
+  enableFloatingMountainsDebug ||
   enableOceanDebug ||
   enableDiamondDebug ||
   enableParamotorDebug ||
@@ -433,41 +438,26 @@ const normalCameraFov = 68;
 const telescopeCameraFov = 26;
 const maxGroundedStepDistance = 0.9;
 const maxGroundedStepRise = 0.82;
-const hudBadgeText = isDemo
-  ? "PR demo mode"
-  : enableTempleDebug
-    ? "temple debug"
-  : enableDomeDebug
-      ? "dome debug"
-      : enableObservatoryDebug
-        ? "observatory debug"
-        : enableTelescopeDebug
-          ? "telescope debug"
-    : enableRadioTelescopeDebug
-            ? "radio telescope debug"
-            : enableStatueDebug
-              ? "statue debug"
-            : isBeetleDebug
-              ? "beetle debug"
-          : isBirdDebug
-                ? "birds debug"
-                : enableMountainDebug
-                  ? "mountain debug"
-                  : enableOceanDebug
-                    ? oceanDebugRegionId === "amethyst"
-                      ? "purple ocean debug"
-                      : "ocean debug"
-                    : enableDiamondDebug
-                    ? `${diamondDebugName} debug`
-                    : enableParamotorDebug
-                      ? "paramotor debug"
-                      : enableSleepDebug
-                        ? "sleep debug"
-                        : enableIsolationDebug
-                          ? "isolation debug"
-                          : enablePerfDebug
-                            ? "perf debug"
-                            : "exploration mode";
+const hudBadgeText = (() => {
+  if (isDemo) return "PR demo mode";
+  if (enableTempleDebug) return "temple debug";
+  if (enableDomeDebug) return "dome debug";
+  if (enableObservatoryDebug) return "observatory debug";
+  if (enableTelescopeDebug) return "telescope debug";
+  if (enableRadioTelescopeDebug) return "radio telescope debug";
+  if (enableStatueDebug) return "statue debug";
+  if (isBeetleDebug) return "beetle debug";
+  if (isBirdDebug) return "birds debug";
+  if (enableMountainDebug) return "mountain debug";
+  if (enableFloatingMountainsDebug) return "floating mountains debug";
+  if (enableOceanDebug) return oceanDebugRegionId === "amethyst" ? "purple ocean debug" : "ocean debug";
+  if (enableDiamondDebug) return `${diamondDebugName} debug`;
+  if (enableParamotorDebug) return "paramotor debug";
+  if (enableSleepDebug) return "sleep debug";
+  if (enableIsolationDebug) return "isolation debug";
+  if (enablePerfDebug) return "perf debug";
+  return "exploration mode";
+})();
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -578,6 +568,14 @@ const talkingStatue = createTalkingStatueLandmark(scene, heightAt, [
   radioTelescopeArray.reservedZone,
   ...massiveMountainReservedZones,
 ]);
+const floatingMountains = createFloatingMountainsRegion(scene, heightAt, [
+  temple.reservedZone,
+  dome.reservedZone,
+  observatory.reservedZone,
+  radioTelescopeArray.reservedZone,
+  talkingStatue.reservedZone,
+  ...massiveMountainReservedZones,
+]);
 const domeFloorColour = new THREE.Color(0x273c78);
 const domeGroundingBandWidth = 16;
 const domeGroundingFlatShoulder = 0.25;
@@ -594,6 +592,7 @@ const paramotor = createParamotorDevice(scene, effectiveHeightAt, [
   observatory.reservedZone,
   radioTelescopeArray.reservedZone,
   talkingStatue.reservedZone,
+  floatingMountains.reservedZone,
   ...massiveMountainReservedZones,
 ]);
 const fieldNotes = createFieldNotesState();
@@ -616,6 +615,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableObservatoryDebug) return new THREE.Vector3(observatory.approachPosition.x, 0, observatory.approachPosition.z);
   if (enableRadioTelescopeDebug) return new THREE.Vector3(radioTelescopeArray.approachPosition.x, 0, radioTelescopeArray.approachPosition.z);
   if (enableStatueDebug) return new THREE.Vector3(talkingStatue.approachPosition.x, 0, talkingStatue.approachPosition.z);
+  if (enableFloatingMountainsDebug) return new THREE.Vector3(floatingMountains.debugSpawn.x, 0, floatingMountains.debugSpawn.z);
   if (enableParamotorDebug) return new THREE.Vector3(paramotor.approachPosition.x, 0, paramotor.approachPosition.z);
   if (isBeetleDebug) return new THREE.Vector3(4.8, 0, 14.2);
   if (isBirdDebug) return new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8);
@@ -648,6 +648,7 @@ function getInitialPlayerYaw(): number {
       -(paramotor.position.z - initialPlayerLocalPosition.z)
     );
   }
+  if (enableFloatingMountainsDebug) return floatingMountains.debugSpawn.yaw;
   if (isBirdDebug) return Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z);
   if (enableDomeDebug) return Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z);
   if (enableMountainDebug) {
@@ -665,6 +666,7 @@ function getInitialPlayerPitch(): number {
   if (enableRadioTelescopeDebug) return -0.12;
   if (enableStatueDebug) return -0.04;
   if (enableParamotorDebug) return -0.2;
+  if (enableFloatingMountainsDebug) return floatingMountains.debugSpawn.pitch;
   if (isBirdDebug) return 0.18;
   if (enableMountainDebug) return 0.08;
   if (enableOceanDebug) return -0.05;
@@ -704,6 +706,19 @@ const paramotorSeatedHeight = 1.34;
 const paramotorGroundClearance = 0.08;
 const paramotorMaxSpeed = 18.5;
 const paramotorAirborneCollisionClearance = 2.4;
+const paramotorFloatingBodyClearance = 1.15;
+if (enableFloatingMountainsDebug) {
+  setParamotorFlightForTest({
+    x: floatingMountains.debugSpawn.x,
+    z: floatingMountains.debugSpawn.z,
+    yaw: floatingMountains.debugSpawn.yaw,
+    pitch: floatingMountains.debugSpawn.pitch,
+    speed: 2.2,
+    throttle: 0.12,
+    altitudeAboveGround: floatingMountains.debugSpawn.altitudeAboveGround,
+    gas: 1,
+  });
+}
 let mouseLookActive = false;
 const telescopeMode = {
   active: false,
@@ -763,6 +778,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerf
     observatory.reservedZone,
     radioTelescopeArray.reservedZone,
     talkingStatue.reservedZone,
+    floatingMountains.reservedZone,
     paramotor.reservedZone,
     ...massiveMountainReservedZones,
   ]
@@ -792,7 +808,7 @@ let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome, observatory, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor);
+}, temple, dome, observatory, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor, floatingMountains.getDebugState());
 let skyElapsed = enableRadioTelescopeDebug ? 36 : clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
@@ -955,6 +971,11 @@ if (enableDebugTools) {
     },
     getBirdState: mountainBirds.getState,
     getMassiveMountainState: getMassiveMountainDebugState,
+    getFloatingMountainsState: () => floatingMountains.getDebugState(player.localPosition, camera),
+    floatingMountainBodyBlocksAt: (x: number, z: number, altitude: number, clearance = 0.55) => {
+      const normalized = normalizePlanetCoords(x, z);
+      return floatingMountains.bodyBlocksAt(normalized.x, normalized.z, altitude, clearance);
+    },
     getOceanState: () => oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt),
     getOceanStateAt: (x: number, z: number) => oceanStateAt(x, z, heightAt),
     getOceanDebugState: () => getOceanDebugState(heightAt),
@@ -1273,6 +1294,7 @@ const movementDelta = new THREE.Vector3();
 const movementBeforeLocal = new THREE.Vector3();
 const paramotorHeading = new THREE.Vector3();
 const paramotorMove = new THREE.Vector3();
+const paramotorCandidate = new THREE.Vector3();
 
 function isParamotorThrottlePressed(): boolean {
   return keys.has("KeyW") || keys.has("Space");
@@ -1447,8 +1469,26 @@ function updateParamotorFlight(delta: number): MovementFrameState {
     paramotorHeading.set(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
     paramotorMove.copy(paramotorHeading).multiplyScalar(paramotorFlight.speed * delta);
     if (paramotorFlight.airborne && player.verticalOffset > paramotorAirborneCollisionClearance) {
-      player.localPosition.add(paramotorMove);
-      normalizeLocalVector(player.localPosition);
+      paramotorCandidate.copy(player.localPosition).add(paramotorMove);
+      normalizeLocalVector(paramotorCandidate);
+      const candidateFloatingSurfaceHeight = floatingMountains.surfaceHeightAt(paramotorCandidate.x, paramotorCandidate.z);
+      const approachingFloatingTopFromBelow =
+        candidateFloatingSurfaceHeight !== null &&
+        paramotorFlight.absoluteAltitude < candidateFloatingSurfaceHeight + player.cameraHeight + paramotorGroundClearance;
+      if (
+        approachingFloatingTopFromBelow ||
+        floatingMountains.bodyBlocksAt(
+          paramotorCandidate.x,
+          paramotorCandidate.z,
+          paramotorFlight.absoluteAltitude,
+          paramotorFloatingBodyClearance
+        )
+      ) {
+        paramotorFlight.speed = Math.min(paramotorFlight.speed * 0.34, 2.15);
+        paramotorFlight.verticalSpeed = Math.max(paramotorFlight.verticalSpeed, 0.62);
+      } else {
+        player.localPosition.copy(paramotorCandidate);
+      }
     } else {
       resolvePlayerMove(player.localPosition, paramotorMove);
     }
@@ -1549,7 +1589,14 @@ function getSleepTimeMultiplier(state: SleepDebugState): number {
   return state.sleeping ? 8 : 1;
 }
 
+function applyFloatingMountainsDebugAtmosphere(): void {
+  if (!enableFloatingMountainsDebug || !(scene.fog instanceof THREE.FogExp2)) return;
+  scene.fog.density = Math.min(scene.fog.density, 0.0085);
+}
+
 function effectiveHeightAt(x: number, z: number): number {
+  const floatingSurfaceHeight = floatingMountains.surfaceHeightAt(x, z);
+  if (floatingSurfaceHeight !== null) return floatingSurfaceHeight;
   const platformHeight = observatory.platformSurfaceHeightAt(x, z);
   if (platformHeight !== null) return platformHeight;
   const baseHeight = heightAt(x, z);
@@ -1630,7 +1677,12 @@ function resolvePlayerMoveStep(position: THREE.Vector3, movement: THREE.Vector3)
 
 function canMoveAcrossTerrainStep(from: THREE.Vector3, to: THREE.Vector3): boolean {
   if (collisionWorld.isBlockedAt(to.x, to.z)) return false;
-  const rise = effectiveHeightAt(to.x, to.z) - effectiveHeightAt(from.x, from.z);
+  const fromFloatingSurfaceHeight = floatingMountains.surfaceHeightAt(from.x, from.z);
+  const toFloatingSurfaceHeight = floatingMountains.surfaceHeightAt(to.x, to.z);
+  const fromHeight = fromFloatingSurfaceHeight ?? effectiveHeightAt(from.x, from.z);
+  const toHeight = toFloatingSurfaceHeight ?? effectiveHeightAt(to.x, to.z);
+  const rise = toHeight - fromHeight;
+  if (fromFloatingSurfaceHeight !== null && toFloatingSurfaceHeight === null && rise < -maxGroundedStepRise) return false;
   if (rise <= maxGroundedStepRise) return true;
 
   const distance = Math.max(Math.hypot(to.x - from.x, to.z - from.z), 0.001);
@@ -2019,6 +2071,18 @@ function animate(): void {
     );
   }
 
+  if (enableFloatingMountainsDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      player.localPosition.x,
+      player.localPosition.z,
+      playerSurfaceAltitude(),
+      floatingMountains.debugTarget.x,
+      floatingMountains.debugTarget.z,
+      floatingMountains.debugTarget.altitude
+    );
+  }
+
   const movementAmount = isDemo
     ? 0
     : telescopeMode.active
@@ -2054,6 +2118,7 @@ function animate(): void {
   flyingBeetles.update(elapsed, floraFocus);
   talkingStatue.update(elapsed, floraFocus);
   mountainBirds.update(elapsed, floraFocus);
+  floatingMountains.update(elapsed);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;
   const activeDomeTimeMultiplier = updateDomeTimeMultiplier(delta, templeFocus);
   sleepTimeMultiplier = getSleepTimeMultiplier(sleepState);
@@ -2062,6 +2127,7 @@ function animate(): void {
   updateFieldNoteDiscovery(templeFocus, elapsed);
   dome.update(elapsed, activeDomeTimeMultiplier);
   sky.update(skyElapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
+  applyFloatingMountainsDebugAtmosphere();
   terrain.update(floraFocus.x, floraFocus.z);
   oceans.update(floraFocus.x, floraFocus.z);
   diamondCrystals.update(floraFocus.x, floraFocus.z, elapsed);

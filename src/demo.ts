@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { getDiamondDebugSpawn } from "./diamond-biome";
+import type { FloatingMountainsDebugState } from "./floating-mountains";
 import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
 import { getOceanRegions } from "./water";
@@ -114,6 +115,41 @@ function showDiamondDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, on
   );
 }
 
+function showFloatingMountainsDemoRegion(
+  camera: THREE.Camera,
+  heightAt: HeightSampler,
+  onWalk: WalkObserver | undefined,
+  elapsed: number,
+  floatingMountains?: FloatingMountainsDebugState
+): void {
+  const center = floatingMountains?.center ?? { x: 1420, z: 70, groundHeight: heightAt(1420, 70) };
+  const spawn = floatingMountains?.debugSpawn ?? {
+    x: center.x + 150,
+    z: center.z + 66,
+    yaw: 0,
+    pitch: -0.08,
+    altitudeAboveGround: 78,
+  };
+  const target = floatingMountains?.debugTarget ?? {
+    x: center.x,
+    z: center.z,
+    altitude: heightAt(center.x, center.z) + 126,
+  };
+  const beat = elapsed - 14.4;
+  const x = spawn.x + Math.sin(beat * 0.7) * 14;
+  const z = spawn.z + Math.cos(beat * 0.52) * 10;
+  onWalk?.(new THREE.Vector3(x, 0, z), 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + spawn.altitudeAboveGround + Math.sin(beat * 0.42) * 2,
+    target.x,
+    target.z,
+    target.altitude
+  );
+}
+
 export function createPrDemoController(
   camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
@@ -144,7 +180,8 @@ export function createPrDemoController(
   },
   talkingStatue?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
   mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] },
-  paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number }
+  paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number },
+  floatingMountains?: FloatingMountainsDebugState
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -284,7 +321,12 @@ export function createPrDemoController(
         return;
       }
 
-      const shiftedElapsed = elapsed - 3.8;
+      if (elapsed < 17.4) {
+        showFloatingMountainsDemoRegion(camera, heightAt, onWalk, elapsed, floatingMountains);
+        return;
+      }
+
+      const shiftedElapsed = elapsed - 6.8;
 
       if (shiftedElapsed < 10.6) {
         showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);

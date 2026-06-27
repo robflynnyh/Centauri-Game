@@ -7,15 +7,228 @@ test.use({
 
 test.describe.configure({ mode: "serial" });
 
-test("captures a deterministic Centauri PR screenshot with the talking statue", async ({ page }) => {
-  await page.goto("/?debug=statue&test=collision");
+test("captures a deterministic Centauri PR screenshot with floating mountains", async ({ page }) => {
+  await page.goto("/?debug=floating-mountains&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("statue debug")).toBeVisible();
-  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
-  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getTalkingStatueState));
-  await page.waitForFunction(() => (window.__centauriDebug?.getTalkingStatueState().wakeAmount ?? 0) > 0.2);
-  await page.waitForTimeout(120);
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
+  await page.addStyleTag({ content: ".hud__title, .hud__sleep { display: none !important; }" });
+  await page.waitForTimeout(1_200);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+});
+
+test("floating mountains debug starts airborne near a framed archipelago", async ({ page }) => {
+  await page.goto("/?debug=floating-mountains&test=collision");
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getFloatingMountainsState));
+  await page.waitForTimeout(700);
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri floating mountains debug hook");
+    const floating = debug.getFloatingMountainsState();
+    const player = debug.getPlayer();
+    const paramotor = debug.getParamotorState();
+    return {
+      floating,
+      player,
+      paramotor,
+      centerBlocked: debug.isBlockedAt(floating.center.x, floating.center.z),
+      centerSurfaceHeight: debug.surfaceHeightAt(floating.center.x, floating.center.z),
+      surfaceHeightDeltas: floating.surfaceSamples.map((sample) =>
+        Math.abs(debug.surfaceHeightAt(sample.x, sample.z) - sample.surfaceHeight)
+      ),
+      bodyChecks: floating.collisionSamples.map((sample) => ({
+        id: sample.id,
+        mid: debug.floatingMountainBodyBlocksAt(sample.x, sample.z, sample.midBodyAltitude, 0.55),
+        above: debug.floatingMountainBodyBlocksAt(sample.x, sample.z, sample.topSurfaceHeight + 5.5, 0.55),
+      })),
+      uniqueIslandIds: new Set(floating.islands.map((island) => island.id)).size,
+      heroCount: floating.islands.filter((island) => island.hero).length,
+    };
+  });
+
+  expect(result.floating.islandCount).toBe(10);
+  expect(result.floating.walkable).toBe(true);
+  expect(result.floating.collidable).toBe(true);
+  expect(result.uniqueIslandIds).toBe(10);
+  expect(result.heroCount).toBeGreaterThanOrEqual(2);
+  expect(result.floating.altitudeRange.min).toBeGreaterThanOrEqual(35);
+  expect(result.floating.altitudeRange.max).toBeLessThanOrEqual(120);
+  expect(result.floating.altitudeRange.max - result.floating.altitudeRange.min).toBeGreaterThan(55);
+  expect(result.floating.bottomClearanceRange.min).toBeGreaterThan(10);
+  expect(result.floating.nearestDistanceToPlayer).toBeLessThan(260);
+  expect(result.floating.debugSpawnHasLineOfSight).toBe(true);
+  expect(result.floating.debugViewFramed).toBe(true);
+  expect(result.floating.debugView.angularOffset).toBeLessThan(0.16);
+  expect(result.floating.avoidance.distanceFromStart).toBeGreaterThan(720);
+  expect(result.floating.avoidance.nearestOceanShoreDistance).toBeGreaterThan(80);
+  expect(result.floating.avoidance.nearestDiamondBiomeClearance).toBeGreaterThan(240);
+  expect(result.floating.avoidance.nearestReservedZoneClearance).toBeGreaterThan(40);
+  expect(result.floating.reservedZones).toHaveLength(1);
+  expect(result.centerBlocked).toBe(false);
+  expect(Number.isFinite(result.centerSurfaceHeight)).toBe(true);
+  expect(result.floating.surfaceSamples).toHaveLength(10);
+  expect(result.floating.collisionSamples).toHaveLength(10);
+  for (const sample of result.floating.surfaceSamples) {
+    expect(sample.altitudeAboveTerrain).toBeGreaterThan(35);
+    expect(sample.surfaceHeight).toBeGreaterThan(sample.terrainHeight + 35);
+    expect(sample.radiusX).toBeGreaterThan(4);
+    expect(sample.radiusZ).toBeGreaterThan(3);
+  }
+  for (const delta of result.surfaceHeightDeltas) {
+    expect(delta).toBeLessThan(0.001);
+  }
+  for (const check of result.bodyChecks) {
+    expect(check.mid).toBe(true);
+    expect(check.above).toBe(false);
+  }
+  expect(result.floating.collisionSamples.every((sample) => sample.blocksAtMidBody)).toBe(true);
+  expect(result.floating.collisionSamples.every((sample) => !sample.blocksAboveTop)).toBe(true);
+  expect(result.paramotor.mounted).toBe(true);
+  expect(result.paramotor.airborne).toBe(true);
+  expect(result.paramotor.altitudeAboveGround).toBeGreaterThan(70);
+  expect(Math.hypot(result.player.x - result.floating.debugSpawn.x, result.player.z - result.floating.debugSpawn.z)).toBeLessThan(8);
+});
+
+test("floating mountain tops accept landing and bodies block paramotor flight", async ({ page }) => {
+  await page.goto("/?debug=floating-mountains&test=collision");
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getFloatingMountainsState));
+
+  const landingSetup = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri floating mountains debug hook");
+    const floating = debug.getFloatingMountainsState();
+    const hero = floating.islands.find((island) => island.id === "central-needle") ?? floating.islands.find((island) => island.hero);
+    if (!hero) throw new Error("Missing floating mountain hero island");
+    const surface = floating.surfaceSamples.find((sample) => sample.id === hero.id);
+    const collision = floating.collisionSamples.find((sample) => sample.id === hero.id);
+    if (!surface || !collision) throw new Error("Missing floating mountain collision samples");
+
+    debug.setParamotorFlightForTest({
+      x: surface.x,
+      z: surface.z,
+      speed: 0,
+      throttle: 0,
+      altitudeAboveGround: 4,
+      gas: 1,
+    });
+
+    return {
+      surface,
+      collision,
+      midBodyBlocks: debug.floatingMountainBodyBlocksAt(collision.x, collision.z, collision.midBodyAltitude, 0.55),
+      aboveTopBlocks: debug.floatingMountainBodyBlocksAt(collision.x, collision.z, collision.topSurfaceHeight + 5.5, 0.55),
+    };
+  });
+
+  expect(landingSetup.midBodyBlocks).toBe(true);
+  expect(landingSetup.aboveTopBlocks).toBe(false);
+
+  await page.keyboard.down("Shift");
+  await page.waitForFunction(
+    ({ id }) => {
+      const debug = window.__centauriDebug;
+      if (!debug) return false;
+      const floating = debug.getFloatingMountainsState();
+      const surface = floating.surfaceSamples.find((sample) => sample.id === id);
+      const player = debug.getPlayer();
+      const movement = debug.getMovementState();
+      if (!surface) return false;
+      const currentSurfaceHeight = debug.surfaceHeightAt(player.x, player.z);
+      return movement.grounded && Math.abs(currentSurfaceHeight - surface.surfaceHeight) < 0.2;
+    },
+    { id: landingSetup.surface.id },
+    { timeout: 6_000 }
+  );
+  await page.keyboard.up("Shift");
+
+  const landed = await page.evaluate(({ id }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri floating mountains debug hook");
+    const floating = debug.getFloatingMountainsState();
+    const surface = floating.surfaceSamples.find((sample) => sample.id === id);
+    if (!surface) throw new Error("Missing landing surface sample");
+    const player = debug.getPlayer();
+    const movement = debug.getMovementState();
+    return {
+      player,
+      movement,
+      surfaceHeight: debug.surfaceHeightAt(player.x, player.z),
+      expectedSurfaceHeight: surface.surfaceHeight,
+      groundProjectionBlocked: debug.isBlockedAt(surface.x, surface.z),
+    };
+  }, { id: landingSetup.surface.id });
+
+  expect(landed.movement.grounded).toBe(true);
+  expect(landed.surfaceHeight).toBeCloseTo(landed.expectedSurfaceHeight, 2);
+  expect(landed.player.y).toBeGreaterThan(landed.expectedSurfaceHeight + 1.1);
+  expect(landed.groundProjectionBlocked).toBe(false);
+
+  const impactSetup = await page.evaluate(({ id }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri floating mountains debug hook");
+    const floating = debug.getFloatingMountainsState();
+    const surface = floating.surfaceSamples.find((sample) => sample.id === id);
+    const collision = floating.collisionSamples.find((sample) => sample.id === id);
+    if (!surface || !collision) throw new Error("Missing floating mountain impact samples");
+    const startX = collision.x + surface.radiusX + 6;
+    const startZ = collision.z;
+    const yaw = Math.atan2(-(collision.x - startX), -(collision.z - startZ));
+    const altitudeAboveGround = Math.max(4, collision.midBodyAltitude - debug.surfaceHeightAt(startX, startZ) - 1.34);
+    debug.setParamotorFlightForTest({
+      x: startX,
+      z: startZ,
+      yaw,
+      pitch: -0.02,
+      speed: 18,
+      throttle: 0.42,
+      altitudeAboveGround,
+      gas: 1,
+    });
+    return {
+      collision,
+      startDistance: Math.hypot(startX - collision.x, startZ - collision.z),
+      bodyBlocksAtCenter: debug.floatingMountainBodyBlocksAt(collision.x, collision.z, collision.midBodyAltitude, 1.15),
+    };
+  }, { id: landingSetup.surface.id });
+
+  expect(impactSetup.bodyBlocksAtCenter).toBe(true);
+  await page.waitForTimeout(1_150);
+
+  const impact = await page.evaluate(({ x, z }) => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri floating mountains debug hook");
+    const player = debug.getPlayer();
+    const paramotor = debug.getParamotorState();
+    return {
+      speed: paramotor.speed,
+      distanceToCenter: Math.hypot(player.x - x, player.z - z),
+    };
+  }, { x: impactSetup.collision.x, z: impactSetup.collision.z });
+
+  expect(impact.speed).toBeLessThan(5);
+  expect(impact.distanceToCenter).toBeGreaterThan(6);
+  expect(impact.distanceToCenter).toBeLessThan(impactSetup.startDistance + 1);
+});
+
+test("floating mountains debug renders a nonblank visible archipelago", async ({ page }, testInfo) => {
+  await page.goto("/?debug=floating-mountains&test=collision");
+  await expect(page.getByText("floating mountains debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getFloatingMountainsState));
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+  await page.waitForTimeout(1_000);
+
+  const signal = await getCanvasSignal(page, testInfo.outputPath("floating-mountains-debug.png"));
+  const state = await page.evaluate(() => window.__centauriDebug?.getFloatingMountainsState());
+
+  expect(signal.width).toBe(1280);
+  expect(signal.height).toBe(720);
+  expect(signal.litPixels).toBeGreaterThan(2_000);
+  expect(signal.meanBrightness).toBeGreaterThan(18);
+  expect(signal.variance).toBeGreaterThan(40);
+  expect(state?.debugViewFramed).toBe(true);
+  expect(state?.debugView.targetDistance).toBeGreaterThan(120);
 });
 
 test("statue debug renders a visible talking stone landmark", async ({ page }, testInfo) => {
