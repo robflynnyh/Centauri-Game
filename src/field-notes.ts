@@ -1,4 +1,4 @@
-export type FieldNoteId = "temple-gate" | "dome-chronoglass" | "observatory-sightline";
+export type FieldNoteId = "temple-gate" | "dome-chronoglass" | "observatory-sightline" | "radio-array-listening";
 export type FieldNotePageId = FieldNoteId | "arrival";
 
 export type FieldNoteDefinition = {
@@ -29,7 +29,7 @@ export const INITIAL_FIELD_NOTE: FieldNoteDefinition = {
   id: "arrival",
   index: 1,
   body:
-    "Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, hold R while still to sleep. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add ?demo=pr for the deterministic PR flythrough.",
+    "Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Shift to run, Space to jump, Ctrl/C to crouch, hold R while still to sleep. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add ?demo=pr for the deterministic PR flythrough.",
 };
 
 export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
@@ -44,6 +44,10 @@ export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   {
     id: "observatory-sightline",
     body: "A little telescope on a quiet rim. Its lens catches the old sky and makes the far colours feel close enough to touch.",
+  },
+  {
+    id: "radio-array-listening",
+    body: "Three pale dishes listen in different directions. Their shadows overlap, but the silence they catch arrives one breath apart.",
   },
 ];
 

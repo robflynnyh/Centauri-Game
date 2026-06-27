@@ -21,6 +21,8 @@ export type FloatingMountainsDebugViewState = {
 export type FloatingMountainsDebugState = {
   center: LocalPlanetPoint & { groundHeight: number };
   islandCount: number;
+  walkable: boolean;
+  collidable: boolean;
   altitudeRange: { min: number; max: number };
   absoluteAltitudeRange: { min: number; max: number };
   bottomClearanceRange: { min: number; max: number };
@@ -59,6 +61,26 @@ export type FloatingMountainsDebugState = {
     topRadius: number;
     hero: boolean;
   }[];
+  surfaceSamples: {
+    id: string;
+    x: number;
+    z: number;
+    terrainHeight: number;
+    surfaceHeight: number;
+    altitudeAboveTerrain: number;
+    radiusX: number;
+    radiusZ: number;
+  }[];
+  collisionSamples: {
+    id: string;
+    x: number;
+    z: number;
+    midBodyAltitude: number;
+    topSurfaceHeight: number;
+    bottomAltitude: number;
+    blocksAtMidBody: boolean;
+    blocksAboveTop: boolean;
+  }[];
 };
 
 export type FloatingMountainsSystem = {
@@ -68,6 +90,9 @@ export type FloatingMountainsSystem = {
   debugSpawn: FloatingMountainsDebugState["debugSpawn"];
   debugTarget: FloatingMountainsDebugState["debugTarget"];
   update: (elapsed: number) => void;
+  surfaceHeightAt: (x: number, z: number) => number | null;
+  isSurfaceAt: (x: number, z: number) => boolean;
+  bodyBlocksAt: (x: number, z: number, altitude: number, clearance?: number) => boolean;
   getDebugState: (playerPosition?: LocalPlanetPoint, camera?: THREE.Camera) => FloatingMountainsDebugState;
 };
 
@@ -109,6 +134,10 @@ const minimumOceanShoreDistance = 86;
 const minimumDiamondClearance = 245;
 const debugAltitudeAboveGround = 78;
 const debugPitch = -0.08;
+const topSurfaceOffset = 0.42;
+const topSurfaceRadiusScaleX = 0.76;
+const topSurfaceRadiusScaleZ = 0.66;
+const bodyTopForgiveness = 0.7;
 
 const candidateCenters = [
   normalizePlanetCoords(1420, 70),
@@ -178,6 +207,21 @@ export function createFloatingMountainsRegion(
     });
   };
 
+  const surfaceHeightAt = (x: number, z: number): number | null => {
+    let height: number | null = null;
+    for (const island of islands) {
+      if (!isPointOnIslandTop(island, x, z)) continue;
+      const surfaceHeight = islandTopSurfaceHeight(island);
+      height = height === null ? surfaceHeight : Math.max(height, surfaceHeight);
+    }
+    return height;
+  };
+
+  const isSurfaceAt = (x: number, z: number): boolean => surfaceHeightAt(x, z) !== null;
+
+  const bodyBlocksAt = (x: number, z: number, altitude: number, clearance = 0): boolean =>
+    islands.some((island) => isPointInsideIslandBody(island, x, z, altitude, clearance));
+
   const getDebugState = (playerPosition: LocalPlanetPoint = debugSpawn, camera?: THREE.Camera): FloatingMountainsDebugState => {
     const altitudeRange = summarizeAltitudeRange(islands);
     const absoluteAltitudeRange = summarizeAbsoluteAltitudeRange(islands);
@@ -190,6 +234,8 @@ export function createFloatingMountainsRegion(
     return {
       center: { x: center.x, z: center.z, groundHeight: heightAt(center.x, center.z) },
       islandCount: islands.length,
+      walkable: true,
+      collidable: true,
       altitudeRange,
       absoluteAltitudeRange,
       bottomClearanceRange,
@@ -213,6 +259,34 @@ export function createFloatingMountainsRegion(
         topRadius: Math.max(island.config.radiusX, island.config.radiusZ),
         hero: Boolean(island.config.hero),
       })),
+      surfaceSamples: islands.map((island) => {
+        const surfaceHeight = islandTopSurfaceHeight(island);
+        return {
+          id: island.config.id,
+          x: island.x,
+          z: island.z,
+          terrainHeight: heightAt(island.x, island.z),
+          surfaceHeight,
+          altitudeAboveTerrain: surfaceHeight - heightAt(island.x, island.z),
+          radiusX: topSurfaceRadiusX(island),
+          radiusZ: topSurfaceRadiusZ(island),
+        };
+      }),
+      collisionSamples: islands.map((island) => {
+        const topSurfaceHeight = islandTopSurfaceHeight(island);
+        const bottomAltitude = islandBottomAltitude(island);
+        const midBodyAltitude = THREE.MathUtils.lerp(topSurfaceHeight, bottomAltitude, 0.48);
+        return {
+          id: island.config.id,
+          x: island.x,
+          z: island.z,
+          midBodyAltitude,
+          topSurfaceHeight,
+          bottomAltitude,
+          blocksAtMidBody: bodyBlocksAt(island.x, island.z, midBodyAltitude, 0.55),
+          blocksAboveTop: bodyBlocksAt(island.x, island.z, topSurfaceHeight + 5.5, 0.55),
+        };
+      }),
     };
   };
 
@@ -225,6 +299,9 @@ export function createFloatingMountainsRegion(
     debugSpawn,
     debugTarget,
     update,
+    surfaceHeightAt,
+    isSurfaceAt,
+    bodyBlocksAt,
     getDebugState,
   };
 }
@@ -464,6 +541,91 @@ function makeRuntimeIsland(
     groundHeight,
     altitude: groundHeight + config.altitudeAboveGround,
     rotation: new THREE.Euler(),
+  };
+}
+
+function islandTopSurfaceHeight(island: RuntimeFloatingIsland): number {
+  return island.altitude + topSurfaceOffset;
+}
+
+function islandBottomAltitude(island: RuntimeFloatingIsland): number {
+  return island.altitude - island.config.depth - 0.2;
+}
+
+function topSurfaceRadiusX(island: RuntimeFloatingIsland): number {
+  return island.config.radiusX * topSurfaceRadiusScaleX;
+}
+
+function topSurfaceRadiusZ(island: RuntimeFloatingIsland): number {
+  return island.config.radiusZ * topSurfaceRadiusScaleZ;
+}
+
+function islandLocalOffset(island: RuntimeFloatingIsland, x: number, z: number): { x: number; z: number } {
+  const dx = x - island.x;
+  const dz = z - island.z;
+  const cos = Math.cos(island.config.yaw);
+  const sin = Math.sin(island.config.yaw);
+  return {
+    x: dx * cos + dz * sin,
+    z: -dx * sin + dz * cos,
+  };
+}
+
+function isPointOnIslandTop(island: RuntimeFloatingIsland, x: number, z: number): boolean {
+  const offset = islandLocalOffset(island, x, z);
+  const nx = offset.x / topSurfaceRadiusX(island);
+  const nz = offset.z / topSurfaceRadiusZ(island);
+  return nx * nx + nz * nz <= 1;
+}
+
+function isPointInsideIslandBody(
+  island: RuntimeFloatingIsland,
+  x: number,
+  z: number,
+  altitude: number,
+  clearance: number
+): boolean {
+  const topAltitude = islandTopSurfaceHeight(island);
+  const bottomAltitude = islandBottomAltitude(island);
+  if (altitude > topAltitude + bodyTopForgiveness || altitude < bottomAltitude - clearance) return false;
+
+  const localY = THREE.MathUtils.clamp(altitude - island.altitude, -island.config.depth, topSurfaceOffset);
+  const crossSection = islandBodyCrossSectionAt(island, localY);
+  const offset = islandLocalOffset(island, x, z);
+  const radiusX = Math.max(0.1, crossSection.radiusX + clearance);
+  const radiusZ = Math.max(0.1, crossSection.radiusZ + clearance);
+  const nx = offset.x / radiusX;
+  const nz = offset.z / radiusZ;
+  return nx * nx + nz * nz <= 1;
+}
+
+function islandBodyCrossSectionAt(island: RuntimeFloatingIsland, localY: number): { radiusX: number; radiusZ: number } {
+  const depth = island.config.depth;
+  const rings = [
+    { y: topSurfaceOffset, sx: topSurfaceRadiusScaleX, sz: topSurfaceRadiusScaleZ },
+    { y: 0, sx: 1, sz: 0.92 },
+    { y: -depth * 0.2, sx: 0.9, sz: 0.78 },
+    { y: -depth * 0.46, sx: 0.6, sz: 0.5 },
+    { y: -depth * 0.75, sx: 0.28, sz: 0.24 },
+    { y: -depth, sx: 0.07, sz: 0.06 },
+  ];
+
+  for (let i = 0; i < rings.length - 1; i += 1) {
+    const upper = rings[i];
+    const lower = rings[i + 1];
+    if (localY <= upper.y && localY >= lower.y) {
+      const t = (upper.y - localY) / Math.max(upper.y - lower.y, 0.001);
+      return {
+        radiusX: island.config.radiusX * THREE.MathUtils.lerp(upper.sx, lower.sx, t),
+        radiusZ: island.config.radiusZ * THREE.MathUtils.lerp(upper.sz, lower.sz, t),
+      };
+    }
+  }
+
+  const tip = rings[rings.length - 1];
+  return {
+    radiusX: island.config.radiusX * tip.sx,
+    radiusZ: island.config.radiusZ * tip.sz,
   };
 }
 

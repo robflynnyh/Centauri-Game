@@ -173,6 +173,11 @@ export function createPrDemoController(
       pitch: number;
     };
   },
+  radioArray?: {
+    position: LocalPlanetPoint;
+    approachPosition: LocalPlanetPoint;
+    dishes: Array<{ position: LocalPlanetPoint }>;
+  },
   mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] },
   paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number },
   floatingMountains?: FloatingMountainsDebugState
@@ -234,7 +239,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 10.4) {
+      if (elapsed < 10.0) {
         const observatoryPosition = observatory?.position ?? { x: -430, z: 312 };
         const approach = observatory?.approachPosition ?? { x: -442, z: 324 };
         onWalk?.(new THREE.Vector3(observatoryPosition.x, 0, observatoryPosition.z), 0);
@@ -250,7 +255,27 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 11.8) {
+      if (elapsed < 11.2) {
+        const arrayPosition = radioArray?.position ?? { x: 472, z: 306 };
+        const approach = radioArray?.approachPosition ?? { x: 430, z: 350 };
+        const targetDish = radioArray?.dishes[1]?.position ?? arrayPosition;
+        const sway = elapsed * 0.62;
+        const x = approach.x + Math.sin(sway) * 2.2;
+        const z = approach.z + Math.cos(sway * 0.8) * 1.8;
+        onWalk?.(new THREE.Vector3(approach.x, 0, approach.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 11.5,
+          targetDish.x,
+          targetDish.z,
+          heightAt(targetDish.x, targetDish.z) + 13.5
+        );
+        return;
+      }
+
+      if (elapsed < 12.4) {
         const telescope = observatory?.telescope;
         const viewPosition = telescope?.viewPosition ?? { x: -432, z: 316 };
         setDemoFov(camera, 26);
@@ -266,7 +291,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 13.0) {
+      if (elapsed < 13.2) {
         showOceanDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }

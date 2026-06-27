@@ -34,7 +34,7 @@ test("drains the sleep meter with accelerated debug timing", async ({ page }) =>
   expect(drained.blackout).toBe(false);
 });
 
-test("uses exertion-specific drain rates for idle, crouch, walk, and airborne movement", async ({ page }) => {
+test("uses exertion-specific drain rates for idle, crouch, walk, running, and airborne movement", async ({ page }) => {
   await page.goto("/?test=sleep");
   await waitForSleepDebug(page);
 
@@ -58,6 +58,13 @@ test("uses exertion-specific drain rates for idle, crouch, walk, and airborne mo
     grounded: true,
     movementAmount: 1,
   });
+  const running = await drainFromFull(page, delta, {
+    wantsSleep: false,
+    moving: true,
+    grounded: true,
+    movementAmount: 1,
+    running: true,
+  });
   const airborne = await drainFromFull(page, delta, {
     wantsSleep: false,
     moving: true,
@@ -69,9 +76,12 @@ test("uses exertion-specific drain rates for idle, crouch, walk, and airborne mo
   expect(idle.drainMultiplier).toBeCloseTo(0.6);
   expect(crouching.drainMultiplier).toBeCloseTo(0.8);
   expect(walking.drainMultiplier).toBeCloseTo(1.25);
+  expect(running.drainMultiplier).toBeCloseTo(1.75);
   expect(airborne.drainMultiplier).toBeCloseTo(2.1);
   expect(idle.drained).toBeLessThan(crouching.drained);
   expect(crouching.drained).toBeLessThan(walking.drained);
+  expect(running.drained).toBeGreaterThan(walking.drained);
+  expect(running.drained).toBeLessThan(airborne.drained);
   expect(airborne.drained).toBeGreaterThan(walking.drained);
 });
 
@@ -211,6 +221,7 @@ async function advanceSleep(
     grounded: boolean;
     movementAmount: number;
     crouching: boolean;
+    running: boolean;
     airborne: boolean;
   }>
 ): Promise<SleepState> {
@@ -241,6 +252,7 @@ async function advanceGameTime(
     grounded: boolean;
     movementAmount: number;
     crouching: boolean;
+    running: boolean;
     airborne: boolean;
   }>
 ): Promise<{ sleep: SleepState; time: TimeState }> {
@@ -263,6 +275,7 @@ async function drainFromFull(
     grounded: boolean;
     movementAmount: number;
     crouching: boolean;
+    running: boolean;
     airborne: boolean;
   }>
 ): Promise<{ drained: number; drainMultiplier: number }> {
