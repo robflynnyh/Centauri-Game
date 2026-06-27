@@ -15,6 +15,7 @@ export type SleepUpdateInput = {
   grounded: boolean;
   movementAmount?: number;
   crouching?: boolean;
+  running?: boolean;
   airborne?: boolean;
 };
 
@@ -64,6 +65,7 @@ function normalizeSleepInput(input: SleepUpdateInput): SleepUpdateInput {
     moving: input.moving || movementAmount > 0.05,
     movementAmount,
     crouching: Boolean(input.crouching),
+    running: Boolean(input.running),
     airborne: Boolean(input.airborne || !input.grounded),
   };
 }
@@ -76,6 +78,9 @@ function getDrainMultiplier(input: SleepUpdateInput): number {
 
   if (moving && input.crouching) {
     multiplier = 0.8;
+  }
+  if (moving && input.running) {
+    multiplier = Math.max(multiplier, 1.75);
   }
   if (airborne) {
     multiplier = Math.max(multiplier, 2.1);

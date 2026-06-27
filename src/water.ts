@@ -9,19 +9,33 @@ import {
 
 type HeightSampler = (x: number, z: number) => number;
 
+type OceanPalette = {
+  deep: number;
+  mid: number;
+  shore: number;
+};
+
+type OceanPaletteColours = {
+  deep: THREE.Color;
+  mid: THREE.Color;
+  shore: THREE.Color;
+};
+
 export type OceanRegion = {
-  id: "vermilion" | "lapis";
+  id: "vermilion" | "lapis" | "amethyst";
   name: string;
   center: LocalPlanetPoint;
   baseRadius: number;
   waterSurfaceHeight: number;
   maxDepth: number;
+  palette: OceanPalette;
   seed: number;
 };
 
 export type OceanState = {
   isInOcean: boolean;
   regionId: OceanRegion["id"] | null;
+  nearestRegionId: OceanRegion["id"];
   regionName: string | null;
   centerDistance: number;
   shorelineRadius: number;
@@ -29,6 +43,7 @@ export type OceanState = {
   nearestShoreDistance: number;
   normalizedShorelineAmount: number;
   waterSurfaceHeight: number;
+  maxDepth: number;
   terrainDepthBelowSurface: number;
   immersionAmount: number;
   movementSpeedMultiplier: number;
@@ -37,6 +52,11 @@ export type OceanState = {
 export type OceanDebugRegionState = {
   id: OceanRegion["id"];
   name: string;
+  palette: {
+    deep: string;
+    mid: string;
+    shore: string;
+  };
   center: LocalPlanetPoint;
   waterSurfaceHeight: number;
   baseRadius: number;
@@ -99,10 +119,29 @@ const oceanChunkSegments = 32;
 const oceanChunkRadius = 5;
 const oceanChunkHalfDiagonal = Math.SQRT2 * oceanChunkSize * 0.5;
 const oceanChunkCullPadding = 150;
-const oceanColourDeep = new THREE.Color(0x1156b8);
-const oceanColourMid = new THREE.Color(0x1fa6d2);
-const oceanColourShore = new THREE.Color(0x94fff2);
 const oceanColourScratch = new THREE.Color();
+const oceanPalettes: Record<OceanRegion["id"], OceanPalette> = {
+  vermilion: {
+    deep: 0x1156b8,
+    mid: 0x1fa6d2,
+    shore: 0x94fff2,
+  },
+  lapis: {
+    deep: 0x1156b8,
+    mid: 0x1fa6d2,
+    shore: 0x94fff2,
+  },
+  amethyst: {
+    deep: 0x3c177c,
+    mid: 0x8e3ed2,
+    shore: 0xe0a7ff,
+  },
+};
+const oceanPaletteColours: Record<OceanRegion["id"], OceanPaletteColours> = {
+  vermilion: makeOceanPaletteColours(oceanPalettes.vermilion),
+  lapis: makeOceanPaletteColours(oceanPalettes.lapis),
+  amethyst: makeOceanPaletteColours(oceanPalettes.amethyst),
+};
 
 export const OCEAN_REGIONS: OceanRegion[] = [
   {
@@ -112,6 +151,7 @@ export const OCEAN_REGIONS: OceanRegion[] = [
     baseRadius: 305,
     waterSurfaceHeight: -1.15,
     maxDepth: 24,
+    palette: oceanPalettes.vermilion,
     seed: 11.7,
   },
   {
@@ -121,7 +161,18 @@ export const OCEAN_REGIONS: OceanRegion[] = [
     baseRadius: 308,
     waterSurfaceHeight: -1.85,
     maxDepth: 27,
+    palette: oceanPalettes.lapis,
     seed: 29.3,
+  },
+  {
+    id: "amethyst",
+    name: "Amethyst Abyss",
+    center: { x: 2450, z: 920 },
+    baseRadius: 306,
+    waterSurfaceHeight: -1.55,
+    maxDepth: 26,
+    palette: oceanPalettes.amethyst,
+    seed: 47.9,
   },
 ];
 
@@ -157,6 +208,7 @@ export function oceanStateAt(x: number, z: number, heightSampler?: HeightSampler
   return {
     isInOcean,
     regionId: isInOcean ? nearestRegion.id : null,
+    nearestRegionId: nearestRegion.id,
     regionName: isInOcean ? nearestRegion.name : null,
     centerDistance: surfaceDistanceBetweenLocal(normalized, nearestRegion.center),
     shorelineRadius: nearestRadius,
@@ -164,6 +216,7 @@ export function oceanStateAt(x: number, z: number, heightSampler?: HeightSampler
     nearestShoreDistance: Math.abs(nearestSignedDistance),
     normalizedShorelineAmount: 1 - THREE.MathUtils.smoothstep(Math.abs(nearestSignedDistance), 0, shoreBandWidth),
     waterSurfaceHeight: nearestRegion.waterSurfaceHeight,
+    maxDepth: nearestRegion.maxDepth,
     terrainDepthBelowSurface,
     immersionAmount,
     movementSpeedMultiplier: immersionAmount > 0.1 ? 0.5 : 1,
@@ -178,7 +231,7 @@ export function oceanTerrainOffsetAt(x: number, z: number, baseHeight: number): 
   const shelfAmount = THREE.MathUtils.smoothstep(inwardDistance, 0, 46);
   const deepAmount = THREE.MathUtils.smoothstep(inwardDistance, 46, state.shorelineRadius * 0.72);
   const basinFloorNoise = basinNoiseAt(x, z) * 1.45;
-  const targetDepth = 0.25 + shelfAmount * 4.2 + deepAmount * (state.regionId === "lapis" ? 22 : 19);
+  const targetDepth = 0.25 + shelfAmount * 4.2 + deepAmount * Math.max(0, state.maxDepth - 5);
   const targetHeight = state.waterSurfaceHeight - targetDepth + basinFloorNoise * (0.25 + deepAmount * 0.75);
   const carveAmount = THREE.MathUtils.smoothstep(inwardDistance, 8, 74);
   const desiredHeight = THREE.MathUtils.lerp(baseHeight, targetHeight, carveAmount);
@@ -195,8 +248,8 @@ function shorelineBankOffsetAt(state: OceanState, x: number, z: number, baseHeig
   return Math.max(0, targetHeight - baseHeight) * bankAmount;
 }
 
-export function getOceanDebugSpawn(): { x: number; z: number; yaw: number } {
-  const region = OCEAN_REGIONS[0];
+export function getOceanDebugSpawn(regionId: OceanRegion["id"] = OCEAN_REGIONS[0].id): { x: number; z: number; yaw: number } {
+  const region = OCEAN_REGIONS.find((candidate) => candidate.id === regionId) ?? OCEAN_REGIONS[0];
   const angle = 0.16;
   const shoreRadius = shorelineRadiusAtAngle(region, angle);
   const x = region.center.x + Math.cos(angle) * (shoreRadius + 18);
@@ -435,7 +488,8 @@ function setOceanColourForState(state: OceanState, x: number, z: number, target:
   const depthAmount = THREE.MathUtils.clamp((-state.signedShoreDistance - 30) / Math.max(1, state.shorelineRadius * 0.55), 0, 1);
   const shoreAmount = state.normalizedShorelineAmount;
   const shimmer = Math.sin(x * 0.047 + z * 0.081) * 0.5 + Math.cos(x * 0.073 - z * 0.039) * 0.5;
-  return target.copy(oceanColourMid).lerp(oceanColourDeep, depthAmount).lerp(oceanColourShore, shoreAmount * 0.72).offsetHSL(0, 0, shimmer * 0.025);
+  const palette = oceanPaletteColours[state.nearestRegionId];
+  return target.copy(palette.mid).lerp(palette.deep, depthAmount).lerp(palette.shore, shoreAmount * 0.72).offsetHSL(0, 0, shimmer * 0.025);
 }
 
 function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler): OceanDebugRegionState {
@@ -479,6 +533,7 @@ function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler)
   return {
     id: region.id,
     name: region.name,
+    palette: oceanPaletteDebug(region.palette),
     center: { ...region.center },
     waterSurfaceHeight: region.waterSurfaceHeight,
     baseRadius: region.baseRadius,
@@ -494,27 +549,60 @@ function summarizeOceanRegion(region: OceanRegion, heightSampler: HeightSampler)
   };
 }
 
+function makeOceanPaletteColours(palette: OceanPalette): OceanPaletteColours {
+  return {
+    deep: new THREE.Color(palette.deep),
+    mid: new THREE.Color(palette.mid),
+    shore: new THREE.Color(palette.shore),
+  };
+}
+
+function oceanPaletteDebug(palette: OceanPalette): OceanDebugRegionState["palette"] {
+  return {
+    deep: oceanColourHex(palette.deep),
+    mid: oceanColourHex(palette.mid),
+    shore: oceanColourHex(palette.shore),
+  };
+}
+
+function oceanColourHex(value: number): string {
+  return `#${value.toString(16).padStart(6, "0")}`;
+}
+
 function shorelineDebugSampleAt(
   region: OceanRegion,
   angle: number
 ): { angle: number; inside: LocalPlanetPoint; outside: LocalPlanetPoint } {
-  const radius = shorelineRadiusAtAngle(region, angle);
-  let insideRadius = radius - 24;
-  let outsideRadius = radius + 8;
-  let inside = pointAtPolarOffset(region, angle, insideRadius);
-  let outside = pointAtPolarOffset(region, angle, outsideRadius);
+  let inside = pointAtSignedShoreDistance(region, angle, -24);
+  let outside = pointAtSignedShoreDistance(region, angle, 8);
 
   for (let i = 0; i < 12 && !oceanStateAt(inside.x, inside.z).isInOcean; i += 1) {
-    insideRadius -= 8;
-    inside = pointAtPolarOffset(region, angle, insideRadius);
+    inside = pointAtSignedShoreDistance(region, angle, -24 - i * 8);
   }
 
   for (let i = 0; i < 12 && oceanStateAt(outside.x, outside.z).isInOcean; i += 1) {
-    outsideRadius += 8;
-    outside = pointAtPolarOffset(region, angle, outsideRadius);
+    outside = pointAtSignedShoreDistance(region, angle, 8 + i * 8);
   }
 
   return { angle, inside, outside };
+}
+
+function pointAtSignedShoreDistance(region: OceanRegion, angle: number, targetSignedDistance: number): LocalPlanetPoint {
+  let low = 0;
+  let high = region.baseRadius + 180;
+
+  for (let i = 0; i < 22; i += 1) {
+    const radius = (low + high) * 0.5;
+    const point = pointAtPolarOffset(region, angle, radius);
+    const signedDistance = oceanStateAt(point.x, point.z).signedShoreDistance;
+    if (signedDistance < targetSignedDistance) {
+      low = radius;
+    } else {
+      high = radius;
+    }
+  }
+
+  return pointAtPolarOffset(region, angle, (low + high) * 0.5);
 }
 
 function pointAtPolarOffset(region: OceanRegion, angle: number, radius: number): LocalPlanetPoint {
