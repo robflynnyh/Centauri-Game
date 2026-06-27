@@ -29,7 +29,7 @@ export const INITIAL_FIELD_NOTE: FieldNoteDefinition = {
   id: "arrival",
   index: 1,
   body:
-    "Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Space to jump, Ctrl/Shift/C to crouch, hold R while still to sleep. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add ?demo=pr for the deterministic PR flythrough.",
+    "Unknown planet. Thin air. Singing mineral flora, glassy spring water. WASD to walk, Shift to run, Space to jump, Ctrl/C to crouch, hold R while still to sleep. Click the planet view once to lock mouse-look, click again or press Esc to free the cursor. Add ?demo=pr for the deterministic PR flythrough.",
 };
 
 export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [

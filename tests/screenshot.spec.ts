@@ -27,15 +27,23 @@ test("captures a deterministic Centauri PR screenshot with night stars", async (
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
 });
 
-test("ocean debug exposes two large irregular deep oceans", async ({ page }) => {
+test("ocean debug exposes three large irregular deep oceans", async ({ page }) => {
   await page.goto("/?debug=ocean&test=collision");
   await expect(page.getByText("ocean debug")).toBeVisible();
   await page.waitForFunction(() => Boolean(window.__centauriDebug?.getOceanDebugState));
 
   const state = await page.evaluate(() => window.__centauriDebug?.getOceanDebugState());
-  expect(state?.oceanCount).toBe(2);
+  expect(state?.oceanCount).toBe(3);
   expect(state?.movementSpeedMultiplierInOcean).toBeCloseTo(0.5, 2);
-  expect(state?.regions).toHaveLength(2);
+  expect(state?.regions).toHaveLength(3);
+
+  const purpleOcean = state?.regions.find((ocean) => ocean.id === "amethyst");
+  expect(purpleOcean?.name).toBe("Amethyst Abyss");
+  expect(purpleOcean?.palette).toEqual({
+    deep: "#3c177c",
+    mid: "#8e3ed2",
+    shore: "#e0a7ff",
+  });
 
   for (const ocean of state?.regions ?? []) {
     expect(ocean.estimatedShorelineCircumference).toBeGreaterThan(1_650);
@@ -78,6 +86,13 @@ test("ocean debug exposes two large irregular deep oceans", async ({ page }) => 
       expect(shorelineState.outsideTerrainHeight).toBeGreaterThan((shorelineState.outsideState?.waterSurfaceHeight ?? 0) - 0.35);
     }
   }
+
+  await page.goto("/?debug=purple-ocean&test=collision");
+  await expect(page.getByText("purple ocean debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getOceanState));
+
+  const purpleDebugState = await page.evaluate(() => window.__centauriDebug?.getOceanState());
+  expect(purpleDebugState?.nearestRegionId).toBe("amethyst");
 });
 
 test("walking through ocean water is about twice as slow", async ({ page }) => {
