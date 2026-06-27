@@ -6,6 +6,10 @@ Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/id
 
 Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed glints, stronger slow twinkle, and a steeper PR-demo sky gaze so the night sky feels richer and more alive without turning into random star noise.
 
+Added rare static outside-biome watcher balls with a single oval eye that tracks the player, plus `?debug=watcher`, debug state, and PR-demo visibility for review.
+
+Reworked outside-biome watchers into grounded blob creatures with larger white cartoon eyes, surface-sliding gaze, and small collision presence.
+
 Added Amethyst Abyss as a third large swimmable ocean, with its own violet palette, carved basin depth, shared chunked rendering path, and `?debug=purple-ocean`/`?debug=ocean3` inspection routes.
 
 ## 2026-06-25

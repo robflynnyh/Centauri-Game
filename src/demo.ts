@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { getDiamondDebugSpawn } from "./diamond-biome";
 import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
+import { getWatcherDebugSpawn } from "./watchers";
 import { getOceanRegions } from "./water";
 
 type HeightSampler = (x: number, z: number) => number;
@@ -111,6 +112,23 @@ function showDiamondDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, on
     targetX,
     targetZ,
     heightAt(targetX, targetZ) + 1.4
+  );
+}
+
+function showWatcherDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWalk: WalkObserver | undefined, elapsed: number): void {
+  const spawn = getWatcherDebugSpawn();
+  const orbit = elapsed * 0.72;
+  const x = spawn.x + Math.sin(orbit) * 0.9;
+  const z = spawn.z + Math.cos(orbit) * 0.9;
+  onWalk?.(new THREE.Vector3(x, 0, z), 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + 2.55,
+    spawn.watcherX,
+    spawn.watcherZ,
+    heightAt(spawn.watcherX, spawn.watcherZ) + 0.95
   );
 }
 
@@ -239,7 +257,12 @@ export function createPrDemoController(
         return;
       }
 
-      const shiftedElapsed = elapsed - 3.8;
+      if (elapsed < 15.8) {
+        showWatcherDemoRegion(camera, heightAt, onWalk, elapsed);
+        return;
+      }
+
+      const shiftedElapsed = elapsed - 5.2;
 
       if (shiftedElapsed < 10.6) {
         showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);

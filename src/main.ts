@@ -54,6 +54,7 @@ import {
   type OceanRegion,
   type OceanState,
 } from "./water";
+import { createOutsideBiomeWatchers, getWatcherDebugSpawn, type WatcherDebugState } from "./watchers";
 import "./style.css";
 
 type ObservatoryDebugState = {
@@ -272,6 +273,7 @@ declare global {
         }[];
       };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getWatcherState: () => WatcherDebugState;
       getMistState: () => MistDebugState;
       getBirdState: () => BirdDebugState;
       getMassiveMountainState: () => {
@@ -351,6 +353,7 @@ const enableDiamondDebug =
   diamondDebugRoute === "diamond2" ||
   diamondDebugRoute === "diamond3";
 const enableParamotorDebug = params.get("debug") === "paramotor";
+const enableWatcherDebug = params.get("debug") === "watcher" || params.get("debug") === "eye-ball";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
 const enableIsolationDebug = params.get("debug") === "isolation" || params.get("test") === "isolation";
@@ -367,6 +370,7 @@ const enableDebugTools =
   enableOceanDebug ||
   enableDiamondDebug ||
   enableParamotorDebug ||
+  enableWatcherDebug ||
   enableSleepDebug ||
   enableIsolationDebug ||
   enablePerfDebug;
@@ -408,13 +412,15 @@ const hudBadgeText = isDemo
                     ? `${diamondDebugName} debug`
                     : enableParamotorDebug
                       ? "paramotor debug"
-                      : enableSleepDebug
-                        ? "sleep debug"
-                        : enableIsolationDebug
-                          ? "isolation debug"
-                          : enablePerfDebug
-                            ? "perf debug"
-                            : "exploration mode";
+                      : enableWatcherDebug
+                        ? "watcher debug"
+                        : enableSleepDebug
+                          ? "sleep debug"
+                          : enableIsolationDebug
+                            ? "isolation debug"
+                            : enablePerfDebug
+                              ? "perf debug"
+                              : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -538,6 +544,7 @@ const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
 const oceanDebugSpawn = getOceanDebugSpawn(oceanDebugRegionId);
 const diamondDebugSpawn = getDiamondDebugSpawn(diamondDebugName);
+const watcherDebugSpawn = getWatcherDebugSpawn();
 
 function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableTempleDebug) return new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z);
@@ -550,6 +557,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableMountainDebug) return new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z);
   if (enableOceanDebug) return new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z);
   if (enableDiamondDebug) return new THREE.Vector3(diamondDebugSpawn.x, 0, diamondDebugSpawn.z);
+  if (enableWatcherDebug) return new THREE.Vector3(watcherDebugSpawn.x, 0, watcherDebugSpawn.z);
   if (enableIsolationDebug) return new THREE.Vector3(-128, 0, -464);
   return new THREE.Vector3(0, 0, 24);
 }
@@ -577,6 +585,8 @@ const initialPlayerYaw = enableTelescopeDebug
             ? oceanDebugSpawn.yaw
             : enableDiamondDebug
               ? diamondDebugSpawn.yaw
+              : enableWatcherDebug
+                ? watcherDebugSpawn.yaw
             : 0;
 const initialPlayerPitch = enableTelescopeDebug
   ? observatory.telescope.pitch
@@ -594,7 +604,9 @@ const initialPlayerPitch = enableTelescopeDebug
               ? -0.05
               : enableDiamondDebug
                 ? 0.2
-                : -0.12;
+                : enableWatcherDebug
+                  ? -0.18
+                  : -0.12;
 const player = {
   yaw: initialPlayerYaw,
   pitch: initialPlayerPitch,
@@ -671,13 +683,31 @@ collisionWorld.addObstacle(temple.collision);
 collisionWorld.addObstacle(dome.collision);
 collisionWorld.addObstacle(observatory.collision);
 
+let natureDynamicObstacles: CollisionObstacle[] = [];
+let watcherDynamicObstacles: CollisionObstacle[] = [];
+const replaceGeneratedDynamicObstacles = (): void => {
+  collisionWorld.replaceDynamicObstacles([...natureDynamicObstacles, ...watcherDynamicObstacles]);
+};
 const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerfState } = populateNature(
   scene,
   effectiveHeightAt,
   collisionWorld.addObstacle,
-  collisionWorld.replaceDynamicObstacles,
+  (obstacles) => {
+    natureDynamicObstacles = obstacles;
+    replaceGeneratedDynamicObstacles();
+  },
   [temple.reservedZone, dome.reservedZone, observatory.reservedZone, paramotor.reservedZone, ...massiveMountainReservedZones]
 );
+const outsideBiomeWatchers = createOutsideBiomeWatchers(scene, effectiveHeightAt, collisionWorld.obstacles, [
+  temple.reservedZone,
+  dome.reservedZone,
+  observatory.reservedZone,
+  paramotor.reservedZone,
+  ...massiveMountainReservedZones,
+], (obstacles) => {
+  watcherDynamicObstacles = obstacles;
+  replaceGeneratedDynamicObstacles();
+});
 const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
@@ -713,6 +743,7 @@ let effectiveTimeMultiplier = 1;
 terrain.update(player.localPosition.x, player.localPosition.z);
 oceans.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
+outsideBiomeWatchers.updateChunks(player.localPosition.x, player.localPosition.z);
 updatePlayerWorldPosition();
 
 if (enableDebugTools) {
@@ -858,6 +889,7 @@ if (enableDebugTools) {
     },
     getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
+    getWatcherState: () => outsideBiomeWatchers.getState(player.localPosition),
     getMistState: () => {
       mist.update(clock.elapsedTime, player.localPosition);
       return mist.getDebugState();
@@ -948,6 +980,8 @@ if (enableDebugTools) {
       oceans.update(player.localPosition.x, player.localPosition.z);
       diamondCrystals.update(player.localPosition.x, player.localPosition.z, clock.elapsedTime);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
+      outsideBiomeWatchers.updateChunks(player.localPosition.x, player.localPosition.z);
+      outsideBiomeWatchers.updateEyes(player.localPosition);
       updateDomeTimeMultiplier(0, player.localPosition);
 	      sky.update(skyElapsed, player.localPosition);
 	      updateLookStatus();
@@ -962,6 +996,8 @@ if (enableDebugTools) {
       oceans.update(player.localPosition.x, player.localPosition.z);
       diamondCrystals.update(player.localPosition.x, player.localPosition.z, clock.elapsedTime);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
+      outsideBiomeWatchers.updateChunks(player.localPosition.x, player.localPosition.z);
+      outsideBiomeWatchers.updateEyes(player.localPosition);
       updateLookStatus();
       return { x: player.localPosition.x, y: player.position.length() - PLANET_RADIUS, z: player.localPosition.z };
     },
@@ -1861,6 +1897,18 @@ function animate(): void {
     );
   }
 
+  if (enableWatcherDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      player.localPosition.x,
+      player.localPosition.z,
+      effectiveHeightAt(player.localPosition.x, player.localPosition.z) + 2.35,
+      watcherDebugSpawn.watcherX,
+      watcherDebugSpawn.watcherZ,
+      effectiveHeightAt(watcherDebugSpawn.watcherX, watcherDebugSpawn.watcherZ) + 0.95
+    );
+  }
+
   const movementAmount = isDemo
     ? 0
     : telescopeMode.active
@@ -1906,6 +1954,8 @@ function animate(): void {
   oceans.update(floraFocus.x, floraFocus.z);
   diamondCrystals.update(floraFocus.x, floraFocus.z, elapsed);
   updateNatureChunks(floraFocus.x, floraFocus.z);
+  outsideBiomeWatchers.updateChunks(floraFocus.x, floraFocus.z);
+  outsideBiomeWatchers.updateEyes(floraFocus);
   updateFloraReactivity(floraFocus, delta, elapsed);
   updateVisionState(delta, floraFocus);
   mist.update(elapsed, floraFocus);
