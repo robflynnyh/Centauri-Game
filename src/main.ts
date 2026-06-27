@@ -714,8 +714,8 @@ const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.i
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const telescopeFloraFocus = new THREE.Vector3();
 const visionState = {
-  isolationAmount: 0,
-  targetIsolationAmount: 0,
+  isolationAmount: enableWatcherDebug ? 1 : 0,
+  targetIsolationAmount: enableWatcherDebug ? 1 : 0,
   nearestBiomePatchDistance: 0,
   prismAmount: 0,
   targetPrismAmount: 0,
@@ -729,12 +729,13 @@ const movementDebugState = {
   targetSpeed: walkSpeed,
   running: false,
 };
-let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
+let isolationOverrideAmount: number | null = enableWatcherDebug ? 1 : enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
 }, temple, dome, observatory, mountainDebugState, paramotor);
 let skyElapsed = clock.elapsedTime;
+if (enableWatcherDebug) skyElapsed = 14;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
 let sleepTimeMultiplier = 1;
@@ -745,6 +746,7 @@ oceans.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
 outsideBiomeWatchers.updateChunks(player.localPosition.x, player.localPosition.z);
 updatePlayerWorldPosition();
+if (enableWatcherDebug) sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, skyElapsed));
 
 if (enableDebugTools) {
   window.__centauriDebug = {
@@ -1980,8 +1982,9 @@ function animate(): void {
   updateParamotorHud();
 
   renderer.info.reset();
+  const renderElapsed = enableWatcherDebug ? elapsed + 6 : elapsed;
   pixelRenderer.render(scene, camera, {
-    elapsed,
+    elapsed: renderElapsed,
     isolationAmount: visionState.isolationAmount,
     prismAmount: visionState.prismAmount,
   });

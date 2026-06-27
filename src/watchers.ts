@@ -12,7 +12,7 @@ type SetCollisionObstacles = (obstacles: CollisionObstacle[]) => void;
 type Watcher = {
   root: THREE.Group;
   eyeRoot: THREE.Group;
-  pupil: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
+  pupil: THREE.Mesh<THREE.CircleGeometry, THREE.MeshBasicMaterial>;
   anchor: LocalPlanetPoint;
   yaw: number;
   radius: number;
@@ -70,8 +70,9 @@ const debugWatcherSearchOrigin = { x: -128, z: -464 };
 const bodyMaterial = new THREE.MeshBasicMaterial({ color: 0x7b5cff });
 const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x47308f, transparent: true, opacity: 0.42 });
 const cheekMaterial = new THREE.MeshBasicMaterial({ color: 0x45d3bd });
-const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xfffceb });
-const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x1c1445 });
+const eyeOutlineMaterial = new THREE.MeshBasicMaterial({ color: 0x24145f, side: THREE.DoubleSide });
+const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xfffceb, side: THREE.DoubleSide });
+const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x1c1445, side: THREE.DoubleSide });
 
 export function createOutsideBiomeWatchers(
   scene: THREE.Scene,
@@ -203,8 +204,8 @@ export function getWatcherDebugSpawn(): WatcherDebugState["debugSpawn"] {
         if (Math.abs(cellX - originCellX) !== radius && Math.abs(cellZ - originCellZ) !== radius) continue;
         const candidate = watcherCandidateAtCell(cellX, cellZ);
         if (!candidate || !isWatcherPlacementValid(candidate, [], [])) continue;
-        const dx = Math.sin(candidate.yaw) * 6.6;
-        const dz = Math.cos(candidate.yaw) * 6.6;
+        const dx = Math.sin(candidate.yaw) * 4 + Math.cos(candidate.yaw) * 7;
+        const dz = Math.cos(candidate.yaw) * 4 - Math.sin(candidate.yaw) * 7;
         return {
           x: candidate.x + dx,
           z: candidate.z + dz,
@@ -246,16 +247,22 @@ function makeWatcher(candidate: LocalPlanetPoint & { yaw: number; scale: number 
   root.add(rightCheek);
 
   const eyeRoot = new THREE.Group();
-  eyeRoot.position.set(0, radius * 0.72, radius * 0.82);
+  eyeRoot.position.set(0, radius * 0.72, radius * 0.96);
   root.add(eyeRoot);
 
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.36, 16, 10), eyeMaterial);
-  eye.scale.set(1.1, 1.32, 0.2);
+  const eyeOutline = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.42, 18), eyeOutlineMaterial);
+  eyeOutline.position.z = radius * 0.012;
+  eyeOutline.scale.set(1.12, 1.38, 1);
+  eyeRoot.add(eyeOutline);
+
+  const eye = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.37, 18), eyeMaterial);
+  eye.position.z = radius * 0.03;
+  eye.scale.set(1.06, 1.3, 1);
   eyeRoot.add(eye);
 
-  const pupil = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.12, 12, 7), pupilMaterial);
-  pupil.position.set(0, 0, radius * 0.08);
-  pupil.scale.set(0.86, 1.08, 0.2);
+  const pupil = new THREE.Mesh(new THREE.CircleGeometry(radius * 0.12, 14), pupilMaterial);
+  pupil.position.set(0, 0, radius * 0.052);
+  pupil.scale.set(0.88, 1.08, 1);
   eyeRoot.add(pupil);
 
   return {
@@ -288,7 +295,8 @@ function updateWatcherEye(watcher: Watcher, playerPosition: LocalPlanetPoint): v
   const sideAmount = THREE.MathUtils.clamp(Math.sin(angle) * 0.7, -1, 1);
   const surfaceX = Math.sin(angle) * watcher.radius * 0.88;
   const surfaceZ = Math.cos(angle) * watcher.radius * 0.8;
-  const maxOffsetX = watcher.radius * 0.12;
+  const panelOutset = watcher.radius * 0.16;
+  const maxOffsetX = watcher.radius * 0.18;
   const maxOffsetY = watcher.radius * 0.06;
   watcher.eyeTargetAngle = angle;
   watcher.eyeSurfaceAngle = angle;
@@ -296,7 +304,11 @@ function updateWatcherEye(watcher: Watcher, playerPosition: LocalPlanetPoint): v
   watcher.eyeOffsetZ = surfaceZ;
   watcher.pupilOffsetX = sideAmount * maxOffsetX;
   watcher.pupilOffsetY = Math.cos(angle) * maxOffsetY * 0.28;
-  watcher.eyeRoot.position.set(surfaceX, watcher.radius * 0.72, surfaceZ);
+  watcher.eyeRoot.position.set(
+    surfaceX + Math.sin(angle) * panelOutset,
+    watcher.radius * 0.72,
+    surfaceZ + Math.cos(angle) * panelOutset
+  );
   watcher.eyeRoot.rotation.y = angle;
   watcher.pupil.position.x = watcher.pupilOffsetX;
   watcher.pupil.position.y = watcher.pupilOffsetY;
