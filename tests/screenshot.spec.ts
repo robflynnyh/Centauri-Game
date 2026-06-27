@@ -7,15 +7,89 @@ test.use({
 
 test.describe.configure({ mode: "serial" });
 
-test("captures a deterministic Centauri PR screenshot with the talking statue", async ({ page }) => {
-  await page.goto("/?debug=statue&test=collision");
+test("captures a deterministic Centauri PR screenshot with the jungle biome", async ({ page }) => {
+  await page.goto("/?debug=jungle&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("statue debug")).toBeVisible();
+  await expect(page.getByText("jungle debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
-  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getTalkingStatueState));
-  await page.waitForFunction(() => (window.__centauriDebug?.getTalkingStatueState().wakeAmount ?? 0) > 0.2);
-  await page.waitForTimeout(120);
-  await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getJungleBiomeState));
+  await page.waitForFunction(() => {
+    const debug = window.__centauriDebug;
+    return Boolean(
+      debug &&
+        debug.getJungleBiomeState().jungleLargeTrees >= 4 &&
+        debug.getDragonflyState().visible > 0 &&
+        debug.getJungleFrogState().total >= 3
+    );
+  });
+  await page.waitForTimeout(1_000);
+  const signal = await getCanvasSignal(page, "docs/demo/pr-preview.png");
+  expect(signal.litPixels).toBeGreaterThan(2_500);
+  expect(signal.meanBrightness).toBeGreaterThan(18);
+  expect(signal.variance).toBeGreaterThan(30);
+});
+
+test("jungle debug exposes green floor, big trees, dragonflies, and frogs", async ({ page }) => {
+  await page.goto("/?debug=jungle&test=collision");
+  await expect(page.getByText("jungle debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getJungleBiomeState));
+  await page.waitForFunction(() => {
+    const debug = window.__centauriDebug;
+    return Boolean(
+      debug &&
+        debug.getJungleBiomeState().generatedJunglePatches > 0 &&
+        debug.getJungleBiomeState().jungleLargeTrees >= 4 &&
+        debug.getDragonflyState().visible > 0 &&
+        debug.getJungleFrogState().total >= 3
+    );
+  });
+  await page.waitForTimeout(650);
+
+  const state = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri jungle debug hook");
+    const jungle = debug.getJungleBiomeState();
+    const dragonflies = debug.getDragonflyState();
+    const frogs = debug.getJungleFrogState();
+    const beetles = debug.getBeetleState();
+    const player = debug.getPlayer();
+    const jungleTreeObstacles = debug.obstacles.filter(
+      (obstacle) =>
+        obstacle.kind === "tree" &&
+        obstacle.radius > 2.2 &&
+        Math.hypot(obstacle.x - jungle.patch.x, obstacle.z - jungle.patch.z) < jungle.patch.radius + 14
+    );
+    const frogsNearJungle = frogs.creatures.filter(
+      (frog) => Math.hypot(frog.anchorX - jungle.patch.x, frog.anchorZ - jungle.patch.z) < jungle.patch.radius + 10
+    );
+    return {
+      player,
+      jungle,
+      dragonflies,
+      frogs,
+      beetles,
+      frogsNearJungle: frogsNearJungle.length,
+      largeTreeObstacleCount: jungleTreeObstacles.length,
+      largestTreeObstacleRadius: jungleTreeObstacles.reduce((largest, obstacle) => Math.max(largest, obstacle.radius), 0),
+    };
+  });
+
+  expect(Math.hypot(state.player.x - state.jungle.debugSpawn.x, state.player.z - state.jungle.debugSpawn.z)).toBeLessThan(0.5);
+  expect(state.jungle.isInside).toBe(true);
+  expect(state.jungle.floorAmount).toBeGreaterThan(0.5);
+  expect(state.jungle.groundSamples.every((sample) => sample.greenDominant && sample.hex !== null)).toBe(true);
+  expect(state.jungle.jungleLargeTrees).toBeGreaterThanOrEqual(4);
+  expect(state.jungle.jungleVines).toBeGreaterThanOrEqual(state.jungle.jungleLargeTrees * 5);
+  expect(state.jungle.jungleSamples[0]?.nearestTreeSpacing).toBeGreaterThan(10);
+  expect(state.largeTreeObstacleCount).toBeGreaterThanOrEqual(3);
+  expect(state.largestTreeObstacleRadius).toBeGreaterThan(2.4);
+  expect(state.dragonflies.total).toBeGreaterThan(0);
+  expect(state.dragonflies.visible).toBeGreaterThan(0);
+  expect(state.dragonflies.maxFrameDisplacement).toBeLessThan(1.25);
+  expect(state.frogs.total).toBe(3);
+  expect(state.frogsNearJungle).toBeGreaterThan(0);
+  expect(state.beetles.total).toBe(8);
+  expect(state.beetles.visible).toBe(0);
 });
 
 test("statue debug renders a visible talking stone landmark", async ({ page }, testInfo) => {

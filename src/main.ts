@@ -1,6 +1,13 @@
 import * as THREE from "three";
 import { createCollisionWorld, type CollisionObstacle } from "./collision";
-import { createAlienWaterCreatures, createMountainBirds, createRareFlyingBeetles, type BirdDebugState } from "./creatures";
+import {
+  createAlienWaterCreatures,
+  createJungleDragonflies,
+  createMountainBirds,
+  createRareFlyingBeetles,
+  type BirdDebugState,
+  type DragonflyDebugState,
+} from "./creatures";
 import { createPrDemoController } from "./demo";
 import {
   createDiamondCrystalSystem,
@@ -22,7 +29,17 @@ import {
   type RadioTelescopeTerrainFlatness,
 } from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
-import { populateNature, type NaturePerfState } from "./nature";
+import {
+  getJungleDebugPatch,
+  getJungleDebugSpawn,
+  getJungleDragonflyAnchors,
+  getJungleFrogSpawns,
+  jungleBiomeStateAt,
+  jungleTerrainColourAt,
+  populateNature,
+  type JungleBiomeState,
+  type NaturePerfState,
+} from "./nature";
 import { createParamotorDevice, type ParamotorPlacementState } from "./paramotor";
 import {
   normalizeLocalVector,
@@ -142,6 +159,18 @@ type ParamotorDebugState = ParamotorPlacementState & {
   yaw: number;
 };
 
+type JungleBiomeDebugState = JungleBiomeState & {
+  generatedJunglePatches: number;
+  fullDetailJunglePatches: number;
+  nearestJunglePatchDistance: number;
+  jungleLargeTrees: number;
+  jungleVines: number;
+  jungleSamples: Array<{ x: number; z: number; radius: number; treeCount: number; vineCount: number; nearestTreeSpacing: number }>;
+  groundSamples: Array<{ x: number; z: number; hex: string | null; greenDominant: boolean }>;
+};
+
+type AlienCreatureDebugState = ReturnType<ReturnType<typeof createAlienWaterCreatures>["getState"]>;
+
 type MovementFrameState = {
   horizontalSpeed: number;
   running: boolean;
@@ -242,6 +271,12 @@ declare global {
           flatness: number;
           staticBend: number;
         }[];
+        generatedJunglePatches: number;
+        fullDetailJunglePatches: number;
+        nearestJunglePatchDistance: number;
+        jungleLargeTrees: number;
+        jungleVines: number;
+        jungleSamples: Array<{ x: number; z: number; radius: number; treeCount: number; vineCount: number; nearestTreeSpacing: number }>;
       };
       getVisionState: () => {
         isolationAmount: number;
@@ -317,6 +352,9 @@ declare global {
         }[];
       };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
+      getJungleBiomeState: () => JungleBiomeDebugState;
+      getJungleFrogState: () => AlienCreatureDebugState;
+      getDragonflyState: () => DragonflyDebugState;
       getMistState: () => MistDebugState;
       getBirdState: () => BirdDebugState;
       getMassiveMountainState: () => {
@@ -382,6 +420,7 @@ const enableTelescopeDebug = params.get("debug") === "telescope";
 const enableRadioTelescopeDebug = params.get("debug") === "radio" || params.get("debug") === "radio-telescope";
 const enableStatueDebug = params.get("debug") === "statue";
 const isBeetleDebug = params.get("debug") === "beetle";
+const enableJungleDebug = params.get("debug") === "jungle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
 const oceanDebugRoute = params.get("debug");
@@ -411,6 +450,7 @@ const enableDebugTools =
   enableRadioTelescopeDebug ||
   enableStatueDebug ||
   isBeetleDebug ||
+  enableJungleDebug ||
   isBirdDebug ||
   enableMountainDebug ||
   enableOceanDebug ||
@@ -449,6 +489,8 @@ const hudBadgeText = isDemo
               ? "statue debug"
             : isBeetleDebug
               ? "beetle debug"
+              : enableJungleDebug
+                ? "jungle debug"
           : isBirdDebug
                 ? "birds debug"
                 : enableMountainDebug
@@ -608,6 +650,8 @@ const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
 const oceanDebugSpawn = getOceanDebugSpawn(oceanDebugRegionId);
 const diamondDebugSpawn = getDiamondDebugSpawn(diamondDebugName);
+const jungleDebugPatch = getJungleDebugPatch();
+const jungleDebugSpawn = getJungleDebugSpawn();
 
 function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableTempleDebug) return new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z);
@@ -618,6 +662,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableStatueDebug) return new THREE.Vector3(talkingStatue.approachPosition.x, 0, talkingStatue.approachPosition.z);
   if (enableParamotorDebug) return new THREE.Vector3(paramotor.approachPosition.x, 0, paramotor.approachPosition.z);
   if (isBeetleDebug) return new THREE.Vector3(4.8, 0, 14.2);
+  if (enableJungleDebug) return new THREE.Vector3(jungleDebugSpawn.x, 0, jungleDebugSpawn.z);
   if (isBirdDebug) return new THREE.Vector3(birdDebugAnchor.x + 22, 0, birdDebugAnchor.z + 8);
   if (enableMountainDebug) return new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z);
   if (enableOceanDebug) return new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z);
@@ -649,6 +694,7 @@ function getInitialPlayerYaw(): number {
     );
   }
   if (isBirdDebug) return Math.atan2(initialPlayerLocalPosition.x - birdDebugAnchor.x, initialPlayerLocalPosition.z - birdDebugAnchor.z);
+  if (enableJungleDebug) return jungleDebugSpawn.yaw;
   if (enableDomeDebug) return Math.atan2(-dome.entranceDirection.x, -dome.entranceDirection.z);
   if (enableMountainDebug) {
     return Math.atan2(initialPlayerLocalPosition.x - mountainDebugState.center.x, initialPlayerLocalPosition.z - mountainDebugState.center.z);
@@ -665,6 +711,7 @@ function getInitialPlayerPitch(): number {
   if (enableRadioTelescopeDebug) return -0.12;
   if (enableStatueDebug) return -0.04;
   if (enableParamotorDebug) return -0.2;
+  if (enableJungleDebug) return -0.02;
   if (isBirdDebug) return 0.18;
   if (enableMountainDebug) return 0.08;
   if (enableOceanDebug) return -0.05;
@@ -768,7 +815,9 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerf
   ]
 );
 const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
+const jungleFrogs = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles, getJungleFrogSpawns());
 const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
+const jungleDragonflies = createJungleDragonflies(scene, effectiveHeightAt, getJungleDragonflyAnchors());
 const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
 const demoFloraFocus = new THREE.Vector3(9, 0, 18);
 const telescopeFloraFocus = new THREE.Vector3();
@@ -949,6 +998,9 @@ if (enableDebugTools) {
     },
     getCreatureState: waterCreatures.getState,
     getBeetleState: flyingBeetles.getState,
+    getJungleBiomeState: getJungleBiomeDebugState,
+    getJungleFrogState: jungleFrogs.getState,
+    getDragonflyState: jungleDragonflies.getState,
     getMistState: () => {
       mist.update(clock.elapsedTime, player.localPosition);
       return mist.getDebugState();
@@ -1561,9 +1613,10 @@ function effectiveHeightAt(x: number, z: number): number {
 }
 
 function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | null {
-  return dome.contains({ x, z }) || Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z)) > 0.35
-    ? domeFloorColour
-    : null;
+  if (dome.contains({ x, z }) || Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z)) > 0.35) {
+    return domeFloorColour;
+  }
+  return jungleTerrainColourAt(x, z);
 }
 
 function domeRimGroundingAmountAt(x: number, z: number): number {
@@ -1861,6 +1914,37 @@ function getTalkingStatueDebugState(): TalkingStatueDebugState {
   };
 }
 
+function getJungleBiomeDebugState(): JungleBiomeDebugState {
+  const biome = jungleBiomeStateAt(player.localPosition.x, player.localPosition.z);
+  const nature = getNatureState();
+  const patch = biome.patch;
+  const groundSamplePoints = [
+    { x: patch.x, z: patch.z },
+    { x: biome.debugSpawn.x, z: biome.debugSpawn.z },
+    { x: patch.x + patch.radius * 0.34, z: patch.z - patch.radius * 0.18 },
+    { x: patch.x - patch.radius * 0.22, z: patch.z + patch.radius * 0.31 },
+  ];
+
+  return {
+    ...biome,
+    generatedJunglePatches: nature.generatedJunglePatches,
+    fullDetailJunglePatches: nature.fullDetailJunglePatches,
+    nearestJunglePatchDistance: nature.nearestJunglePatchDistance,
+    jungleLargeTrees: nature.jungleLargeTrees,
+    jungleVines: nature.jungleVines,
+    jungleSamples: nature.jungleSamples,
+    groundSamples: groundSamplePoints.map((sample) => {
+      const colour = jungleTerrainColourAt(sample.x, sample.z);
+      return {
+        x: sample.x,
+        z: sample.z,
+        hex: colour ? `#${colour.getHexString()}` : null,
+        greenDominant: Boolean(colour && colour.g > colour.r * 1.2 && colour.g > colour.b * 1.08),
+      };
+    }),
+  };
+}
+
 function updateExploration(delta: number): MovementFrameState {
   setCameraFov(normalCameraFov);
   const forward = movementForward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
@@ -2019,6 +2103,18 @@ function animate(): void {
     );
   }
 
+  if (enableJungleDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      jungleDebugSpawn.x,
+      jungleDebugSpawn.z,
+      effectiveHeightAt(jungleDebugSpawn.x, jungleDebugSpawn.z) + 3.5,
+      jungleDebugPatch.x,
+      jungleDebugPatch.z,
+      effectiveHeightAt(jungleDebugPatch.x, jungleDebugPatch.z) + 3.8
+    );
+  }
+
   const movementAmount = isDemo
     ? 0
     : telescopeMode.active
@@ -2051,7 +2147,9 @@ function animate(): void {
   }
   const floraFocus = isDemo ? demoFloraFocus : telescopeMode.active ? telescopeFloraFocus : player.localPosition;
   waterCreatures.update(elapsed, delta, floraFocus);
+  jungleFrogs.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
+  jungleDragonflies.update(elapsed, floraFocus);
   talkingStatue.update(elapsed, floraFocus);
   mountainBirds.update(elapsed, floraFocus);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;

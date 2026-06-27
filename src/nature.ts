@@ -31,6 +31,12 @@ export type NatureState = {
   nearestSeaweedDistance: number;
   nearestSeaweedFreezeAmount: number;
   seaweedSamples: SeaweedSample[];
+  generatedJunglePatches: number;
+  fullDetailJunglePatches: number;
+  nearestJunglePatchDistance: number;
+  jungleLargeTrees: number;
+  jungleVines: number;
+  jungleSamples: JungleTreeSample[];
 };
 
 export type NaturePerfState = {
@@ -83,6 +89,31 @@ type BiomePatch = {
   radius: number;
 };
 
+type JunglePatch = BiomePatch & {
+  cellX: number;
+  cellZ: number;
+};
+
+type JungleTreeSample = {
+  x: number;
+  z: number;
+  radius: number;
+  treeCount: number;
+  vineCount: number;
+  nearestTreeSpacing: number;
+};
+
+export type JungleBiomeState = {
+  isInside: boolean;
+  activeAmount: number;
+  floorAmount: number;
+  distanceToCenter: number;
+  distanceToEdge: number;
+  patch: { x: number; z: number; radius: number };
+  debugSpawn: { x: number; z: number; yaw: number };
+  groundColour: string;
+};
+
 const capRestColour = new THREE.Color(0xff5c9e);
 const capNearColour = new THREE.Color(0xfff06a);
 const glowNearColour = new THREE.Color(0xffffb8);
@@ -101,12 +132,115 @@ const generatedComplexFadeRadius = 292;
 const starterBiomeCellX = 0;
 const starterBiomeCellZ = 0;
 const starterBiomeCenter = { x: 8, z: 18 };
+const jungleBiomeCellSize = generatedBiomeCellSize * 2;
+const jungleDebugCellX = -2;
+const jungleDebugCellZ = 0;
+const jungleDebugPatch: JunglePatch = { cellX: jungleDebugCellX, cellZ: jungleDebugCellZ, x: -620, z: 180, radius: 74 };
+const junglePatchFadeDistance = 24;
+const jungleFloorColour = new THREE.Color(0x3dde5e);
+const jungleFloorDeepColour = new THREE.Color(0x126d46);
+const jungleFloorGlowColour = new THREE.Color(0x92ff72);
+const jungleTerrainColourScratch = new THREE.Color();
 const baseTreesPerChunk = 3;
 const baseReactiveFloraPerChunk = 9;
 const baseSproutsPerChunk = 6;
 const baseRocksPerChunk = 3;
 const basePoolChance = 0.22;
 const baseStreamChance = 0.12;
+
+export function getJungleDebugSpawn(): { x: number; z: number; yaw: number } {
+  const patch = getJungleDebugPatch();
+  const x = patch.x - patch.radius * 0.48;
+  const z = patch.z + patch.radius * 0.26;
+  return {
+    x,
+    z,
+    yaw: Math.atan2(x - patch.x, z - patch.z),
+  };
+}
+
+export function getJungleDebugPatch(): { x: number; z: number; radius: number } {
+  return { x: jungleDebugPatch.x, z: jungleDebugPatch.z, radius: jungleDebugPatch.radius };
+}
+
+export function jungleBiomeStateAt(x: number, z: number): JungleBiomeState {
+  const normalized = normalizePlanetCoords(x, z);
+  const nearest = nearestJunglePatch(normalized.x, normalized.z);
+  const distanceToCenter = nearest
+    ? surfaceDistanceBetweenLocal(normalized, nearest.patch)
+    : Number.POSITIVE_INFINITY;
+  const distanceToEdge = nearest ? distanceToCenter - nearest.patch.radius : Number.POSITIVE_INFINITY;
+  const floorAmount = nearest
+    ? 1 - THREE.MathUtils.smoothstep(distanceToCenter, nearest.patch.radius, nearest.patch.radius + junglePatchFadeDistance)
+    : 0;
+  const activeAmount = nearest
+    ? 1 - THREE.MathUtils.smoothstep(distanceToCenter, nearest.patch.radius + 18, nearest.patch.radius + junglePatchFadeDistance + 32)
+    : 0;
+
+  return {
+    isInside: floorAmount > 0.5,
+    activeAmount,
+    floorAmount,
+    distanceToCenter,
+    distanceToEdge,
+    patch: nearest ? { x: nearest.patch.x, z: nearest.patch.z, radius: nearest.patch.radius } : getJungleDebugPatch(),
+    debugSpawn: getJungleDebugSpawn(),
+    groundColour: `#${jungleFloorColour.getHexString()}`,
+  };
+}
+
+export function jungleTerrainColourAt(x: number, z: number): THREE.Color | null {
+  const normalized = normalizePlanetCoords(x, z);
+  if (oceanStateAt(normalized.x, normalized.z).isInOcean) return null;
+  const nearest = nearestJunglePatch(normalized.x, normalized.z);
+  if (!nearest) return null;
+  const floorAmount = 1 - THREE.MathUtils.smoothstep(nearest.distance, nearest.patch.radius, nearest.patch.radius + junglePatchFadeDistance);
+  if (floorAmount <= 0) return null;
+
+  const blockX = Math.floor(normalized.x / 7.5);
+  const blockZ = Math.floor(normalized.z / 7.5);
+  const fleck = Math.sin(blockX * 1.91 + blockZ * 0.73) * 0.5 + Math.cos(blockZ * 1.37 - blockX * 0.28) * 0.5;
+  const glowAmount = THREE.MathUtils.clamp(0.28 + fleck * 0.16 + floorAmount * 0.34, 0, 1);
+  jungleTerrainColourScratch.copy(jungleFloorDeepColour).lerp(jungleFloorColour, glowAmount);
+  if (floorAmount > 0.72 && fleck > 0.35) {
+    jungleTerrainColourScratch.lerp(jungleFloorGlowColour, (fleck - 0.35) * 0.18);
+  }
+  return jungleTerrainColourScratch;
+}
+
+export function getJungleDragonflyAnchors(): LocalPlanetPoint[] {
+  return getStableJunglePatches()
+    .flatMap((patch, patchIndex) => {
+      const random = createChunkRandom(patch.cellX * 31 + 17, patch.cellZ * 29 - 41);
+      const anchorCount = patchIndex === 0 ? 4 : 2;
+      return Array.from({ length: anchorCount }, (_, index) => {
+        const angle = random() * Math.PI * 2 + index * 1.7;
+        const distance = patch.radius * (0.12 + random() * 0.42);
+        return {
+          x: patch.x + Math.cos(angle) * distance,
+          z: patch.z + Math.sin(angle) * distance,
+        };
+      });
+    })
+    .slice(0, 24);
+}
+
+export function getJungleFrogSpawns(): {
+  x: number;
+  z: number;
+  angle: number;
+  phase: number;
+  interval: number;
+  hopDistance: number;
+  scale?: number;
+}[] {
+  const patch = getJungleDebugPatch();
+  return [
+    { x: patch.x - 14.5, z: patch.z + 6.4, angle: -0.25, phase: 0.35, interval: 2.45, hopDistance: 0.98, scale: 1.04 },
+    { x: patch.x + 7.6, z: patch.z - 12.2, angle: 2.34, phase: 1.12, interval: 2.75, hopDistance: 0.84 },
+    { x: patch.x + 18.2, z: patch.z + 11.6, angle: -2.8, phase: 2.05, interval: 2.6, hopDistance: 0.9 },
+  ];
+}
 
 export function populateNature(
   scene: THREE.Scene,
@@ -136,6 +270,10 @@ export function populateNature(
   const trunkMaterial = new THREE.MeshBasicMaterial({ color: 0x3f2b92 });
   const canopyMaterial = new THREE.MeshBasicMaterial({ color: 0x8dff86 });
   const canopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xffb84f });
+  const jungleTrunkMaterial = new THREE.MeshBasicMaterial({ color: 0x26347f });
+  const jungleCanopyMaterial = new THREE.MeshBasicMaterial({ color: 0x38e970 });
+  const jungleCanopyAccentMaterial = new THREE.MeshBasicMaterial({ color: 0xb8ff5f });
+  const jungleVineMaterial = new THREE.MeshBasicMaterial({ color: 0x35c8a1 });
   const reedMaterial = new THREE.MeshBasicMaterial({ color: 0xc5ff4f });
   const bloomMaterial = new THREE.MeshBasicMaterial({ color: 0xff58df });
   const waterMaterial = new THREE.MeshBasicMaterial({
@@ -157,6 +295,12 @@ export function populateNature(
   let generatedBiomePatchCount = 0;
   let fullDetailBiomePatchCount = 0;
   let nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
+  let generatedJunglePatchCount = 0;
+  let fullDetailJunglePatchCount = 0;
+  let nearestJunglePatchDistance = Number.POSITIVE_INFINITY;
+  let jungleLargeTreeCount = 0;
+  let jungleVineCount = 0;
+  let jungleSamples: JungleTreeSample[] = [];
   let nearestSeaweedDistance = Number.POSITIVE_INFINITY;
   let nearestSeaweedFreezeAmount = 0;
   let seaweedSamples: SeaweedSample[] = [];
@@ -253,6 +397,77 @@ export function populateNature(
     const obstacle = { kind: "tree" as const, x, z, radius: 1.15 * scale };
     if (dynamicObstacles) dynamicObstacles.push(obstacle);
     else addCollisionObstacle(obstacle);
+  };
+
+  const addJungleTree = (
+    x: number,
+    z: number,
+    scale: number,
+    lean: number,
+    random: () => number,
+    dynamicObstacles: CollisionObstacle[]
+  ): number => {
+    const y = heightAt(x, z);
+    const tree = new THREE.Group();
+    placeObjectOnPlanet(tree, x, z, y, new THREE.Euler(0, x * 0.08 + z * 0.05 + lean * 0.2, 0));
+    tree.scale.setScalar(scale);
+
+    const trunkLeanX = Math.sin(lean) * 0.18;
+    const baseTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 1.08, 5.4, 7), jungleTrunkMaterial);
+    baseTrunk.position.set(trunkLeanX * 0.4, 2.62, 0);
+    baseTrunk.rotation.z = lean * 0.055;
+    tree.add(baseTrunk);
+
+    const highTrunk = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.68, 3.15, 6), jungleTrunkMaterial);
+    highTrunk.position.set(trunkLeanX, 6.72, 0);
+    highTrunk.rotation.z = lean * 0.045;
+    tree.add(highTrunk);
+
+    const branchMaterial = jungleTrunkMaterial;
+    for (let i = 0; i < 4; i += 1) {
+      const branchAngle = lean + i * Math.PI * 0.5 + random() * 0.35;
+      const branch = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 3.6 + random() * 1.1, 5), branchMaterial);
+      branch.position.set(trunkLeanX + Math.cos(branchAngle) * 0.95, 5.9 + random() * 0.9, Math.sin(branchAngle) * 0.95);
+      branch.rotation.set(0.42 + random() * 0.18, branchAngle, Math.PI * 0.5 + lean * 0.03);
+      tree.add(branch);
+    }
+
+    const crownSpecs = [
+      { x: trunkLeanX * 1.2, y: 7.8, z: 0, sx: 3.65, sy: 0.72, sz: 3.15, material: jungleCanopyMaterial },
+      { x: trunkLeanX * 1.8 - 1.2, y: 7.25, z: 0.75, sx: 2.75, sy: 0.55, sz: 2.2, material: jungleCanopyAccentMaterial },
+      { x: trunkLeanX * 1.6 + 1.35, y: 7.05, z: -0.88, sx: 2.9, sy: 0.58, sz: 2.35, material: jungleCanopyMaterial },
+      { x: trunkLeanX * 1.5 + 0.2, y: 8.42, z: 0.15, sx: 2.45, sy: 0.48, sz: 2.55, material: jungleCanopyAccentMaterial },
+    ];
+    crownSpecs.forEach((spec, index) => {
+      const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(1.12 + index * 0.04, 0), spec.material);
+      crown.position.set(spec.x, spec.y, spec.z);
+      crown.scale.set(spec.sx, spec.sy, spec.sz);
+      crown.rotation.set(0.08 + index * 0.06, lean + index * 0.62, -0.08 + index * 0.04);
+      tree.add(crown);
+    });
+
+    const vineCount = 5 + Math.floor(random() * 4);
+    for (let i = 0; i < vineCount; i += 1) {
+      const angle = lean + i * 1.37 + random() * 0.34;
+      const distance = 1.15 + random() * 1.45;
+      const length = 1.8 + random() * 2.2;
+      const vine = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.042, length, 4), jungleVineMaterial);
+      vine.position.set(trunkLeanX + Math.cos(angle) * distance, 6.25 - length * 0.35 + random() * 0.6, Math.sin(angle) * distance);
+      vine.rotation.set(0.05 + Math.sin(angle) * 0.12, angle, Math.cos(angle) * 0.08);
+      tree.add(vine);
+    }
+
+    for (let i = 0; i < 6; i += 1) {
+      const bead = new THREE.Mesh(new THREE.OctahedronGeometry(0.16 + random() * 0.05, 0), bloomMaterial);
+      const angle = lean + i * 1.04;
+      bead.position.set(trunkLeanX + Math.cos(angle) * (1.65 + random() * 0.9), 5.3 + random() * 1.6, Math.sin(angle) * (1.65 + random() * 0.9));
+      bead.rotation.set(random() * Math.PI, random() * Math.PI, random() * Math.PI);
+      tree.add(bead);
+    }
+
+    generatedNatureGroup.add(tree);
+    dynamicObstacles.push({ kind: "tree", x, z, radius: 2.35 * scale });
+    return vineCount;
   };
 
   const addSproutAt = (x: number, z: number, seed: number, angle: number, targetGroup = natureGroup): void => {
@@ -352,9 +567,15 @@ export function populateNature(
     generatedBiomePatchCount = 0;
     fullDetailBiomePatchCount = 0;
     nearestBiomePatchDistance = Number.POSITIVE_INFINITY;
+    generatedJunglePatchCount = 0;
+    fullDetailJunglePatchCount = 0;
+    nearestJunglePatchDistance = Number.POSITIVE_INFINITY;
+    jungleLargeTreeCount = 0;
+    jungleVineCount = 0;
     nearestSeaweedDistance = Number.POSITIVE_INFINITY;
     nearestSeaweedFreezeAmount = 0;
     seaweedSamples = [];
+    jungleSamples = [];
     reactiveStalks.length = 0;
     reactiveSeaweedPatches.length = 0;
     const dynamicObstacles: CollisionObstacle[] = [];
@@ -384,6 +605,7 @@ export function populateNature(
           : biomeCellZ * generatedBiomeCellSize + (0.3 + random() * 0.4) * generatedBiomeCellSize;
         const clusterRadius = starterBiome ? 46 : 28 + random() * 18;
         if (isInMassiveMountainFootprint(clusterX, clusterZ, clusterRadius + 18)) continue;
+        if (!starterBiome && jungleBiomeStateAt(clusterX, clusterZ).floorAmount > 0.18) continue;
 
         const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, { x: clusterX, z: clusterZ });
         const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius, generatedComplexFadeRadius);
@@ -461,6 +683,94 @@ export function populateNature(
       }
     }
 
+    const minJungleCellX = Math.floor(minX / jungleBiomeCellSize) - 1;
+    const maxJungleCellX = Math.floor(maxX / jungleBiomeCellSize) + 1;
+    const minJungleCellZ = Math.floor(minZ / jungleBiomeCellSize) - 1;
+    const maxJungleCellZ = Math.floor(maxZ / jungleBiomeCellSize) + 1;
+    for (let cellZ = minJungleCellZ; cellZ <= maxJungleCellZ; cellZ += 1) {
+      for (let cellX = minJungleCellX; cellX <= maxJungleCellX; cellX += 1) {
+        if (!shouldPlaceJungleBiomeCell(cellX, cellZ)) continue;
+        const patch = junglePatchForCell(cellX, cellZ);
+        if (!isUsableJunglePatch(patch)) continue;
+
+        const distanceToFocus = surfaceDistanceBetweenLocal({ x: normalized.x, z: normalized.z }, patch);
+        const detailAmount = 1 - THREE.MathUtils.smoothstep(distanceToFocus, generatedComplexDetailRadius, generatedComplexFadeRadius);
+        if (detailAmount <= 0.02) continue;
+
+        generatedJunglePatchCount += 1;
+        if (detailAmount >= 0.98) fullDetailJunglePatchCount += 1;
+        nearestJunglePatchDistance = Math.min(nearestJunglePatchDistance, distanceToFocus);
+        nearestBiomePatchDistance = Math.min(nearestBiomePatchDistance, distanceToFocus);
+        visibleBiomePatches.push({ x: patch.x, z: patch.z, radius: patch.radius + 12 });
+
+        const random = createChunkRandom(cellX * 47 + 881, cellZ * 43 - 337);
+        const transitionAmount = THREE.MathUtils.clamp((detailAmount - 0.14) / 0.86, 0, 1);
+        const nearObjectScale = 0.58 + detailAmount * 0.42;
+        const complexObjectScale = Math.pow(transitionAmount, 0.72);
+        const desiredTrees = Math.round((5 + random() * 3) * nearObjectScale);
+        const treePoints: LocalPlanetPoint[] = [];
+        let patchVines = 0;
+        let nearestTreeSpacing = Number.POSITIVE_INFINITY;
+
+        const centralTree = { x: patch.x, z: patch.z };
+        if (!isGeneratedNatureExcluded(centralTree, landmarkZones)) {
+          const vines = addJungleTree(centralTree.x, centralTree.z, 1.34 + random() * 0.12, random() * Math.PI * 2 - Math.PI, random, dynamicObstacles);
+          treePoints.push(centralTree);
+          patchVines += vines;
+          jungleLargeTreeCount += 1;
+          jungleVineCount += vines;
+          generatedObjectCount += 1;
+        }
+
+        for (let attempt = 0; attempt < desiredTrees * 9 && treePoints.length < desiredTrees; attempt += 1) {
+          const point = pointNear(patch.x, patch.z, patch.radius * 0.72, random);
+          if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
+          const spacing = treePoints.reduce(
+            (nearest, treePoint) => Math.min(nearest, surfaceDistanceBetweenLocal(point, treePoint)),
+            Number.POSITIVE_INFINITY
+          );
+          if (spacing < 12.5) continue;
+          treePoints.push(point);
+          nearestTreeSpacing = Math.min(nearestTreeSpacing, spacing);
+          const vines = addJungleTree(point.x, point.z, 1.12 + random() * 0.36, random() * Math.PI * 2 - Math.PI, random, dynamicObstacles);
+          patchVines += vines;
+          jungleLargeTreeCount += 1;
+          jungleVineCount += vines;
+          generatedObjectCount += 1;
+        }
+
+        const undergrowthCount = Math.round((8 + random() * 6) * complexObjectScale);
+        for (let i = 0; i < undergrowthCount; i += 1) {
+          const point = pointNear(patch.x, patch.z, patch.radius * 0.82, random);
+          if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
+          if (random() < 0.58) {
+            addReactiveFloraAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+            generatedReactiveFloraCount += 1;
+          } else {
+            addSproutAt(point.x, point.z, Math.floor(random() * 10_000), random() * Math.PI * 2, generatedNatureGroup);
+          }
+          generatedObjectCount += 1;
+        }
+
+        const poolCount = detailAmount > 0.5 ? 1 + (random() < 0.32 ? 1 : 0) : 0;
+        for (let i = 0; i < poolCount; i += 1) {
+          const point = pointNear(patch.x, patch.z, patch.radius * 0.36, random);
+          if (isGeneratedNatureExcluded(point, landmarkZones)) continue;
+          addPool(generatedNatureGroup, heightAt, waterMaterial, stoneMaterial, point.x, point.z, 2.8 + random() * 2.6, random() * Math.PI);
+          generatedObjectCount += 1;
+        }
+
+        jungleSamples.push({
+          x: patch.x,
+          z: patch.z,
+          radius: patch.radius,
+          treeCount: treePoints.length,
+          vineCount: patchVines,
+          nearestTreeSpacing: Number.isFinite(nearestTreeSpacing) ? nearestTreeSpacing : patch.radius,
+        });
+      }
+    }
+
     const minSeaweedCellX = Math.floor(minX / seaweedCellSize);
     const maxSeaweedCellX = Math.floor(maxX / seaweedCellSize);
     const minSeaweedCellZ = Math.floor(minZ / seaweedCellSize);
@@ -523,7 +833,13 @@ export function populateNature(
         seaweedSamples,
         generatedBiomePatchCount,
         fullDetailBiomePatchCount,
-        nearestBiomePatchDistance
+        nearestBiomePatchDistance,
+        generatedJunglePatchCount,
+        fullDetailJunglePatchCount,
+        nearestJunglePatchDistance,
+        jungleLargeTreeCount,
+        jungleVineCount,
+        jungleSamples
       ),
   };
 }
@@ -590,6 +906,60 @@ function chunkNatureDensity(chunkX: number, chunkZ: number): number {
   const broadWave = (Math.sin(chunkX * 0.91 + chunkZ * 0.37) + Math.cos(chunkZ * 0.73 - chunkX * 0.28) + 2) * 0.25;
   const pocket = createChunkRandom(chunkX + 101, chunkZ - 211)();
   return THREE.MathUtils.clamp(0.72 + broadWave * 0.42 + pocket * 0.28, 0.62, 1.34);
+}
+
+function shouldPlaceJungleBiomeCell(cellX: number, cellZ: number): boolean {
+  if (cellX === jungleDebugCellX && cellZ === jungleDebugCellZ) return true;
+  if (Math.abs(cellX) <= 1 && Math.abs(cellZ) <= 1) return false;
+  const broadWave = (Math.sin(cellX * 0.63 - cellZ * 0.41) + Math.cos(cellZ * 0.76 + cellX * 0.27) + 2) * 0.25;
+  const pocket = createChunkRandom(cellX - 907, cellZ + 577)();
+  return broadWave * 0.42 + pocket * 0.58 > 0.78;
+}
+
+function junglePatchForCell(cellX: number, cellZ: number): JunglePatch {
+  if (cellX === jungleDebugCellX && cellZ === jungleDebugCellZ) return { ...jungleDebugPatch };
+  const random = createChunkRandom(cellX * 17 - 313, cellZ * 19 + 229);
+  return {
+    cellX,
+    cellZ,
+    x: cellX * jungleBiomeCellSize + (0.28 + random() * 0.44) * jungleBiomeCellSize,
+    z: cellZ * jungleBiomeCellSize + (0.28 + random() * 0.44) * jungleBiomeCellSize,
+    radius: 58 + random() * 24,
+  };
+}
+
+function isUsableJunglePatch(patch: JunglePatch): boolean {
+  return !isInMassiveMountainFootprint(patch.x, patch.z, patch.radius + 18) && !oceanStateAt(patch.x, patch.z).isInOcean;
+}
+
+function nearestJunglePatch(x: number, z: number): { patch: JunglePatch; distance: number } | null {
+  const centerCellX = Math.floor(x / jungleBiomeCellSize);
+  const centerCellZ = Math.floor(z / jungleBiomeCellSize);
+  let nearest: { patch: JunglePatch; distance: number } | null = null;
+  for (let cellZ = centerCellZ - 1; cellZ <= centerCellZ + 1; cellZ += 1) {
+    for (let cellX = centerCellX - 1; cellX <= centerCellX + 1; cellX += 1) {
+      if (!shouldPlaceJungleBiomeCell(cellX, cellZ)) continue;
+      const patch = junglePatchForCell(cellX, cellZ);
+      if (!isUsableJunglePatch(patch)) continue;
+      const distance = surfaceDistanceBetweenLocal({ x, z }, patch);
+      if (!nearest || distance - patch.radius < nearest.distance - nearest.patch.radius) {
+        nearest = { patch, distance };
+      }
+    }
+  }
+  return nearest;
+}
+
+function getStableJunglePatches(): JunglePatch[] {
+  const patches: JunglePatch[] = [];
+  for (let cellZ = -5; cellZ <= 5; cellZ += 1) {
+    for (let cellX = -5; cellX <= 5; cellX += 1) {
+      if (!shouldPlaceJungleBiomeCell(cellX, cellZ)) continue;
+      const patch = junglePatchForCell(cellX, cellZ);
+      if (isUsableJunglePatch(patch)) patches.push(patch);
+    }
+  }
+  return patches.sort((a, b) => (a.cellX === jungleDebugCellX && a.cellZ === jungleDebugCellZ ? -1 : b.cellX === jungleDebugCellX && b.cellZ === jungleDebugCellZ ? 1 : 0));
 }
 
 function pointNear(x: number, z: number, radius: number, random: () => number): LocalPlanetPoint {
@@ -684,7 +1054,13 @@ function getGeneratedNatureState(
   seaweedSamples: SeaweedSample[],
   generatedBiomePatches: number,
   fullDetailBiomePatches: number,
-  nearestBiomePatchDistance: number
+  nearestBiomePatchDistance: number,
+  generatedJunglePatches: number,
+  fullDetailJunglePatches: number,
+  nearestJunglePatchDistance: number,
+  jungleLargeTrees: number,
+  jungleVines: number,
+  jungleSamples: JungleTreeSample[]
 ): NatureState {
   const minChunkX = centerChunkX - generatedNatureChunkRadius;
   const maxChunkX = centerChunkX + generatedNatureChunkRadius + 1;
@@ -712,6 +1088,12 @@ function getGeneratedNatureState(
     nearestSeaweedDistance,
     nearestSeaweedFreezeAmount,
     seaweedSamples: seaweedSamples.slice(0, 12),
+    generatedJunglePatches,
+    fullDetailJunglePatches,
+    nearestJunglePatchDistance,
+    jungleLargeTrees,
+    jungleVines,
+    jungleSamples: jungleSamples.slice(0, 12),
   };
 }
 
