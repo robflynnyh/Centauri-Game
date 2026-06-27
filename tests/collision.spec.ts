@@ -1015,6 +1015,49 @@ test("ramps the glass dome entrance floor without sharp height pops", async ({ p
   expect(result.insideAfterWalk).toBe(true);
 });
 
+test("keeps the glass dome entrance ramp and colour override local", async ({ page }) => {
+  await page.goto("/?debug=dome");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug));
+
+  const result = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri dome debug hook");
+    const dome = debug.getDomeState();
+    const sampleAt = (along: number) =>
+      debug.getDomeGroundingStateAt(
+        dome.x + dome.entranceDirectionX * along,
+        dome.z + dome.entranceDirectionZ * along
+      );
+
+    const localPath = sampleAt(dome.radius + 6);
+    const beyondPath = sampleAt(dome.radius + dome.groundingBandWidth + 8);
+    const behindDome = sampleAt(-(dome.radius + dome.groundingBandWidth + 8));
+    const interior = sampleAt(dome.interiorRadius * 0.35);
+
+    return {
+      floorColour: interior.colourOverrideHex,
+      localPath,
+      beyondPath,
+      behindDome,
+    };
+  });
+
+  expect(result.localPath.entranceRampAmount).toBeGreaterThan(0.35);
+  expect(result.localPath.colourOverrideHex).not.toBeNull();
+  expect(result.localPath.colourOverrideHex).not.toBe(result.floorColour);
+  expect(Math.abs(result.localPath.effectiveHeight - result.localPath.baseHeight)).toBeGreaterThan(0.2);
+
+  expect(result.beyondPath.entranceRampAmount).toBe(0);
+  expect(result.beyondPath.groundingAmount).toBe(0);
+  expect(result.beyondPath.colourOverrideHex).toBeNull();
+  expect(result.beyondPath.effectiveHeight).toBeCloseTo(result.beyondPath.baseHeight, 5);
+
+  expect(result.behindDome.entranceRampAmount).toBe(0);
+  expect(result.behindDome.groundingAmount).toBe(0);
+  expect(result.behindDome.colourOverrideHex).toBeNull();
+  expect(result.behindDome.effectiveHeight).toBeCloseTo(result.behindDome.baseHeight, 5);
+});
+
 test("discovers the dome field note as the next collected note from the entrance marker", async ({ page }) => {
   await page.goto("/?debug=dome");
   await page.waitForFunction(() => Boolean(window.__centauriDebug));
