@@ -217,3 +217,7 @@ Made active sleep/rest advance the shared game-time sky clock at 8x speed while 
 ## 2026-06-26
 
 Added a stable README screenshot capture for the starter tree-biome landscape so repository visitors can see the current lo-fi exploration look without relying on transient PR demo artifacts.
+
+## 2026-06-27
+
+Shortened the glass dome entrance grounding into a local doorway ramp, changed its exterior terrain colour from the dark floor tone to a softer blue-grey, and added dome-debug coverage for samples beyond and behind the corridor.

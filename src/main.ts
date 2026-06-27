@@ -291,6 +291,16 @@ declare global {
         timeMultiplier: number;
         targetTimeMultiplier: number;
       };
+      getDomeGroundingStateAt: (x: number, z: number) => {
+        x: number;
+        z: number;
+        baseHeight: number;
+        effectiveHeight: number;
+        entranceRampAmount: number;
+        rimGroundingAmount: number;
+        groundingAmount: number;
+        colourOverrideHex: number | null;
+      };
       getObservatoryState: () => ObservatoryDebugState;
       getRadioTelescopeArrayState: () => RadioTelescopeArrayDebugState;
       getTalkingStatueState: () => TalkingStatueDebugState;
@@ -579,8 +589,11 @@ const talkingStatue = createTalkingStatueLandmark(scene, heightAt, [
   ...massiveMountainReservedZones,
 ]);
 const domeFloorColour = new THREE.Color(0x273c78);
+const domeGroundingColour = new THREE.Color(0x5f7d96);
 const domeGroundingBandWidth = 16;
 const domeGroundingFlatShoulder = 0.25;
+const domeEntranceRampOuterLength = 18;
+const domeEntranceRampInnerShoulder = 3.5;
 const fieldNoteSources: Array<{ noteId: FieldNoteId; position: { x: number; z: number }; radius: number }> = [
   talkingStatue.noteSource,
   temple.noteSource,
@@ -922,6 +935,22 @@ if (enableDebugTools) {
       timeMultiplier: domeTimeMultiplier,
 	      targetTimeMultiplier: domeTargetTimeMultiplier,
 	    }),
+    getDomeGroundingStateAt: (x: number, z: number) => {
+      const normalized = normalizePlanetCoords(x, z);
+      const entranceRampAmount = domeEntranceRampAmountAt(normalized.x, normalized.z);
+      const rimGroundingAmount = domeRimGroundingAmountAt(normalized.x, normalized.z);
+      const colourOverride = terrainColourOverride(normalized.x, normalized.z, effectiveHeightAt(normalized.x, normalized.z));
+      return {
+        x: normalized.x,
+        z: normalized.z,
+        baseHeight: heightAt(normalized.x, normalized.z),
+        effectiveHeight: effectiveHeightAt(normalized.x, normalized.z),
+        entranceRampAmount,
+        rimGroundingAmount,
+        groundingAmount: Math.max(entranceRampAmount, rimGroundingAmount),
+        colourOverrideHex: colourOverride ? colourOverride.getHex() : null,
+      };
+    },
     getObservatoryState: getObservatoryDebugState,
     getRadioTelescopeArrayState: getRadioTelescopeArrayDebugState,
     getTalkingStatueState: getTalkingStatueDebugState,
@@ -1561,9 +1590,8 @@ function effectiveHeightAt(x: number, z: number): number {
 }
 
 function terrainColourOverride(x: number, z: number, _y: number): THREE.Color | null {
-  return dome.contains({ x, z }) || Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z)) > 0.35
-    ? domeFloorColour
-    : null;
+  if (dome.contains({ x, z })) return domeFloorColour;
+  return Math.max(domeEntranceRampAmountAt(x, z), domeRimGroundingAmountAt(x, z)) > 0.35 ? domeGroundingColour : null;
 }
 
 function domeRimGroundingAmountAt(x: number, z: number): number {
@@ -1581,9 +1609,14 @@ function domeEntranceRampAmountAt(x: number, z: number): number {
   const corridorHalfWidth = dome.entranceHalfWidth + 4.5;
   if (crossEntrance > corridorHalfWidth) return 0;
 
-  const outerRamp = dome.radius + 18;
+  const innerRamp = dome.radius - domeEntranceRampInnerShoulder;
+  const outerRamp = dome.radius + domeEntranceRampOuterLength;
   const flatRamp = dome.radius + domeGroundingFlatShoulder;
-  const alongAmount = alongEntrance <= flatRamp ? 1 : 1 - THREE.MathUtils.smoothstep(alongEntrance, flatRamp, outerRamp);
+  if (alongEntrance < innerRamp || alongEntrance > outerRamp) return 0;
+
+  const innerAmount = THREE.MathUtils.smoothstep(alongEntrance, innerRamp, dome.radius);
+  const outerAmount = alongEntrance <= flatRamp ? 1 : 1 - THREE.MathUtils.smoothstep(alongEntrance, flatRamp, outerRamp);
+  const alongAmount = Math.min(innerAmount, outerAmount);
   const widthAmount = 1 - THREE.MathUtils.smoothstep(crossEntrance, dome.entranceHalfWidth, corridorHalfWidth);
   return THREE.MathUtils.clamp(alongAmount * widthAmount, 0, 1);
 }
