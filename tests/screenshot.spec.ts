@@ -337,10 +337,13 @@ test("watcher debug starts near a static outside-biome eye ball", async ({ page 
   const initial = await page.evaluate(() => {
     const debug = window.__centauriDebug;
     if (!debug) throw new Error("Missing Centauri watcher debug hook");
+    const watchers = debug.getWatcherState();
+    const nearest = watchers.nearest;
+    if (!nearest) throw new Error("Missing nearest watcher");
     return {
-      player: debug.getPlayer(),
-      watchers: debug.getWatcherState(),
+      watchers,
       nature: debug.getNatureState(),
+      watcherBlocked: debug.isBlockedAt(nearest.x, nearest.z),
     };
   });
 
@@ -350,7 +353,9 @@ test("watcher debug starts near a static outside-biome eye ball", async ({ page 
   expect(initial.watchers.nearestDistance).toBeLessThan(10);
   expect(initial.watchers.nearest?.outsideBiomeThreshold).toBe(true);
   expect(initial.watchers.nearest?.nearestBiomePatchDistance).toBeGreaterThanOrEqual(72);
+  expect(initial.watchers.nearest?.collisionRadius).toBeGreaterThan(0.45);
   expect(initial.nature.nearestBiomePatchDistance).toBeGreaterThan(70);
+  expect(initial.watcherBlocked).toBe(true);
 
   const watcher = initial.watchers.nearest;
   const spawn = initial.watchers.debugSpawn;
@@ -390,7 +395,18 @@ test("watcher debug starts near a static outside-biome eye ball", async ({ page 
   expect(rightState.nearest?.bodyWorldX).toBeCloseTo(leftState.nearest?.bodyWorldX ?? 0, 6);
   expect(rightState.nearest?.bodyWorldY).toBeCloseTo(leftState.nearest?.bodyWorldY ?? 0, 6);
   expect(rightState.nearest?.bodyWorldZ).toBeCloseTo(leftState.nearest?.bodyWorldZ ?? 0, 6);
-  expect(Math.abs((rightState.nearest?.pupilOffsetX ?? 0) - (leftState.nearest?.pupilOffsetX ?? 0))).toBeGreaterThan(0.08);
+  const eyeTravel = Math.hypot(
+    (rightState.nearest?.eyeOffsetX ?? 0) - (leftState.nearest?.eyeOffsetX ?? 0),
+    (rightState.nearest?.eyeOffsetZ ?? 0) - (leftState.nearest?.eyeOffsetZ ?? 0)
+  );
+  const eyeWorldTravel = Math.hypot(
+    (rightState.nearest?.eyeWorldX ?? 0) - (leftState.nearest?.eyeWorldX ?? 0),
+    (rightState.nearest?.eyeWorldY ?? 0) - (leftState.nearest?.eyeWorldY ?? 0),
+    (rightState.nearest?.eyeWorldZ ?? 0) - (leftState.nearest?.eyeWorldZ ?? 0)
+  );
+  expect(eyeTravel).toBeGreaterThan(0.7);
+  expect(eyeWorldTravel).toBeGreaterThan(0.7);
+  expect(Math.abs((rightState.nearest?.pupilOffsetX ?? 0) - (leftState.nearest?.pupilOffsetX ?? 0))).toBeGreaterThan(0.05);
   expect(Math.abs((rightState.nearest?.eyeTargetAngle ?? 0) - (leftState.nearest?.eyeTargetAngle ?? 0))).toBeGreaterThan(0.6);
 });
 

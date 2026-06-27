@@ -683,11 +683,19 @@ collisionWorld.addObstacle(temple.collision);
 collisionWorld.addObstacle(dome.collision);
 collisionWorld.addObstacle(observatory.collision);
 
+let natureDynamicObstacles: CollisionObstacle[] = [];
+let watcherDynamicObstacles: CollisionObstacle[] = [];
+const replaceGeneratedDynamicObstacles = (): void => {
+  collisionWorld.replaceDynamicObstacles([...natureDynamicObstacles, ...watcherDynamicObstacles]);
+};
 const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerfState } = populateNature(
   scene,
   effectiveHeightAt,
   collisionWorld.addObstacle,
-  collisionWorld.replaceDynamicObstacles,
+  (obstacles) => {
+    natureDynamicObstacles = obstacles;
+    replaceGeneratedDynamicObstacles();
+  },
   [temple.reservedZone, dome.reservedZone, observatory.reservedZone, paramotor.reservedZone, ...massiveMountainReservedZones]
 );
 const outsideBiomeWatchers = createOutsideBiomeWatchers(scene, effectiveHeightAt, collisionWorld.obstacles, [
@@ -696,7 +704,10 @@ const outsideBiomeWatchers = createOutsideBiomeWatchers(scene, effectiveHeightAt
   observatory.reservedZone,
   paramotor.reservedZone,
   ...massiveMountainReservedZones,
-]);
+], (obstacles) => {
+  watcherDynamicObstacles = obstacles;
+  replaceGeneratedDynamicObstacles();
+});
 const waterCreatures = createAlienWaterCreatures(scene, effectiveHeightAt, collisionWorld.obstacles);
 const flyingBeetles = createRareFlyingBeetles(scene, effectiveHeightAt, collisionWorld.obstacles);
 const footsteps = createFootstepTrail(scene, effectiveHeightAt, collisionWorld.isBlockedAt, (x, z) => oceanStateAt(x, z, heightAt).isInOcean);
