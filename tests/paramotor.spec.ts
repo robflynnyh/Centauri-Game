@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test.use({
   video: "off",
@@ -125,3 +125,95 @@ test("paramotor flight normalizes coordinates across the spherical planet seam",
   expect(Math.abs(after.player.z)).toBeLessThan(3);
   expect(Number.isFinite(after.planet.radialDistance)).toBe(true);
 });
+
+test("night paramotor flight keeps stars behind the mountain silhouette", async ({ page }, testInfo) => {
+  await page.goto("/?debug=paramotor&test=collision");
+  await expect(page.getByText("paramotor debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getMassiveMountainState));
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+
+  const setup = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri debug state");
+    const mountain = debug.getMassiveMountainState();
+    const base = mountain.pathSamples[0];
+    const target = mountain.center;
+    const yaw = Math.atan2(-(target.x - base.x), -(target.z - base.z));
+    const paramotor = debug.setParamotorFlightForTest({
+      x: base.x,
+      z: base.z,
+      yaw,
+      pitch: -0.08,
+      speed: 0,
+      throttle: 0,
+      altitudeAboveGround: 120,
+      gas: 1,
+    });
+    const sky = debug.setSkyElapsed(40);
+    return { paramotor, sky };
+  });
+
+  expect(setup.paramotor.mounted).toBe(true);
+  expect(setup.paramotor.airborne).toBe(true);
+  expect(setup.paramotor.altitudeAboveGround).toBeGreaterThan(100);
+  expect(setup.sky.dayAmount).toBeLessThan(0.05);
+  expect(setup.sky.starVisibility).toBeGreaterThan(0.8);
+
+  await page.waitForTimeout(600);
+  const screenshot = await page.screenshot({
+    path: testInfo.outputPath("paramotor-night-mountain-occlusion.png"),
+    fullPage: false,
+  });
+  const silhouette = await sampleBrightnessRegion(page, screenshot, {
+    x: 560,
+    y: 505,
+    width: 150,
+    height: 90,
+    brightThreshold: 52,
+  });
+
+  expect(silhouette.meanBrightness).toBeLessThan(36);
+  expect(silhouette.maxBrightness).toBeLessThan(52);
+  expect(silhouette.brightPixels).toBe(0);
+});
+
+async function sampleBrightnessRegion(
+  page: Page,
+  screenshot: Buffer,
+  region: { x: number; y: number; width: number; height: number; brightThreshold: number }
+): Promise<{ meanBrightness: number; maxBrightness: number; brightPixels: number }> {
+  return page.evaluate(
+    async ({ source, region }) => {
+      const image = new Image();
+      image.src = source;
+      await image.decode();
+      const sampler = document.createElement("canvas");
+      sampler.width = region.width;
+      sampler.height = region.height;
+      const context = sampler.getContext("2d", { willReadFrequently: true });
+      if (!context) throw new Error("Missing 2D sampling context");
+
+      context.drawImage(image, region.x, region.y, region.width, region.height, 0, 0, region.width, region.height);
+      const data = context.getImageData(0, 0, region.width, region.height).data;
+      let sum = 0;
+      let maxBrightness = 0;
+      let brightPixels = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        const brightness = (data[i] + data[i + 1] + data[i + 2]) / 3;
+        sum += brightness;
+        maxBrightness = Math.max(maxBrightness, brightness);
+        if (brightness >= region.brightThreshold) brightPixels += 1;
+      }
+
+      return {
+        meanBrightness: sum / (data.length / 4),
+        maxBrightness,
+        brightPixels,
+      };
+    },
+    {
+      source: `data:image/png;base64,${screenshot.toString("base64")}`,
+      region,
+    }
+  );
+}

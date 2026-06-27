@@ -217,3 +217,7 @@ Made active sleep/rest advance the shared game-time sky clock at 8x speed while 
 ## 2026-06-26
 
 Added a stable README screenshot capture for the starter tree-biome landscape so repository visitors can see the current lo-fi exploration look without relying on transient PR demo artifacts.
+
+## 2026-06-27
+
+Fixed night-sky occlusion by rendering camera-anchored sky elements into the pixel target before world geometry, then clearing depth for the terrain pass so mountains and ridges cover stars, glows, and meteors while the twinkly sky remains visible above them.
