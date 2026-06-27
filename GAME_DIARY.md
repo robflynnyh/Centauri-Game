@@ -2,6 +2,8 @@
 
 ## 2026-06-26
 
+Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/idle stamina recovery, and a running fatigue multiplier so sleep drains faster during sustained exertion.
+
 Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed glints, stronger slow twinkle, and a steeper PR-demo sky gaze so the night sky feels richer and more alive without turning into random star noise.
 
 Added Amethyst Abyss as a third large swimmable ocean, with its own violet palette, carved basin depth, shared chunked rendering path, and `?debug=purple-ocean`/`?debug=ocean3` inspection routes.
@@ -205,3 +207,7 @@ Generalized the diamond biome into three deterministic planet regions with share
 ## 2026-06-25
 
 Made active sleep/rest advance the shared game-time sky clock at 8x speed while composing with the existing glass-dome time multiplier and leaving the sleep meter, eyelids, blackout, and controls intact.
+
+## 2026-06-26
+
+Added a stable README screenshot capture for the starter tree-biome landscape so repository visitors can see the current lo-fi exploration look without relying on transient PR demo artifacts.

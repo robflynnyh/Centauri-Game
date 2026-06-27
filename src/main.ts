@@ -32,6 +32,7 @@ import {
 import { createPixelRenderPipeline } from "./pixel-renderer";
 import { createSleepController, type SleepDebugState, type SleepUpdateInput } from "./sleep";
 import { createSkySystem, type SkyDebugState } from "./sky";
+import { createStaminaController, type StaminaDebugState, type StaminaUpdateInput } from "./stamina";
 import {
   createTerrainSystem,
   getMassiveMountainDebugState,
@@ -98,6 +99,12 @@ type ParamotorDebugState = ParamotorPlacementState & {
   yaw: number;
 };
 
+type MovementFrameState = {
+  horizontalSpeed: number;
+  running: boolean;
+  targetSpeed: number;
+};
+
 declare global {
   interface Window {
     __centauriDebug?: {
@@ -111,7 +118,16 @@ declare global {
         radialDistance: number;
       };
       getViewState: () => { yaw: number; pitch: number; mouseLookActive: boolean; telescopeActive: boolean; cameraFov: number };
-      getMovementState: () => { grounded: boolean; crouching: boolean; cameraHeight: number; gravityMultiplier: number };
+      getMovementState: () => {
+        grounded: boolean;
+        crouching: boolean;
+        running: boolean;
+        canRun: boolean;
+        cameraHeight: number;
+        gravityMultiplier: number;
+        horizontalSpeed: number;
+        targetSpeed: number;
+      };
       getParamotorState: () => ParamotorDebugState;
       setParamotorFlightForTest: (input: {
         x?: number;
@@ -277,6 +293,9 @@ declare global {
       getSleepState: () => SleepDebugState;
       setSleepAmount: (amount: number) => SleepDebugState;
       advanceSleep: (delta: number, input?: Partial<SleepUpdateInput>) => SleepDebugState;
+      getStaminaState: () => StaminaDebugState;
+      setStaminaAmount: (amount: number) => StaminaDebugState;
+      advanceStamina: (delta: number, input?: Partial<StaminaUpdateInput>) => StaminaDebugState;
       advanceGameTime: (
         delta: number,
         input?: Partial<SleepUpdateInput>
@@ -355,6 +374,7 @@ const standHeight = 1.65;
 const crouchHeight = 0.96;
 const walkSpeed = PLANET_ASSUMED_WALK_SPEED;
 const crouchSpeed = 2.9;
+const runSpeed = 9.1;
 const acceleration = 19;
 const braking = 24;
 const gravity = 17.8;
@@ -413,6 +433,7 @@ const sleep = createSleepController({
   eyelidOpenSeconds: enableSleepDebug ? 0.18 : 1.05,
   initialAmount: isDemo ? 0.35 : readInitialSleepAmount(),
 });
+const stamina = createStaminaController();
 
 app.innerHTML = `
 	  <div class="hud">
@@ -427,6 +448,15 @@ app.innerHTML = `
       </div>
       <div class="hud__sleep-track" aria-hidden="true">
         <div class="hud__sleep-fill"></div>
+      </div>
+    </div>
+    <div class="hud__stamina" aria-label="Stamina meter">
+      <div class="hud__stamina-row">
+        <span>Stamina</span>
+        <span class="hud__stamina-status">ready</span>
+      </div>
+      <div class="hud__stamina-track" aria-hidden="true">
+        <div class="hud__stamina-fill"></div>
       </div>
     </div>
     <div class="hud__flight" aria-label="Paramotor flight status" hidden>
@@ -607,6 +637,8 @@ const telescopeMode = {
 const lookStatus = document.querySelector<HTMLDivElement>(".hud__look");
 const sleepFill = document.querySelector<HTMLDivElement>(".hud__sleep-fill");
 const sleepStatus = document.querySelector<HTMLSpanElement>(".hud__sleep-status");
+const staminaFill = document.querySelector<HTMLDivElement>(".hud__stamina-fill");
+const staminaStatus = document.querySelector<HTMLSpanElement>(".hud__stamina-status");
 const flightHud = document.querySelector<HTMLDivElement>(".hud__flight");
 const flightGasFill = document.querySelector<HTMLDivElement>(".hud__flight-fill--gas");
 const flightThrottleFill = document.querySelector<HTMLDivElement>(".hud__flight-fill--throttle");
@@ -662,6 +694,11 @@ const perfState = {
   smoothedFrameMs: 0,
   frameSamples: 0,
 };
+const movementDebugState = {
+  horizontalSpeed: 0,
+  targetSpeed: walkSpeed,
+  running: false,
+};
 let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
@@ -706,8 +743,12 @@ if (enableDebugTools) {
     getMovementState: () => ({
       grounded: player.grounded,
       crouching: !paramotorFlight.mounted && isCrouchPressed(),
+      running: movementDebugState.running,
+      canRun: stamina.getState().canRun,
       cameraHeight: player.cameraHeight,
       gravityMultiplier: diamondGravityMultiplierAt(player.localPosition.x, player.localPosition.z),
+      horizontalSpeed: movementDebugState.horizontalSpeed,
+      targetSpeed: movementDebugState.targetSpeed,
     }),
     getParamotorState: getParamotorDebugState,
     setParamotorFlightForTest,
@@ -835,6 +876,24 @@ if (enableDebugTools) {
       updateSleepHud(state);
       return state;
     },
+    getStaminaState: stamina.getState,
+    setStaminaAmount: (amount: number) => {
+      const state = stamina.setAmount(amount);
+      updateStaminaHud(state);
+      return state;
+    },
+    advanceStamina: (delta: number, input: Partial<StaminaUpdateInput> = {}) => {
+      const moving = input.moving ?? hasMovementInput();
+      const grounded = input.grounded ?? player.grounded;
+      const state = stamina.update(delta, {
+        wantsRun: input.wantsRun ?? isRunPressed(),
+        moving,
+        grounded,
+        running: input.running ?? (isRunPressed() && moving && grounded),
+      });
+      updateStaminaHud(state);
+      return state;
+    },
     advanceSleep: (delta: number, input: Partial<SleepUpdateInput> = {}) => {
       const moving = input.moving ?? hasMovementInput();
       const movementAmount = input.movementAmount ?? (moving ? 1 : 0);
@@ -845,6 +904,7 @@ if (enableDebugTools) {
         grounded,
         movementAmount,
         crouching: input.crouching ?? isCrouchPressed(),
+        running: input.running ?? movementDebugState.running,
         airborne: input.airborne ?? !grounded,
       });
       updateSleepHud(state);
@@ -861,6 +921,7 @@ if (enableDebugTools) {
         grounded,
         movementAmount,
         crouching: input.crouching ?? isCrouchPressed(),
+        running: input.running ?? movementDebugState.running,
         airborne: input.airborne ?? !grounded,
       });
       updateSleepHud(sleepState);
@@ -979,6 +1040,11 @@ function updateSleepHud(state: SleepDebugState): void {
   blackoutOverlay?.setAttribute("aria-hidden", state.blackout ? "false" : "true");
 }
 
+function updateStaminaHud(state: StaminaDebugState): void {
+  if (staminaFill) staminaFill.style.width = `${Math.round(state.normalized * 100)}%`;
+  if (staminaStatus) staminaStatus.textContent = state.message;
+}
+
 function updateUnderwaterCue(): void {
   if (!underwaterOverlay) return;
   const oceanState = oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt);
@@ -990,6 +1056,7 @@ function updateUnderwaterCue(): void {
 }
 
 updateSleepHud(sleep.getState());
+updateStaminaHud(stamina.getState());
 
 window.addEventListener("keydown", (event) => {
   void audio.resume();
@@ -1074,7 +1141,11 @@ document.addEventListener("mousemove", (event) => {
 });
 
 function isCrouchPressed(): boolean {
-  return keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("ShiftLeft") || keys.has("ShiftRight") || keys.has("KeyC");
+  return keys.has("ControlLeft") || keys.has("ControlRight") || keys.has("KeyC");
+}
+
+function isRunPressed(): boolean {
+  return keys.has("ShiftLeft") || keys.has("ShiftRight");
 }
 
 function isSleepPressed(): boolean {
@@ -1252,7 +1323,7 @@ function updateParamotorHud(): void {
   }
 }
 
-function updateParamotorFlight(delta: number): { horizontalSpeed: number } {
+function updateParamotorFlight(delta: number): MovementFrameState {
   const throttlePressed = isParamotorThrottlePressed() && paramotorFlight.gas > 0.002;
   const brakePressed = isParamotorBrakePressed();
   const throttleDelta = throttlePressed ? 0.72 : brakePressed ? -0.95 : -0.16;
@@ -1352,7 +1423,7 @@ function updateParamotorFlight(delta: number): { horizontalSpeed: number } {
     resetParamotorFlight(true);
   }
 
-  return { horizontalSpeed: actualHorizontalSpeed };
+  return { horizontalSpeed: actualHorizontalSpeed, running: false, targetSpeed: brakedTargetSpeed };
 }
 
 function isolationTargetForDistance(distance: number): number {
@@ -1594,7 +1665,7 @@ function updateTelescopeCamera(): void {
   );
 }
 
-function updateTelescopeMode(): { horizontalSpeed: number } {
+function updateTelescopeMode(): MovementFrameState {
   player.velocity.set(0, 0, 0);
   player.verticalVelocity = 0;
   player.verticalOffset = 0;
@@ -1603,7 +1674,7 @@ function updateTelescopeMode(): { horizontalSpeed: number } {
   player.cameraHeight = standHeight;
   updatePlayerWorldPosition();
   updateTelescopeCamera();
-  return { horizontalSpeed: 0 };
+  return { horizontalSpeed: 0, running: false, targetSpeed: 0 };
 }
 
 function getObservatoryDebugState(): ObservatoryDebugState {
@@ -1644,7 +1715,7 @@ function getObservatoryDebugState(): ObservatoryDebugState {
   };
 }
 
-function updateExploration(delta: number): { horizontalSpeed: number } {
+function updateExploration(delta: number): MovementFrameState {
   setCameraFov(normalCameraFov);
   const forward = movementForward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
   const right = movementRight.set(forward.z, 0, -forward.x);
@@ -1655,10 +1726,13 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
   if (keys.has("KeyA")) wish.addScaledVector(right, -1);
   if (keys.has("KeyD")) wish.add(right);
 
-  if (wish.lengthSq() > 0) wish.normalize();
+  const hasWishMovement = wish.lengthSq() > 0;
+  if (hasWishMovement) wish.normalize();
   const crouching = isCrouchPressed();
+  const runEligible = hasWishMovement && !crouching && player.grounded && isRunPressed() && stamina.getState().canRun;
   const oceanState = oceanStateAt(player.localPosition.x, player.localPosition.z, heightAt);
-  const targetSpeed = (crouching ? crouchSpeed : walkSpeed) * oceanState.movementSpeedMultiplier;
+  const baseTargetSpeed = runEligible ? runSpeed : crouching ? crouchSpeed : walkSpeed;
+  const targetSpeed = baseTargetSpeed * oceanState.movementSpeedMultiplier;
   const targetVelocity = wish.multiplyScalar(targetSpeed);
   const horizontalRate = targetVelocity.lengthSq() > 0 ? acceleration : braking;
   const maxVelocityDelta = horizontalRate * delta;
@@ -1696,10 +1770,19 @@ function updateExploration(delta: number): { horizontalSpeed: number } {
     footsteps.walk(player.localPosition, delta);
   }
 
+  const running = runEligible && actualHorizontalSpeed > walkSpeed * 0.72;
+  const staminaState = stamina.update(delta, {
+    wantsRun: isRunPressed(),
+    moving: actualHorizontalSpeed > 0.15,
+    grounded: player.grounded,
+    running,
+  });
+  updateStaminaHud(staminaState);
+
   updatePlayerWorldPosition();
   setCameraOnPlanet(camera, player.localPosition.x, player.localPosition.z, playerSurfaceAltitude(), player.yaw, player.pitch);
 
-  return { horizontalSpeed: actualHorizontalSpeed };
+  return { horizontalSpeed: actualHorizontalSpeed, running: staminaState.running, targetSpeed };
 }
 
 function updateFieldNoteDiscovery(focus: { x: number; z: number }, elapsed: number): void {
@@ -1726,14 +1809,33 @@ function animate(): void {
   const sleepBefore = sleep.getState();
   const movementIntent = !telescopeMode.active && hasMovementInput();
   const wantsSleep = telescopeMode.active ? false : isDemo ? sleepBefore.amount < 1 : isSleepPressed();
-  let explorationMotion = { horizontalSpeed: 0 };
+  let explorationMotion: MovementFrameState = { horizontalSpeed: 0, running: false, targetSpeed: 0 };
 
-  if (isDemo) prDemo.update(elapsed, delta);
-  else if (telescopeMode.active) explorationMotion = updateTelescopeMode();
+  if (isDemo) {
+    prDemo.update(elapsed, delta);
+    const demoRunning = elapsed >= 3.6 && elapsed < 6.4;
+    const demoMoving = elapsed < 6.4;
+    const demoStaminaState = stamina.update(delta, {
+      wantsRun: demoRunning,
+      moving: demoMoving,
+      grounded: true,
+      running: demoRunning,
+    });
+    updateStaminaHud(demoStaminaState);
+    explorationMotion = {
+      horizontalSpeed: demoRunning ? runSpeed : demoMoving ? walkSpeed : 0,
+      running: demoRunning,
+      targetSpeed: demoRunning ? runSpeed : walkSpeed,
+    };
+  } else if (telescopeMode.active) explorationMotion = updateTelescopeMode();
   else if (sleepBefore.blackout) restPlayerInPlace(delta, 0.52);
   else if (sleepBefore.sleeping && isSleepPressed() && !movementIntent) restPlayerInPlace(delta, 0.72);
   else if (paramotorFlight.mounted) explorationMotion = updateParamotorFlight(delta);
   else explorationMotion = updateExploration(delta);
+
+  movementDebugState.horizontalSpeed = explorationMotion.horizontalSpeed;
+  movementDebugState.running = explorationMotion.running;
+  movementDebugState.targetSpeed = explorationMotion.targetSpeed;
 
   if (enableDomeDebug && !mouseLookActive && !movementIntent) {
     lookAtPlanetPoint(
@@ -1777,6 +1879,7 @@ function animate(): void {
         grounded,
         movementAmount,
         crouching: !isDemo && !paramotorFlight.mounted && isCrouchPressed(),
+        running: explorationMotion.running,
         airborne: !grounded,
       });
   updateSleepHud(sleepState);
