@@ -931,7 +931,7 @@ test("discovers the dome field note as the next collected note from the entrance
   });
 
   expect(source.discoveredCount).toBe(0);
-  expect(source.total).toBe(4);
+  expect(source.total).toBe(5);
   expect(source.noteRadius).toBeGreaterThan(6);
 
   await page.evaluate(({ noteX, noteZ }) => window.__centauriDebug?.setPlayer(noteX, noteZ), source);
@@ -1018,7 +1018,7 @@ test("discovers the observatory as the next collection-order field note", async 
   expect(source.blockerBlocked.every((sample) => sample.blocked)).toBe(true);
   expect(source.observatoryIsOnLand).toBe(true);
   expect(source.discoveredCount).toBe(0);
-  expect(source.total).toBe(4);
+  expect(source.total).toBe(5);
 
   await page.evaluate(({ observatory }) => window.__centauriDebug?.setPlayer(observatory.noteX, observatory.noteZ), source);
   await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
@@ -1036,6 +1036,94 @@ test("discovers the observatory as the next collection-order field note", async 
 
   expect(afterTemple?.discoveredCount).toBe(2);
   expect(afterTemple?.discovered[0]?.id).toBe("observatory-sightline");
+  expect(afterTemple?.discovered[0]?.index).toBe(2);
+  expect(afterTemple?.discovered[1]?.id).toBe("temple-gate");
+  expect(afterTemple?.discovered[1]?.index).toBe(3);
+  expect(afterTemple?.current.index).toBe(3);
+});
+
+test("radio debug starts near exactly three grounded dishes with precise base collision", async ({ page }) => {
+  await page.goto("/?debug=radio&test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getRadioTelescopeArrayState));
+  await expect(page.getByText("radio telescope debug")).toBeVisible();
+
+  const state = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri radio debug hook");
+    const radio = debug.getRadioTelescopeArrayState();
+    const player = debug.getPlayer();
+    const yawDeltas: number[] = [];
+    for (let i = 0; i < radio.dishes.length; i += 1) {
+      for (let j = i + 1; j < radio.dishes.length; j += 1) {
+        const delta = Math.atan2(Math.sin(radio.dishes[i].yaw - radio.dishes[j].yaw), Math.cos(radio.dishes[i].yaw - radio.dishes[j].yaw));
+        yawDeltas.push(Math.abs(delta));
+      }
+    }
+    return {
+      radio,
+      playerClear: !debug.isBlockedAt(player.x, player.z),
+      centerBlocked: debug.isBlockedAt(radio.x, radio.z),
+      noteBlocked: debug.isBlockedAt(radio.noteX, radio.noteZ),
+      playerDistanceFromApproach: Math.hypot(player.x - radio.approachX, player.z - radio.approachZ),
+      yawDeltas,
+      pitchSpread: Math.max(...radio.dishes.map((dish) => dish.pitch)) - Math.min(...radio.dishes.map((dish) => dish.pitch)),
+      notes: debug.getFieldNotesState(),
+    };
+  });
+
+  expect(state.radio.dishCount).toBe(3);
+  expect(state.radio.dishes).toHaveLength(3);
+  expect(state.radio.baseSamples).toHaveLength(3);
+  expect(state.radio.obstacleCount).toBe(1);
+  expect(state.radio.noteRadius).toBeGreaterThan(8);
+  expect(state.playerClear).toBe(true);
+  expect(state.centerBlocked).toBe(false);
+  expect(state.noteBlocked).toBe(false);
+  expect(state.radio.baseSamples.every((sample) => sample.blocked)).toBe(true);
+  expect(state.playerDistanceFromApproach).toBeLessThan(0.1);
+  expect(Math.min(...state.yawDeltas)).toBeGreaterThan(0.75);
+  expect(state.pitchSpread).toBeGreaterThan(0.3);
+  expect(state.radio.terrainFlatness.samples.length).toBeGreaterThanOrEqual(19);
+  expect(state.radio.terrainFlatness.minHeight).toBeGreaterThan(0.25);
+  expect(state.radio.terrainFlatness.heightVariation).toBeLessThan(2.8);
+  expect(state.notes.total).toBe(5);
+  expect(state.notes.discoveredCount).toBe(0);
+});
+
+test("discovers the radio telescope array as the next collection-order field note", async ({ page }) => {
+  await page.goto("/?debug=radio-telescope&test=collision");
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getRadioTelescopeArrayState));
+  await expect(page.getByText("radio telescope debug")).toBeVisible();
+  await expect(page.getByText("Field Note 001")).toBeVisible();
+
+  const source = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri radio debug hook");
+    const radio = debug.getRadioTelescopeArrayState();
+    const temple = debug.getTempleState();
+    return {
+      radio,
+      templeNoteX: temple.noteX,
+      templeNoteZ: temple.noteZ,
+    };
+  });
+
+  await page.evaluate(({ radio }) => window.__centauriDebug?.setPlayer(radio.noteX, radio.noteZ), source);
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 1);
+  await expect(page.getByText("Field Note 002")).toBeVisible();
+  await expect(page.getByText(/Three pale dishes listen/)).toBeVisible();
+
+  const afterRadio = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+  expect(afterRadio?.discovered[0]?.id).toBe("radio-array-listening");
+  expect(afterRadio?.discovered[0]?.index).toBe(2);
+  expect(afterRadio?.current.index).toBe(2);
+
+  await page.evaluate(({ templeNoteX, templeNoteZ }) => window.__centauriDebug?.setPlayer(templeNoteX, templeNoteZ), source);
+  await page.waitForFunction(() => window.__centauriDebug?.getFieldNotesState().discoveredCount === 2);
+  const afterTemple = await page.evaluate(() => window.__centauriDebug?.getFieldNotesState());
+
+  expect(afterTemple?.discoveredCount).toBe(2);
+  expect(afterTemple?.discovered[0]?.id).toBe("radio-array-listening");
   expect(afterTemple?.discovered[0]?.index).toBe(2);
   expect(afterTemple?.discovered[1]?.id).toBe("temple-gate");
   expect(afterTemple?.discovered[1]?.index).toBe(3);

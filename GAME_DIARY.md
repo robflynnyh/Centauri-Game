@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-27
+
+Added a massive three-dish radio telescope array on a flat reserved site, with separate dish directions, precise base collision, `?debug=radio`/`?debug=radio-telescope`, PR-demo visibility, and a collection-order field note.
+
 ## 2026-06-26
 
 Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/idle stamina recovery, and a running fatigue multiplier so sleep drains faster during sustained exertion.
