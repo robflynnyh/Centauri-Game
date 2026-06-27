@@ -231,6 +231,20 @@ test("floating mountains debug renders a nonblank visible archipelago", async ({
   expect(state?.debugView.targetDistance).toBeGreaterThan(120);
 });
 
+test("statue debug renders a visible talking stone landmark", async ({ page }, testInfo) => {
+  await page.goto("/?debug=statue&test=collision");
+  await expect(page.getByText("statue debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getTalkingStatueState));
+  await page.waitForFunction(() => (window.__centauriDebug?.getTalkingStatueState().wakeAmount ?? 0) > 0.2);
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+  await page.waitForTimeout(400);
+
+  const signal = await getCanvasSignal(page, testInfo.outputPath("statue-debug-canvas.png"));
+  expect(signal.litPixels).toBeGreaterThan(2_500);
+  expect(signal.meanBrightness).toBeGreaterThan(20);
+  expect(signal.variance).toBeGreaterThan(12);
+});
+
 test("ocean debug exposes three large irregular deep oceans", async ({ page }) => {
   await page.goto("/?debug=ocean&test=collision");
   await expect(page.getByText("ocean debug")).toBeVisible();

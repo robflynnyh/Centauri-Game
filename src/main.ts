@@ -18,6 +18,7 @@ import {
   createGlassDomeLandmark,
   createObservatoryLandmark,
   createRadioTelescopeArrayLandmark,
+  createTalkingStatueLandmark,
   createTempleLandmark,
   type RadioTelescopeTerrainFlatness,
 } from "./landmarks";
@@ -102,6 +103,26 @@ type RadioTelescopeArrayDebugState = {
   dishes: Array<{ name: string; x: number; z: number; yaw: number; pitch: number; baseRadius: number; terrainHeight: number }>;
   baseSamples: Array<{ name: string; x: number; z: number; radius: number; blocked: boolean }>;
   terrainFlatness: RadioTelescopeTerrainFlatness;
+  nearby: boolean;
+  obstacleCount: number;
+};
+
+type TalkingStatueDebugState = {
+  x: number;
+  z: number;
+  approachX: number;
+  approachZ: number;
+  noteX: number;
+  noteZ: number;
+  noteRadius: number;
+  wakeRadius: number;
+  fullWakeRadius: number;
+  distanceToPlayer: number;
+  wakeAmount: number;
+  awake: boolean;
+  mouthOpenAmount: number;
+  glowOpacity: number;
+  headBob: number;
   nearby: boolean;
   obstacleCount: number;
 };
@@ -273,6 +294,7 @@ declare global {
       };
       getObservatoryState: () => ObservatoryDebugState;
       getRadioTelescopeArrayState: () => RadioTelescopeArrayDebugState;
+      getTalkingStatueState: () => TalkingStatueDebugState;
       enterTelescope: () => ObservatoryDebugState;
       exitTelescope: () => ObservatoryDebugState;
       panTelescope: (yawDelta: number, pitchDelta: number) => ObservatoryDebugState;
@@ -361,6 +383,7 @@ const enableDomeDebug = params.get("debug") === "dome";
 const enableObservatoryDebug = params.get("debug") === "observatory";
 const enableTelescopeDebug = params.get("debug") === "telescope";
 const enableRadioTelescopeDebug = params.get("debug") === "radio" || params.get("debug") === "radio-telescope";
+const enableStatueDebug = params.get("debug") === "statue";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
@@ -390,6 +413,7 @@ const enableDebugTools =
   enableObservatoryDebug ||
   enableTelescopeDebug ||
   enableRadioTelescopeDebug ||
+  enableStatueDebug ||
   isBeetleDebug ||
   isBirdDebug ||
   enableMountainDebug ||
@@ -421,6 +445,7 @@ const hudBadgeText = (() => {
   if (enableObservatoryDebug) return "observatory debug";
   if (enableTelescopeDebug) return "telescope debug";
   if (enableRadioTelescopeDebug) return "radio telescope debug";
+  if (enableStatueDebug) return "statue debug";
   if (isBeetleDebug) return "beetle debug";
   if (isBirdDebug) return "birds debug";
   if (enableMountainDebug) return "mountain debug";
@@ -536,17 +561,26 @@ const radioTelescopeArray = createRadioTelescopeArrayLandmark(scene, heightAt, [
   observatory.reservedZone,
   ...massiveMountainReservedZones,
 ]);
-const floatingMountains = createFloatingMountainsRegion(scene, heightAt, [
+const talkingStatue = createTalkingStatueLandmark(scene, heightAt, [
   temple.reservedZone,
   dome.reservedZone,
   observatory.reservedZone,
   radioTelescopeArray.reservedZone,
   ...massiveMountainReservedZones,
 ]);
+const floatingMountains = createFloatingMountainsRegion(scene, heightAt, [
+  temple.reservedZone,
+  dome.reservedZone,
+  observatory.reservedZone,
+  radioTelescopeArray.reservedZone,
+  talkingStatue.reservedZone,
+  ...massiveMountainReservedZones,
+]);
 const domeFloorColour = new THREE.Color(0x273c78);
 const domeGroundingBandWidth = 16;
 const domeGroundingFlatShoulder = 0.25;
 const fieldNoteSources: Array<{ noteId: FieldNoteId; position: { x: number; z: number }; radius: number }> = [
+  talkingStatue.noteSource,
   temple.noteSource,
   dome.noteSource,
   observatory.noteSource,
@@ -557,6 +591,7 @@ const paramotor = createParamotorDevice(scene, effectiveHeightAt, [
   dome.reservedZone,
   observatory.reservedZone,
   radioTelescopeArray.reservedZone,
+  talkingStatue.reservedZone,
   floatingMountains.reservedZone,
   ...massiveMountainReservedZones,
 ]);
@@ -579,6 +614,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableTelescopeDebug) return new THREE.Vector3(observatory.telescope.usePosition.x, 0, observatory.telescope.usePosition.z);
   if (enableObservatoryDebug) return new THREE.Vector3(observatory.approachPosition.x, 0, observatory.approachPosition.z);
   if (enableRadioTelescopeDebug) return new THREE.Vector3(radioTelescopeArray.approachPosition.x, 0, radioTelescopeArray.approachPosition.z);
+  if (enableStatueDebug) return new THREE.Vector3(talkingStatue.approachPosition.x, 0, talkingStatue.approachPosition.z);
   if (enableFloatingMountainsDebug) return new THREE.Vector3(floatingMountains.debugSpawn.x, 0, floatingMountains.debugSpawn.z);
   if (enableParamotorDebug) return new THREE.Vector3(paramotor.approachPosition.x, 0, paramotor.approachPosition.z);
   if (isBeetleDebug) return new THREE.Vector3(4.8, 0, 14.2);
@@ -603,6 +639,9 @@ function getInitialPlayerYaw(): number {
       initialPlayerLocalPosition.z - radioTelescopeArray.position.z
     );
   }
+  if (enableStatueDebug) {
+    return Math.atan2(initialPlayerLocalPosition.x - talkingStatue.position.x, initialPlayerLocalPosition.z - talkingStatue.position.z);
+  }
   if (enableParamotorDebug) {
     return Math.atan2(
       -(paramotor.position.x - initialPlayerLocalPosition.x),
@@ -625,6 +664,7 @@ function getInitialPlayerPitch(): number {
   if (enableDomeDebug) return -0.36;
   if (enableObservatoryDebug) return -0.08;
   if (enableRadioTelescopeDebug) return -0.12;
+  if (enableStatueDebug) return -0.04;
   if (enableParamotorDebug) return -0.2;
   if (enableFloatingMountainsDebug) return floatingMountains.debugSpawn.pitch;
   if (isBirdDebug) return 0.18;
@@ -725,6 +765,7 @@ collisionWorld.addObstacle(temple.collision);
 collisionWorld.addObstacle(dome.collision);
 collisionWorld.addObstacle(observatory.collision);
 collisionWorld.addObstacle(radioTelescopeArray.collision);
+collisionWorld.addObstacle(talkingStatue.collision);
 
 const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerfState } = populateNature(
   scene,
@@ -736,6 +777,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerf
     dome.reservedZone,
     observatory.reservedZone,
     radioTelescopeArray.reservedZone,
+    talkingStatue.reservedZone,
     floatingMountains.reservedZone,
     paramotor.reservedZone,
     ...massiveMountainReservedZones,
@@ -766,7 +808,7 @@ let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome, observatory, radioTelescopeArray, mountainDebugState, paramotor, floatingMountains.getDebugState());
+}, temple, dome, observatory, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor, floatingMountains.getDebugState());
 let skyElapsed = enableRadioTelescopeDebug ? 36 : clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
@@ -896,22 +938,23 @@ if (enableDebugTools) {
       timeMultiplier: domeTimeMultiplier,
 	      targetTimeMultiplier: domeTargetTimeMultiplier,
 	    }),
-	    getObservatoryState: getObservatoryDebugState,
+    getObservatoryState: getObservatoryDebugState,
     getRadioTelescopeArrayState: getRadioTelescopeArrayDebugState,
-	    enterTelescope: () => {
-	      enterTelescopeMode(true);
-	      return getObservatoryDebugState();
-	    },
-	    exitTelescope: () => {
-	      exitTelescopeMode(false);
-	      return getObservatoryDebugState();
-	    },
-	    panTelescope: (yawDelta, pitchDelta) => {
-	      if (!telescopeMode.active) enterTelescopeMode(true);
-	      setTelescopeLook(telescopeMode.yaw + yawDelta, telescopeMode.pitch + pitchDelta);
-	      updateTelescopeCamera();
-	      return getObservatoryDebugState();
-	    },
+    getTalkingStatueState: getTalkingStatueDebugState,
+    enterTelescope: () => {
+      enterTelescopeMode(true);
+      return getObservatoryDebugState();
+    },
+    exitTelescope: () => {
+      exitTelescopeMode(false);
+      return getObservatoryDebugState();
+    },
+    panTelescope: (yawDelta, pitchDelta) => {
+      if (!telescopeMode.active) enterTelescopeMode(true);
+      setTelescopeLook(telescopeMode.yaw + yawDelta, telescopeMode.pitch + pitchDelta);
+      updateTelescopeCamera();
+      return getObservatoryDebugState();
+    },
 	    getFieldNotesState: fieldNotes.getSnapshot,
     getSkyState: sky.getDebugState,
     setSkyElapsed: (elapsed: number) => {
@@ -1847,6 +1890,29 @@ function getRadioTelescopeArrayDebugState(): RadioTelescopeArrayDebugState {
   };
 }
 
+function getTalkingStatueDebugState(): TalkingStatueDebugState {
+  const state = talkingStatue.getState();
+  return {
+    x: talkingStatue.position.x,
+    z: talkingStatue.position.z,
+    approachX: talkingStatue.approachPosition.x,
+    approachZ: talkingStatue.approachPosition.z,
+    noteX: talkingStatue.noteSource.position.x,
+    noteZ: talkingStatue.noteSource.position.z,
+    noteRadius: talkingStatue.noteSource.radius,
+    wakeRadius: talkingStatue.wakeRadius,
+    fullWakeRadius: talkingStatue.fullWakeRadius,
+    distanceToPlayer: state.distanceToPlayer,
+    wakeAmount: state.wakeAmount,
+    awake: state.awake,
+    mouthOpenAmount: state.mouthOpenAmount,
+    glowOpacity: state.glowOpacity,
+    headBob: state.headBob,
+    nearby: surfaceDistanceBetweenLocal(player.localPosition, talkingStatue.noteSource.position) <= talkingStatue.noteSource.radius,
+    obstacleCount: collisionWorld.obstacles.filter((obstacle) => obstacle.kind === "talking-statue").length,
+  };
+}
+
 function updateExploration(delta: number): MovementFrameState {
   setCameraFov(normalCameraFov);
   const forward = movementForward.set(Math.sin(player.yaw), 0, Math.cos(player.yaw));
@@ -2050,6 +2116,7 @@ function animate(): void {
   const floraFocus = isDemo ? demoFloraFocus : telescopeMode.active ? telescopeFloraFocus : player.localPosition;
   waterCreatures.update(elapsed, delta, floraFocus);
   flyingBeetles.update(elapsed, floraFocus);
+  talkingStatue.update(elapsed, floraFocus);
   mountainBirds.update(elapsed, floraFocus);
   floatingMountains.update(elapsed);
   const templeFocus = isDemo ? { x: demoFloraFocus.x, z: demoFloraFocus.z } : player.localPosition;

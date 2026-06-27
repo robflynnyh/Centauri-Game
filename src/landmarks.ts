@@ -94,6 +94,32 @@ export type ObservatoryLandmark = {
   update: (elapsed: number) => void;
 };
 
+export type TalkingStatueWakeState = {
+  distanceToPlayer: number;
+  wakeAmount: number;
+  awake: boolean;
+  mouthOpenAmount: number;
+  glowOpacity: number;
+  headBob: number;
+};
+
+export type TalkingStatueLandmark = {
+  group: THREE.Group;
+  position: LocalPlanetPoint;
+  approachPosition: LocalPlanetPoint;
+  noteSource: {
+    noteId: "talking-stone-statue";
+    position: LocalPlanetPoint;
+    radius: number;
+  };
+  collision: CollisionObstacle;
+  reservedZone: LandmarkZone;
+  wakeRadius: number;
+  fullWakeRadius: number;
+  update: (elapsed: number, playerPosition: LocalPlanetPoint) => TalkingStatueWakeState;
+  getState: () => TalkingStatueWakeState;
+};
+
 export type RadioTelescopeDishState = {
   name: string;
   position: LocalPlanetPoint;
@@ -155,6 +181,12 @@ const telescopeViewDistance = observatoryCollisionRadius + 1.25;
 const observatoryAnchorOffset = 0.04;
 const observatoryDeckTopLocalY = 0.78;
 const observatoryStepTopLocalY = 0.5;
+const talkingStatueSeed = "centauri-talking-stone-statue";
+const talkingStatueClearanceRadius = 26;
+const talkingStatueCollisionRadius = 3.6;
+const talkingStatueWakeRadius = 34;
+const talkingStatueFullWakeRadius = 8.5;
+const talkingStatueNoteRadius = 12.5;
 const radioTelescopeArraySeed = "centauri-field-note-radio-telescope-array";
 const radioTelescopeArrayClearanceRadius = 76;
 const radioTelescopeArrayCollisionRadius = 52;
@@ -369,6 +401,96 @@ export function createObservatoryLandmark(
   };
 }
 
+export function createTalkingStatueLandmark(
+  scene: THREE.Scene,
+  heightAt: HeightSampler,
+  avoidZones: LandmarkZone[] = []
+): TalkingStatueLandmark {
+  const position = chooseTalkingStatuePosition(heightAt, avoidZones);
+  const yaw = seededUnit(`${talkingStatueSeed}:yaw`) * Math.PI * 2;
+  const frontDirection = { x: Math.sin(yaw), z: Math.cos(yaw) };
+  const approachPosition = offsetLocal(position, frontDirection, 18);
+  const altitude = heightAt(position.x, position.z);
+  const group = makeTalkingStatue();
+  let wakeState: TalkingStatueWakeState = {
+    distanceToPlayer: Infinity,
+    wakeAmount: 0,
+    awake: false,
+    mouthOpenAmount: 0,
+    glowOpacity: 0,
+    headBob: 0,
+  };
+
+  placeObjectOnPlanet(group, position.x, position.z, altitude + 0.03, new THREE.Euler(0, yaw, 0));
+  scene.add(group);
+
+  const update = (elapsed: number, playerPosition: LocalPlanetPoint): TalkingStatueWakeState => {
+    const distanceToPlayer = surfaceDistanceBetweenLocal(playerPosition, position);
+    const targetWake = 1 - THREE.MathUtils.smoothstep(distanceToPlayer, talkingStatueFullWakeRadius, talkingStatueWakeRadius);
+    const wakeAmount = THREE.MathUtils.lerp(wakeState.wakeAmount, targetWake, 1 - Math.exp(-0.08));
+    const talkPulse = Math.sin(elapsed * 5.1 + Math.sin(elapsed * 1.3) * 0.7) * 0.5 + 0.5;
+    const mouthOpenAmount = wakeAmount * THREE.MathUtils.lerp(0.18, 1, talkPulse);
+    const headBob = wakeAmount * Math.sin(elapsed * 1.45) * 0.09;
+    const glowOpacity = wakeAmount * (0.18 + talkPulse * 0.28);
+
+    const head = group.userData.head as THREE.Group | undefined;
+    const mouth = group.userData.mouth as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const lowerMouth = group.userData.lowerMouth as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const leftEye = group.userData.leftEye as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const rightEye = group.userData.rightEye as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const glow = group.userData.glow as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const headBaseY = (group.userData.headBaseY as number | undefined) ?? 4.05;
+    if (head) {
+      head.position.y = headBaseY + headBob;
+      head.rotation.x = -0.05 + wakeAmount * 0.08 + Math.sin(elapsed * 0.9) * wakeAmount * 0.018;
+      head.rotation.z = Math.sin(elapsed * 0.7) * wakeAmount * 0.025;
+    }
+    if (mouth) {
+      mouth.scale.y = 1 + mouthOpenAmount * 0.9;
+      mouth.material.opacity = 0.48 + wakeAmount * 0.4;
+    }
+    if (lowerMouth) lowerMouth.position.y = -1.25 - mouthOpenAmount * 0.16;
+    if (leftEye && rightEye) {
+      const eyeScale = 0.54 + wakeAmount * (0.46 + Math.sin(elapsed * 3.7) * 0.08);
+      leftEye.scale.y = eyeScale;
+      rightEye.scale.y = eyeScale;
+      leftEye.material.opacity = 0.22 + glowOpacity;
+      rightEye.material.opacity = 0.22 + glowOpacity;
+    }
+    if (glow) {
+      glow.material.opacity = glowOpacity;
+      glow.scale.setScalar(1 + wakeAmount * 0.18 + talkPulse * wakeAmount * 0.08);
+    }
+
+    wakeState = {
+      distanceToPlayer,
+      wakeAmount,
+      awake: wakeAmount > 0.35,
+      mouthOpenAmount,
+      glowOpacity,
+      headBob,
+    };
+    return wakeState;
+  };
+
+  return {
+    group,
+    position,
+    approachPosition,
+    noteSource: {
+      noteId: "talking-stone-statue",
+      position,
+      radius: talkingStatueNoteRadius,
+    },
+    collision: { kind: "talking-statue", x: position.x, z: position.z, radius: talkingStatueCollisionRadius },
+    reservedZone: { x: position.x, z: position.z, radius: talkingStatueClearanceRadius },
+    wakeRadius: talkingStatueWakeRadius,
+    fullWakeRadius: talkingStatueFullWakeRadius,
+    update,
+    getState: () => wakeState,
+  };
+}
+
 export function createRadioTelescopeArrayLandmark(
   scene: THREE.Scene,
   heightAt: HeightSampler,
@@ -551,6 +673,41 @@ function isValidObservatoryTerrain(point: LocalPlanetPoint, heightAt: HeightSamp
     heightAt(point.x - 8, point.z - 8),
   ];
   return samples.every((height) => height > 0.25 && Math.abs(height - centerHeight) < 6.4);
+}
+
+function chooseTalkingStatuePosition(heightAt: HeightSampler, avoidZones: LandmarkZone[]): LocalPlanetPoint {
+  const random = createSeededRandom(talkingStatueSeed);
+  const fallbackPositions = [
+    normalizePlanetCoords(168, 346),
+    normalizePlanetCoords(118, 398),
+    normalizePlanetCoords(224, 304),
+  ];
+
+  for (let i = 0; i < 96; i += 1) {
+    const angle = random() * Math.PI * 2;
+    const radius = 185 + random() * 240;
+    const candidate = normalizePlanetCoords(Math.cos(angle) * radius + 120, Math.sin(angle) * radius + 250);
+    if (isInLandmarkZone(candidate, avoidZones.map((zone) => ({ ...zone, radius: zone.radius + talkingStatueClearanceRadius })))) continue;
+    if (!isValidTalkingStatueTerrain(candidate, heightAt)) continue;
+    return candidate;
+  }
+
+  return fallbackPositions.find((point) => !isInLandmarkZone(point, avoidZones) && isValidTalkingStatueTerrain(point, heightAt)) ?? fallbackPositions[0];
+}
+
+function isValidTalkingStatueTerrain(point: LocalPlanetPoint, heightAt: HeightSampler): boolean {
+  const centerHeight = heightAt(point.x, point.z);
+  if (centerHeight < 0.75) return false;
+
+  const samples = [
+    heightAt(point.x + 5, point.z),
+    heightAt(point.x - 5, point.z),
+    heightAt(point.x, point.z + 5),
+    heightAt(point.x, point.z - 5),
+    heightAt(point.x + 8, point.z + 4),
+    heightAt(point.x - 7, point.z - 5),
+  ];
+  return samples.every((height) => height > 0.2 && Math.abs(height - centerHeight) < 5.8);
 }
 
 function createObservatoryCollision(position: LocalPlanetPoint, yaw: number): CollisionObstacle {
@@ -1248,6 +1405,135 @@ function makeObservatoryNoteMarker(): THREE.Group {
   glyph.rotation.set(0.04, 0.1, -0.62);
   group.add(glyph);
 
+  return group;
+}
+
+function makeTalkingStatue(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "single-talking-stone-statue-landmark";
+
+  const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x354058 });
+  const darkStoneMaterial = new THREE.MeshBasicMaterial({ color: 0x20283d });
+  const faceMaterial = new THREE.MeshBasicMaterial({ color: 0x6e7893 });
+  const warmStoneMaterial = new THREE.MeshBasicMaterial({ color: 0x9c8fc1 });
+  const browMaterial = new THREE.MeshBasicMaterial({ color: 0x161b2c });
+  const eyeMaterial = new THREE.MeshBasicMaterial({
+    color: 0x82ffea,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mouthMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff77c8,
+    transparent: true,
+    opacity: 0.48,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8fffee,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(2.9, 3.4, 0.62, 7), baseMaterial);
+  plinth.position.y = 0.31;
+  plinth.scale.z = 0.82;
+  group.add(plinth);
+
+  const lowerBust = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.65, 1.2, 7), darkStoneMaterial);
+  lowerBust.position.y = 1.08;
+  lowerBust.scale.z = 0.68;
+  group.add(lowerBust);
+
+  const shoulder = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.72, 1.35), baseMaterial);
+  shoulder.position.set(0, 1.58, -0.04);
+  shoulder.rotation.y = 0.03;
+  group.add(shoulder);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.08, 1.32, 1.48, 6), faceMaterial);
+  neck.position.y = 2.16;
+  neck.scale.z = 0.62;
+  group.add(neck);
+
+  const head = new THREE.Group();
+  const headBaseY = 4.05;
+  head.position.y = headBaseY;
+  group.add(head);
+
+  const skull = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.34, 4.7, 7), faceMaterial);
+  skull.scale.z = 0.62;
+  skull.rotation.y = Math.PI / 7;
+  head.add(skull);
+
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.54, 1.12), warmStoneMaterial);
+  crown.position.set(0, 2.12, 0.02);
+  crown.rotation.z = -0.03;
+  head.add(crown);
+
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.62, 1.02), darkStoneMaterial);
+  jaw.position.set(0, -2.05, 0.03);
+  jaw.rotation.z = 0.02;
+  head.add(jaw);
+
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.38, 0.42), browMaterial);
+  brow.position.set(0, 0.88, 0.72);
+  brow.rotation.x = -0.08;
+  head.add(brow);
+
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.48, 1.38, 0.54), warmStoneMaterial);
+  nose.position.set(0.02, -0.02, 0.84);
+  nose.rotation.x = -0.08;
+  head.add(nose);
+
+  const noseBridge = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.26, 0.38), darkStoneMaterial);
+  noseBridge.position.set(0.02, 0.56, 0.87);
+  head.add(noseBridge);
+
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.16, 0.09), mouthMaterial);
+  mouth.position.set(0, -1.1, 0.82);
+  head.add(mouth);
+
+  const lowerMouth = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.18, 0.12), browMaterial);
+  lowerMouth.position.set(0, -1.25, 0.8);
+  head.add(lowerMouth);
+
+  const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.08), eyeMaterial.clone());
+  leftEye.position.set(-0.48, 0.62, 0.86);
+  head.add(leftEye);
+
+  const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.08), eyeMaterial.clone());
+  rightEye.position.set(0.48, 0.62, 0.86);
+  head.add(rightEye);
+
+  const leftCheek = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.65, 0.36), darkStoneMaterial);
+  leftCheek.position.set(-1.03, -0.52, 0.47);
+  leftCheek.rotation.z = -0.08;
+  head.add(leftCheek);
+
+  const rightCheek = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.65, 0.36), darkStoneMaterial);
+  rightCheek.position.set(1.03, -0.52, 0.47);
+  rightCheek.rotation.z = 0.08;
+  head.add(rightCheek);
+
+  const glow = new THREE.Mesh(new THREE.TorusGeometry(1.62, 0.045, 4, 18), glowMaterial);
+  glow.position.set(0, -0.2, 0.98);
+  glow.scale.y = 1.55;
+  glow.rotation.x = Math.PI / 2;
+  head.add(glow);
+
+  const sideGlyphMaterial = new THREE.MeshBasicMaterial({ color: 0xffd36a });
+  [-1, 1].forEach((side) => {
+    const glyph = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.78, 0.12), sideGlyphMaterial);
+    glyph.position.set(side * 1.5, 0.18, 0.18);
+    glyph.rotation.set(0.05, side * 0.22, side * 0.2);
+    head.add(glyph);
+  });
+
+  group.userData = { head, headBaseY, mouth, lowerMouth, leftEye, rightEye, glow };
   return group;
 }
 
