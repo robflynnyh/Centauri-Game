@@ -246,6 +246,27 @@ test("telescope mode renders a nonblack scoped canvas", async ({ page }, testInf
   expect(signal.variance).toBeGreaterThan(8);
 });
 
+test("radio telescope debug renders a readable three-dish array canvas", async ({ page }, testInfo) => {
+  await page.goto("/?debug=radio&test=collision");
+  await expect(page.getByText("radio telescope debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getRadioTelescopeArrayState));
+
+  const state = await page.evaluate(() => window.__centauriDebug?.getRadioTelescopeArrayState());
+  expect(state?.dishCount).toBe(3);
+  expect(state?.terrainFlatness.heightVariation).toBeLessThan(2.8);
+
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+  await page.waitForFunction(() => {
+    const sky = window.__centauriDebug?.getSkyState();
+    return Boolean(sky && sky.twilightAmount > 0.5 && sky.dayAmount < 0.7);
+  });
+  await page.waitForTimeout(1_200);
+  const signal = await getCanvasSignal(page, testInfo.outputPath("radio-telescope-debug-canvas.png"));
+  expect(signal.litPixels).toBeGreaterThan(3_000);
+  expect(signal.meanBrightness).toBeGreaterThan(35);
+  expect(signal.variance).toBeGreaterThan(80);
+});
+
 test("PR demo traverses day, twilight, and night sky regions", async ({ page }) => {
   await page.goto("/?demo=pr&test=collision");
   await expect(page.getByText("PR demo mode")).toBeVisible();

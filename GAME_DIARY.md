@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-27
+
+Added a massive three-dish radio telescope array on a flat reserved site, with separate dish directions, precise base collision, `?debug=radio`/`?debug=radio-telescope`, PR-demo visibility, and a collection-order field note.
+
 ## 2026-06-26
 
 Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed glints, stronger slow twinkle, and a steeper PR-demo sky gaze so the night sky feels richer and more alive without turning into random star noise.
