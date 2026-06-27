@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { getDiamondDebugSpawn } from "./diamond-biome";
+import { getJungleDebugPatch, getJungleDebugSpawn } from "./nature";
 import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
 import { getOceanRegions } from "./water";
@@ -111,6 +112,24 @@ function showDiamondDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, on
     targetX,
     targetZ,
     heightAt(targetX, targetZ) + 1.4
+  );
+}
+
+function showJungleDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWalk: WalkObserver | undefined, elapsed: number): void {
+  const spawn = getJungleDebugSpawn();
+  const patch = getJungleDebugPatch();
+  const beat = elapsed * 0.5;
+  const x = spawn.x + Math.sin(beat) * 2.2;
+  const z = spawn.z + Math.cos(beat * 0.8) * 1.6;
+  onWalk?.(new THREE.Vector3(patch.x, 0, patch.z), 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + 6.2,
+    patch.x + Math.sin(beat * 0.65) * 9,
+    patch.z + Math.cos(beat * 0.6) * 7,
+    heightAt(patch.x, patch.z) + 9.4
   );
 }
 
@@ -266,9 +285,14 @@ export function createPrDemoController(
       }
 
       if (elapsed < 15.8) {
+        showJungleDemoRegion(camera, heightAt, onWalk, elapsed);
+        return;
+      }
+
+      if (elapsed < 17.0) {
         const statuePosition = talkingStatue?.position ?? { x: 168, z: 346 };
         const approach = talkingStatue?.approachPosition ?? { x: 158, z: 362 };
-        const beat = elapsed - 14.4;
+        const beat = elapsed - 15.8;
         const x = approach.x + Math.sin(beat * 1.4) * 1.2;
         const z = approach.z + Math.cos(beat * 1.2) * 1.0;
         onWalk?.(new THREE.Vector3(statuePosition.x, 0, statuePosition.z), 0);
@@ -284,7 +308,7 @@ export function createPrDemoController(
         return;
       }
 
-      const shiftedElapsed = elapsed - 3.8;
+      const shiftedElapsed = elapsed - 5.0;
 
       if (shiftedElapsed < 10.6) {
         showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);

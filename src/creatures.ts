@@ -48,6 +48,20 @@ type Beetle = {
   nearestObstacleClearance: number;
 };
 
+type Dragonfly = {
+  root: THREE.Group;
+  wings: THREE.Mesh[];
+  anchor: LocalPlanetPoint;
+  radius: number;
+  altitude: number;
+  speed: number;
+  phase: number;
+  localPosition: LocalPlanetPoint;
+  lastUpdateElapsed: number | null;
+  lastFrameDisplacement: number;
+  recentMaxFrameDisplacement: number;
+};
+
 type MountainBird = {
   root: THREE.Group;
   flock: THREE.Group[];
@@ -70,6 +84,25 @@ type MountainBird = {
   terrainClearance: number;
   anchorHeight: number;
   anchorSuitability: number;
+};
+
+export type AlienWaterCreatureSpawn = {
+  x: number;
+  z: number;
+  angle: number;
+  phase: number;
+  interval: number;
+  hopDistance: number;
+  scale?: number;
+};
+
+export type DragonflyDebugState = {
+  total: number;
+  visible: number;
+  nearestAnchor: LocalPlanetPoint;
+  nearestPosition: LocalPlanetPoint;
+  nearestDistanceToFocus: number;
+  maxFrameDisplacement: number;
 };
 
 export type BirdDebugState = {
@@ -98,7 +131,7 @@ const scareSettings = {
   obstacleClearance: 0.42,
 };
 
-const creatureSpecs = [
+const creatureSpecs: AlienWaterCreatureSpawn[] = [
   { x: 6.6, z: 11.2, angle: -1.05, phase: 0.2, interval: 2.35, hopDistance: 1.05, scale: 1.12 },
   { x: 2.1, z: 5.9, angle: 0.74, phase: 1.25, interval: 2.8, hopDistance: 0.82 },
   { x: -15.3, z: -4.5, angle: 2.48, phase: 0.92, interval: 3.05, hopDistance: 0.78 },
@@ -116,6 +149,8 @@ const beetleSpecs = [
   { x: 438, z: 92, radius: 2.9, altitude: 3.6, speed: 0.28, phase: 2.1, wobble: 1.32 },
   { x: -396, z: -312, radius: 3.6, altitude: 4.1, speed: 0.24, phase: 0.7, wobble: 0.86 },
 ];
+
+const dragonflyVisibilityDistance = 260;
 
 const mountainBirdSearchPoints = [
   { x: 0, z: -76 },
@@ -143,7 +178,8 @@ const maxDistributedBirdFlocks = 56;
 export function createAlienWaterCreatures(
   scene: THREE.Scene,
   heightAt: HeightSampler,
-  obstacles: SolidObstacle[] = []
+  obstacles: SolidObstacle[] = [],
+  spawns: AlienWaterCreatureSpawn[] = creatureSpecs
 ): {
   creatureGroup: THREE.Group;
   update: (elapsed: number, delta: number, playerLocalPosition: THREE.Vector3) => void;
@@ -169,7 +205,7 @@ export function createAlienWaterCreatures(
   const creatureGroup = new THREE.Group();
   scene.add(creatureGroup);
 
-  const creatures = creatureSpecs.map((spec, index) => {
+  const creatures = spawns.map((spec, index) => {
     const anchor = new THREE.Vector3(spec.x, 0, spec.z);
     const route = makePatrolRoute(spec.angle, spec.hopDistance, index);
     const root = makeCreature(index);
@@ -702,6 +738,112 @@ export function createRareFlyingBeetles(
   };
 }
 
+export function createJungleDragonflies(
+  scene: THREE.Scene,
+  heightAt: HeightSampler,
+  anchors: LocalPlanetPoint[]
+): {
+  dragonflyGroup: THREE.Group;
+  update: (elapsed: number, focus: LocalPlanetPoint) => void;
+  getState: () => DragonflyDebugState;
+} {
+  const dragonflyGroup = new THREE.Group();
+  dragonflyGroup.name = "jungle-dragonflies";
+  scene.add(dragonflyGroup);
+  let lastFocus: LocalPlanetPoint = { x: 0, z: 0 };
+
+  const dragonflies: Dragonfly[] = anchors.map((anchor, index) => {
+    const root = makeDragonfly(index);
+    root.scale.setScalar(0.95 + (index % 4) * 0.08);
+    dragonflyGroup.add(root);
+
+    return {
+      root,
+      wings: root.userData.wings as THREE.Mesh[],
+      anchor,
+      radius: 4.6 + (index % 3) * 1.1,
+      altitude: 3.6 + (index % 4) * 0.42,
+      speed: 0.34 + (index % 5) * 0.025,
+      phase: index * 1.33,
+      localPosition: { ...anchor },
+      lastUpdateElapsed: null,
+      lastFrameDisplacement: 0,
+      recentMaxFrameDisplacement: 0,
+    } satisfies Dragonfly;
+  });
+
+  return {
+    dragonflyGroup,
+    update: (elapsed, focus) => {
+      lastFocus = { x: focus.x, z: focus.z };
+      dragonflies.forEach((dragonfly, index) => {
+        const previousUpdateElapsed = dragonfly.lastUpdateElapsed;
+        const firstUpdate = previousUpdateElapsed === null;
+        const delta = firstUpdate ? 1 / 60 : THREE.MathUtils.clamp(elapsed - previousUpdateElapsed, 0.001, 0.05);
+        dragonfly.lastUpdateElapsed = elapsed;
+        const distanceToFocus = surfaceDistanceBetweenLocal(focus, dragonfly.anchor);
+        if (distanceToFocus > dragonflyVisibilityDistance) {
+          dragonfly.root.visible = false;
+          return;
+        }
+
+        dragonfly.root.visible = true;
+        const t = elapsed * dragonfly.speed + dragonfly.phase;
+        const current = dragonflyPosition(dragonfly, t);
+        const next = dragonflyPosition(dragonfly, t + 0.08);
+        const heading = Math.atan2(next.x - current.x, next.z - current.z);
+        const bob = Math.sin(t * 2.1 + index * 0.5) * 0.18;
+        const roll = Math.sin(t * 1.4 + index) * 0.13;
+        dragonfly.lastFrameDisplacement = firstUpdate ? 0 : surfaceDistanceBetweenLocal(dragonfly.localPosition, current);
+        dragonfly.recentMaxFrameDisplacement = Math.max(
+          dragonfly.recentMaxFrameDisplacement * Math.exp(-delta * 1.8),
+          dragonfly.lastFrameDisplacement
+        );
+        dragonfly.localPosition = current;
+
+        placeObjectOnPlanet(
+          dragonfly.root,
+          current.x,
+          current.z,
+          heightAt(current.x, current.z) + dragonfly.altitude + bob,
+          new THREE.Euler(Math.sin(t * 1.8) * 0.04, heading, roll)
+        );
+
+        const wingBeat = Math.sin(elapsed * 31 + dragonfly.phase);
+        dragonfly.wings.forEach((wing, wingIndex) => {
+          const side = wingIndex % 2 === 0 ? -1 : 1;
+          wing.rotation.z = side * (0.42 + wingBeat * 0.18);
+          wing.rotation.x = Math.PI * 0.5 + side * wingBeat * 0.08;
+        });
+      });
+    },
+    getState: () => {
+      const visibleDragonflies = dragonflies.filter((dragonfly) => dragonfly.root.visible);
+      const nearest =
+        visibleDragonflies
+          .slice()
+          .sort((a, b) => surfaceDistanceBetweenLocal(a.localPosition, lastFocus) - surfaceDistanceBetweenLocal(b.localPosition, lastFocus))[0] ??
+        dragonflies[0];
+      const nearestDistanceToFocus = visibleDragonflies.reduce(
+        (nearestDistance, dragonfly) => Math.min(nearestDistance, surfaceDistanceBetweenLocal(dragonfly.localPosition, lastFocus)),
+        Number.POSITIVE_INFINITY
+      );
+
+      return {
+        total: dragonflies.length,
+        visible: visibleDragonflies.length,
+        nearestAnchor: nearest?.anchor ?? { x: 0, z: 0 },
+        nearestPosition: nearest?.localPosition ?? { x: 0, z: 0 },
+        nearestDistanceToFocus,
+        maxFrameDisplacement: visibleDragonflies.reduce(
+          (maxDisplacement, dragonfly) => Math.max(maxDisplacement, dragonfly.recentMaxFrameDisplacement),
+          0
+        ),
+      };
+    },
+  };
+}
+
 function chooseMountainBirdAnchors(heightAt: HeightSampler): LocalPlanetPoint[] {
   const localAnchors = rankedMountainBirdCandidates(heightAt, 0, 0, 0)
     .slice(0, 5)
@@ -1043,6 +1185,13 @@ function beetlePosition(beetle: Beetle, t: number): LocalPlanetPoint {
   };
 }
 
+function dragonflyPosition(dragonfly: Dragonfly, t: number): LocalPlanetPoint {
+  return {
+    x: dragonfly.anchor.x + Math.sin(t) * dragonfly.radius + Math.sin(t * 0.52 + dragonfly.phase) * dragonfly.radius * 0.34,
+    z: dragonfly.anchor.z + Math.cos(t * 0.74) * dragonfly.radius * 0.68 + Math.sin(t * 1.18 + dragonfly.phase) * dragonfly.radius * 0.22,
+  };
+}
+
 function steerBeetleAroundObstacles(
   point: LocalPlanetPoint,
   obstacles: SolidObstacle[],
@@ -1140,5 +1289,55 @@ function makeBeetle(seed: number): THREE.Group {
 
   root.userData = { wings };
   root.scale.setScalar(0.86);
+  return root;
+}
+
+function makeDragonfly(seed: number): THREE.Group {
+  const root = new THREE.Group();
+  const bodyMaterial = new THREE.MeshBasicMaterial({ color: seed % 2 === 0 ? 0x35ffd2 : 0xffd45c });
+  const abdomenMaterial = new THREE.MeshBasicMaterial({ color: seed % 2 === 0 ? 0x2857c8 : 0xa62bd7 });
+  const wingMaterial = new THREE.MeshBasicMaterial({
+    color: seed % 2 === 0 ? 0xb9fff8 : 0xf4c7ff,
+    transparent: true,
+    opacity: 0.44,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0xffff9c });
+
+  const abdomen = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.075, 0.78, 6), abdomenMaterial);
+  abdomen.rotation.x = Math.PI * 0.5;
+  abdomen.position.z = -0.18;
+  root.add(abdomen);
+
+  const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 5), bodyMaterial);
+  thorax.scale.set(0.8, 0.58, 1.05);
+  thorax.position.z = 0.12;
+  root.add(thorax);
+
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 4), bodyMaterial);
+  head.position.z = 0.31;
+  head.scale.set(1.05, 0.82, 0.9);
+  root.add(head);
+
+  [-0.055, 0.055].forEach((x) => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.028, 5, 4), eyeMaterial);
+    eye.position.set(x, 0.04, 0.38);
+    root.add(eye);
+  });
+
+  const wings = [-1, 1].flatMap((side) => {
+    return [-0.08, 0.12].map((zOffset, index) => {
+      const wing = new THREE.Mesh(new THREE.CircleGeometry(index === 0 ? 0.19 : 0.23, 6), wingMaterial);
+      wing.position.set(side * (0.18 + index * 0.04), 0.035, zOffset);
+      wing.rotation.set(Math.PI * 0.5, 0, side * (0.42 + index * 0.2));
+      wing.scale.set(1.55, 0.56, 1);
+      root.add(wing);
+      return wing;
+    });
+  });
+
+  root.userData = { wings };
+  root.scale.setScalar(0.92);
   return root;
 }

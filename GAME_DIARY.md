@@ -2,6 +2,8 @@
 
 ## 2026-06-27
 
+Added a deterministic jungle biome with green terrain override, sparse large canopy trees with passable vines and solid trunks, jungle frogs, dragonflies, `?debug=jungle`, and PR-demo/screenshot coverage.
+
 Added a massive three-dish radio telescope array on a flat reserved site, with separate dish directions, precise base collision, `?debug=radio`/`?debug=radio-telescope`, PR-demo visibility, and a collection-order field note.
 
 ## 2026-06-26
