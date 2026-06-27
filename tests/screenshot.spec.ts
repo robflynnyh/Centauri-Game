@@ -7,24 +7,29 @@ test.use({
 
 test.describe.configure({ mode: "serial" });
 
-test("captures a deterministic Centauri PR screenshot with night stars", async ({ page }) => {
-  await page.goto("/?demo=pr&test=collision");
+test("captures a deterministic Centauri PR screenshot with the talking statue", async ({ page }) => {
+  await page.goto("/?debug=statue&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("PR demo mode")).toBeVisible();
+  await expect(page.getByText("statue debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
-  await page.waitForFunction(() => {
-    const state = window.__centauriDebug?.getSkyState();
-    return Boolean(
-      state &&
-        state.dayAmount < 0.08 &&
-        state.starVisibility > 0.75 &&
-        state.latitude > 0.15 &&
-        state.latitude < 0.24 &&
-        state.longitude < -0.3
-    );
-  });
-  await page.waitForTimeout(100);
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getTalkingStatueState));
+  await page.waitForFunction(() => (window.__centauriDebug?.getTalkingStatueState().wakeAmount ?? 0) > 0.2);
+  await page.waitForTimeout(120);
   await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+});
+
+test("statue debug renders a visible talking stone landmark", async ({ page }, testInfo) => {
+  await page.goto("/?debug=statue&test=collision");
+  await expect(page.getByText("statue debug")).toBeVisible();
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getTalkingStatueState));
+  await page.waitForFunction(() => (window.__centauriDebug?.getTalkingStatueState().wakeAmount ?? 0) > 0.2);
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+  await page.waitForTimeout(400);
+
+  const signal = await getCanvasSignal(page, testInfo.outputPath("statue-debug-canvas.png"));
+  expect(signal.litPixels).toBeGreaterThan(2_500);
+  expect(signal.meanBrightness).toBeGreaterThan(20);
+  expect(signal.variance).toBeGreaterThan(12);
 });
 
 test("ocean debug exposes three large irregular deep oceans", async ({ page }) => {
