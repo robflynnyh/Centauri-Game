@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { normalizePlanetCoords, planetFrameAt, PLANET_RADIUS, type LocalPlanetPoint } from "./planet";
+import { SKY_RENDER_LAYER } from "./render-layers";
 
 type PlanetFrameSnapshot = ReturnType<typeof planetFrameAt>;
 
@@ -126,6 +127,7 @@ export function createSkySystem(
   skyAnchor.add(starField.group);
   const meteorField = createMeteorField(camera, isDemo);
   skyAnchor.add(meteorField.group);
+  skyAnchor.traverse((object) => object.layers.set(SKY_RENDER_LAYER));
 
   return {
     update: (elapsed, location = { x: 0, z: 24 }, templeInfluence = 0) => {

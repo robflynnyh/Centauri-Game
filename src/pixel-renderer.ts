@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { SKY_RENDER_LAYER, WORLD_RENDER_LAYER } from "./render-layers";
 
 export type PixelRenderPipeline = {
   render: (scene: THREE.Scene, camera: THREE.Camera, options?: PixelRenderOptions) => void;
@@ -165,9 +166,21 @@ export function createPixelRenderPipeline(renderer: THREE.WebGLRenderer, width: 
     screenUniforms.isolationAmount.value = THREE.MathUtils.clamp(options.isolationAmount ?? 0, 0, 1);
     screenUniforms.prismAmount.value = THREE.MathUtils.clamp(options.prismAmount ?? 0, 0, 1);
 
+    const previousAutoClear = renderer.autoClear;
+    const previousCameraLayerMask = camera.layers.mask;
+    const previousSceneBackground = scene.background;
     renderer.setRenderTarget(lowResolutionScene);
-    renderer.clear();
+    renderer.autoClear = false;
+    renderer.clear(true, true, true);
+    camera.layers.set(SKY_RENDER_LAYER);
     renderer.render(scene, camera);
+    renderer.clearDepth();
+    scene.background = null;
+    camera.layers.set(WORLD_RENDER_LAYER);
+    renderer.render(scene, camera);
+    scene.background = previousSceneBackground;
+    camera.layers.mask = previousCameraLayerMask;
+    renderer.autoClear = previousAutoClear;
 
     renderer.setRenderTarget(null);
     renderer.setViewport(0, 0, outputWidth, outputHeight);
