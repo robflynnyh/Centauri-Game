@@ -1,5 +1,9 @@
 # Game Diary
 
+## 2026-06-27
+
+Added a massive three-dish radio telescope array on a flat reserved site, with separate dish directions, precise base collision, `?debug=radio`/`?debug=radio-telescope`, PR-demo visibility, and a collection-order field note.
+
 ## 2026-06-26
 
 Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/idle stamina recovery, and a running fatigue multiplier so sleep drains faster during sustained exertion.
@@ -7,6 +11,8 @@ Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/id
 Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed glints, stronger slow twinkle, and a steeper PR-demo sky gaze so the night sky feels richer and more alive without turning into random star noise.
 
 Added Amethyst Abyss as a third large swimmable ocean, with its own violet palette, carved basin depth, shared chunked rendering path, and `?debug=purple-ocean`/`?debug=ocean3` inspection routes.
+
+Added one large talking stone statue landmark with a stylised low-poly head/bust, proximity wake animation, an odd field-note line through the existing HUD, a `?debug=statue` review route, collision/debug coverage, and PR-demo visibility.
 
 ## 2026-06-25
 

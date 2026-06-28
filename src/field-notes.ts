@@ -1,4 +1,9 @@
-export type FieldNoteId = "temple-gate" | "dome-chronoglass" | "observatory-sightline";
+export type FieldNoteId =
+  | "temple-gate"
+  | "dome-chronoglass"
+  | "observatory-sightline"
+  | "radio-array-listening"
+  | "talking-stone-statue";
 export type FieldNotePageId = FieldNoteId | "arrival";
 
 export type FieldNoteDefinition = {
@@ -44,6 +49,14 @@ export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   {
     id: "observatory-sightline",
     body: "A little telescope on a quiet rim. Its lens catches the old sky and makes the far colours feel close enough to touch.",
+  },
+  {
+    id: "radio-array-listening",
+    body: "Three pale dishes listen in different directions. Their shadows overlap, but the silence they catch arrives one breath apart.",
+  },
+  {
+    id: "talking-stone-statue",
+    body: "The long-faced stone opens one eye. \"Tiny walker. I was ignoring you on purpose.\"",
   },
 ];
 

@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 export type CollisionObstacle = {
-  kind: "tree" | "rock" | "temple" | "dome-shell" | "observatory";
+  kind: "tree" | "rock" | "temple" | "dome-shell" | "observatory" | "radio-telescope" | "talking-statue";
   x: number;
   z: number;
   radius: number;

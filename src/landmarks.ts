@@ -94,6 +94,69 @@ export type ObservatoryLandmark = {
   update: (elapsed: number) => void;
 };
 
+export type TalkingStatueWakeState = {
+  distanceToPlayer: number;
+  wakeAmount: number;
+  awake: boolean;
+  mouthOpenAmount: number;
+  glowOpacity: number;
+  headBob: number;
+};
+
+export type TalkingStatueLandmark = {
+  group: THREE.Group;
+  position: LocalPlanetPoint;
+  approachPosition: LocalPlanetPoint;
+  noteSource: {
+    noteId: "talking-stone-statue";
+    position: LocalPlanetPoint;
+    radius: number;
+  };
+  collision: CollisionObstacle;
+  reservedZone: LandmarkZone;
+  wakeRadius: number;
+  fullWakeRadius: number;
+  update: (elapsed: number, playerPosition: LocalPlanetPoint) => TalkingStatueWakeState;
+  getState: () => TalkingStatueWakeState;
+};
+
+export type RadioTelescopeDishState = {
+  name: string;
+  position: LocalPlanetPoint;
+  yaw: number;
+  pitch: number;
+  baseRadius: number;
+  terrainHeight: number;
+};
+
+export type RadioTelescopeTerrainFlatness = {
+  centerHeight: number;
+  minHeight: number;
+  maxHeight: number;
+  heightVariation: number;
+  sampleRadius: number;
+  samples: Array<{ x: number; z: number; height: number }>;
+};
+
+export type RadioTelescopeArrayLandmark = {
+  group: THREE.Group;
+  position: LocalPlanetPoint;
+  approachPosition: LocalPlanetPoint;
+  noteSource: {
+    noteId: "radio-array-listening";
+    position: LocalPlanetPoint;
+    radius: number;
+  };
+  dishes: RadioTelescopeDishState[];
+  collision: CollisionObstacle;
+  collisionSamples: {
+    bases: Array<{ name: string; position: LocalPlanetPoint; radius: number }>;
+  };
+  reservedZone: LandmarkZone;
+  terrainFlatness: RadioTelescopeTerrainFlatness;
+  update: (elapsed: number) => void;
+};
+
 const templeSeed = "centauri-field-note-001-temple";
 const templeClearanceRadius = 24;
 const templeCollisionRadius = 5.8;
@@ -118,6 +181,30 @@ const telescopeViewDistance = observatoryCollisionRadius + 1.25;
 const observatoryAnchorOffset = 0.04;
 const observatoryDeckTopLocalY = 0.78;
 const observatoryStepTopLocalY = 0.5;
+const talkingStatueSeed = "centauri-talking-stone-statue";
+const talkingStatueClearanceRadius = 26;
+const talkingStatueCollisionRadius = 3.6;
+const talkingStatueWakeRadius = 34;
+const talkingStatueFullWakeRadius = 8.5;
+const talkingStatueNoteRadius = 12.5;
+const radioTelescopeArraySeed = "centauri-field-note-radio-telescope-array";
+const radioTelescopeArrayClearanceRadius = 76;
+const radioTelescopeArrayCollisionRadius = 52;
+const radioTelescopeArrayNoteRadius = 13;
+const radioTelescopeArrayAnchorOffset = 0.04;
+const radioTelescopeFlatnessSampleRadius = 5.2;
+const radioTelescopeDishLayouts = [
+  { name: "west dish", localX: -24, localZ: -8, yawOffset: -0.95, pitch: 0.66, baseRadius: 3.8 },
+  { name: "east dish", localX: 22, localZ: -13, yawOffset: 0.42, pitch: 0.9, baseRadius: 4.0 },
+  { name: "rear dish", localX: 1, localZ: 23, yawOffset: 2.08, pitch: 0.48, baseRadius: 3.7 },
+] as const;
+
+type RadioTelescopeDishBuildState = RadioTelescopeDishState & {
+  localX: number;
+  localZ: number;
+  yawOffset: number;
+  baseY: number;
+};
 
 type DomeDoorwayAperture = {
   shellGapAngle: number;
@@ -314,6 +401,177 @@ export function createObservatoryLandmark(
   };
 }
 
+export function createTalkingStatueLandmark(
+  scene: THREE.Scene,
+  heightAt: HeightSampler,
+  avoidZones: LandmarkZone[] = []
+): TalkingStatueLandmark {
+  const position = chooseTalkingStatuePosition(heightAt, avoidZones);
+  const yaw = seededUnit(`${talkingStatueSeed}:yaw`) * Math.PI * 2;
+  const frontDirection = { x: Math.sin(yaw), z: Math.cos(yaw) };
+  const approachPosition = offsetLocal(position, frontDirection, 18);
+  const altitude = heightAt(position.x, position.z);
+  const group = makeTalkingStatue();
+  let wakeState: TalkingStatueWakeState = {
+    distanceToPlayer: Infinity,
+    wakeAmount: 0,
+    awake: false,
+    mouthOpenAmount: 0,
+    glowOpacity: 0,
+    headBob: 0,
+  };
+
+  placeObjectOnPlanet(group, position.x, position.z, altitude + 0.03, new THREE.Euler(0, yaw, 0));
+  scene.add(group);
+
+  const update = (elapsed: number, playerPosition: LocalPlanetPoint): TalkingStatueWakeState => {
+    const distanceToPlayer = surfaceDistanceBetweenLocal(playerPosition, position);
+    const targetWake = 1 - THREE.MathUtils.smoothstep(distanceToPlayer, talkingStatueFullWakeRadius, talkingStatueWakeRadius);
+    const wakeAmount = THREE.MathUtils.lerp(wakeState.wakeAmount, targetWake, 1 - Math.exp(-0.08));
+    const talkPulse = Math.sin(elapsed * 5.1 + Math.sin(elapsed * 1.3) * 0.7) * 0.5 + 0.5;
+    const mouthOpenAmount = wakeAmount * THREE.MathUtils.lerp(0.18, 1, talkPulse);
+    const headBob = wakeAmount * Math.sin(elapsed * 1.45) * 0.09;
+    const glowOpacity = wakeAmount * (0.18 + talkPulse * 0.28);
+
+    const head = group.userData.head as THREE.Group | undefined;
+    const mouth = group.userData.mouth as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const lowerMouth = group.userData.lowerMouth as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const leftEye = group.userData.leftEye as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const rightEye = group.userData.rightEye as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const glow = group.userData.glow as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | undefined;
+    const headBaseY = (group.userData.headBaseY as number | undefined) ?? 4.05;
+    if (head) {
+      head.position.y = headBaseY + headBob;
+      head.rotation.x = -0.05 + wakeAmount * 0.08 + Math.sin(elapsed * 0.9) * wakeAmount * 0.018;
+      head.rotation.z = Math.sin(elapsed * 0.7) * wakeAmount * 0.025;
+    }
+    if (mouth) {
+      mouth.scale.y = 1 + mouthOpenAmount * 0.9;
+      mouth.material.opacity = 0.48 + wakeAmount * 0.4;
+    }
+    if (lowerMouth) lowerMouth.position.y = -1.25 - mouthOpenAmount * 0.16;
+    if (leftEye && rightEye) {
+      const eyeScale = 0.54 + wakeAmount * (0.46 + Math.sin(elapsed * 3.7) * 0.08);
+      leftEye.scale.y = eyeScale;
+      rightEye.scale.y = eyeScale;
+      leftEye.material.opacity = 0.22 + glowOpacity;
+      rightEye.material.opacity = 0.22 + glowOpacity;
+    }
+    if (glow) {
+      glow.material.opacity = glowOpacity;
+      glow.scale.setScalar(1 + wakeAmount * 0.18 + talkPulse * wakeAmount * 0.08);
+    }
+
+    wakeState = {
+      distanceToPlayer,
+      wakeAmount,
+      awake: wakeAmount > 0.35,
+      mouthOpenAmount,
+      glowOpacity,
+      headBob,
+    };
+    return wakeState;
+  };
+
+  return {
+    group,
+    position,
+    approachPosition,
+    noteSource: {
+      noteId: "talking-stone-statue",
+      position,
+      radius: talkingStatueNoteRadius,
+    },
+    collision: { kind: "talking-statue", x: position.x, z: position.z, radius: talkingStatueCollisionRadius },
+    reservedZone: { x: position.x, z: position.z, radius: talkingStatueClearanceRadius },
+    wakeRadius: talkingStatueWakeRadius,
+    fullWakeRadius: talkingStatueFullWakeRadius,
+    update,
+    getState: () => wakeState,
+  };
+}
+
+export function createRadioTelescopeArrayLandmark(
+  scene: THREE.Scene,
+  heightAt: HeightSampler,
+  avoidZones: LandmarkZone[] = []
+): RadioTelescopeArrayLandmark {
+  const yaw = seededUnit(`${radioTelescopeArraySeed}:yaw`) * Math.PI * 2;
+  const position = chooseRadioTelescopeArrayPosition(heightAt, avoidZones, yaw);
+  const terrainFlatness = measureRadioTelescopeArrayTerrain(position, yaw, heightAt);
+  const anchorAltitude = terrainFlatness.centerHeight + radioTelescopeArrayAnchorOffset;
+  const arrayFacing = { x: -Math.sin(yaw + 0.25), z: -Math.cos(yaw + 0.25) };
+  const noteFacing = { x: -arrayFacing.z, z: arrayFacing.x };
+  const approachPosition = offsetLocal(position, arrayFacing, 54);
+  const notePosition = offsetLocal(position, noteFacing, 25);
+  const dishes = radioTelescopeDishLayouts.map((layout): RadioTelescopeDishBuildState => {
+    const dishPosition = radioArrayLocalToWorld(position, yaw, layout.localX, layout.localZ);
+    const terrainHeight = heightAt(dishPosition.x, dishPosition.z);
+    return {
+      name: layout.name,
+      localX: layout.localX,
+      localZ: layout.localZ,
+      yawOffset: layout.yawOffset,
+      position: dishPosition,
+      yaw: yaw + layout.yawOffset,
+      pitch: layout.pitch,
+      baseRadius: layout.baseRadius,
+      terrainHeight,
+      baseY: terrainHeight - anchorAltitude,
+    };
+  });
+
+  const group = makeRadioTelescopeArray(dishes);
+  placeObjectOnPlanet(group, position.x, position.z, anchorAltitude, new THREE.Euler(0, yaw, 0));
+  scene.add(group);
+
+  const noteMarker = makeRadioTelescopeNoteMarker();
+  placeObjectOnPlanet(
+    noteMarker,
+    notePosition.x,
+    notePosition.z,
+    heightAt(notePosition.x, notePosition.z) + 0.04,
+    new THREE.Euler(0, yaw - Math.PI * 0.28, 0)
+  );
+  scene.add(noteMarker);
+
+  const collisionSamples = makeRadioTelescopeCollisionSamples(dishes);
+
+  return {
+    group,
+    position,
+    approachPosition,
+    noteSource: {
+      noteId: "radio-array-listening",
+      position: notePosition,
+      radius: radioTelescopeArrayNoteRadius,
+    },
+    dishes: dishes.map(({ name, position, yaw, pitch, baseRadius, terrainHeight }) => ({
+      name,
+      position,
+      yaw,
+      pitch,
+      baseRadius,
+      terrainHeight,
+    })),
+    collision: createRadioTelescopeArrayCollision(position, yaw),
+    collisionSamples,
+    reservedZone: { x: position.x, z: position.z, radius: radioTelescopeArrayClearanceRadius },
+    terrainFlatness,
+    update: (elapsed) => {
+      const glows = group.userData.radioPulseGlows as
+        | Array<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>
+        | undefined;
+      if (!glows) return;
+      glows.forEach((glow, index) => {
+        const pulse = Math.sin(elapsed * 0.9 + index * 1.7) * 0.5 + 0.5;
+        glow.material.opacity = 0.12 + pulse * 0.18;
+        glow.scale.setScalar(0.96 + pulse * 0.08);
+      });
+    },
+  };
+}
+
 export function isInLandmarkZone(point: LocalPlanetPoint, zones: LandmarkZone[]): boolean {
   return zones.some((zone) => surfaceDistanceBetweenLocal(point, zone) < zone.radius);
 }
@@ -415,6 +673,41 @@ function isValidObservatoryTerrain(point: LocalPlanetPoint, heightAt: HeightSamp
     heightAt(point.x - 8, point.z - 8),
   ];
   return samples.every((height) => height > 0.25 && Math.abs(height - centerHeight) < 6.4);
+}
+
+function chooseTalkingStatuePosition(heightAt: HeightSampler, avoidZones: LandmarkZone[]): LocalPlanetPoint {
+  const random = createSeededRandom(talkingStatueSeed);
+  const fallbackPositions = [
+    normalizePlanetCoords(168, 346),
+    normalizePlanetCoords(118, 398),
+    normalizePlanetCoords(224, 304),
+  ];
+
+  for (let i = 0; i < 96; i += 1) {
+    const angle = random() * Math.PI * 2;
+    const radius = 185 + random() * 240;
+    const candidate = normalizePlanetCoords(Math.cos(angle) * radius + 120, Math.sin(angle) * radius + 250);
+    if (isInLandmarkZone(candidate, avoidZones.map((zone) => ({ ...zone, radius: zone.radius + talkingStatueClearanceRadius })))) continue;
+    if (!isValidTalkingStatueTerrain(candidate, heightAt)) continue;
+    return candidate;
+  }
+
+  return fallbackPositions.find((point) => !isInLandmarkZone(point, avoidZones) && isValidTalkingStatueTerrain(point, heightAt)) ?? fallbackPositions[0];
+}
+
+function isValidTalkingStatueTerrain(point: LocalPlanetPoint, heightAt: HeightSampler): boolean {
+  const centerHeight = heightAt(point.x, point.z);
+  if (centerHeight < 0.75) return false;
+
+  const samples = [
+    heightAt(point.x + 5, point.z),
+    heightAt(point.x - 5, point.z),
+    heightAt(point.x, point.z + 5),
+    heightAt(point.x, point.z - 5),
+    heightAt(point.x + 8, point.z + 4),
+    heightAt(point.x - 7, point.z - 5),
+  ];
+  return samples.every((height) => height > 0.2 && Math.abs(height - centerHeight) < 5.8);
 }
 
 function createObservatoryCollision(position: LocalPlanetPoint, yaw: number): CollisionObstacle {
@@ -527,6 +820,137 @@ function observatoryPlatformSurfaceHeightAt(
 
   const onSteps = Math.abs(local.x) <= 1.55 && local.z >= 3.75 && local.z <= 5.35;
   return onSteps ? anchorAltitude + observatoryStepTopLocalY : null;
+}
+
+function chooseRadioTelescopeArrayPosition(
+  heightAt: HeightSampler,
+  avoidZones: LandmarkZone[],
+  yaw: number
+): LocalPlanetPoint {
+  const random = createSeededRandom(radioTelescopeArraySeed);
+  const starterClearing = { ...normalizePlanetCoords(0, 24), radius: radioTelescopeArrayClearanceRadius + 96 };
+  const expandedAvoidZones = [starterClearing, ...avoidZones].map((zone) => ({
+    ...zone,
+    radius: zone.radius + radioTelescopeArrayClearanceRadius + 18,
+  }));
+  const fallbackPositions = [
+    normalizePlanetCoords(480, 226),
+    normalizePlanetCoords(456, 262),
+    normalizePlanetCoords(696, 70),
+  ];
+
+  for (let i = 0; i < 180; i += 1) {
+    const angle = random() * Math.PI * 2;
+    const radius = 260 + random() * 340;
+    const candidate = normalizePlanetCoords(Math.cos(angle) * radius + 410, Math.sin(angle) * radius + 260);
+    if (isInLandmarkZone(candidate, expandedAvoidZones)) continue;
+    if (!isValidRadioTelescopeArrayTerrain(candidate, yaw, heightAt)) continue;
+    return candidate;
+  }
+
+  return (
+    fallbackPositions.find(
+      (point) => !isInLandmarkZone(point, expandedAvoidZones) && isValidRadioTelescopeArrayTerrain(point, yaw, heightAt)
+    ) ?? fallbackPositions[0]
+  );
+}
+
+function isValidRadioTelescopeArrayTerrain(point: LocalPlanetPoint, yaw: number, heightAt: HeightSampler): boolean {
+  const flatness = measureRadioTelescopeArrayTerrain(point, yaw, heightAt);
+  if (flatness.centerHeight < 0.85) return false;
+  if (flatness.minHeight < 0.25) return false;
+  return flatness.heightVariation < 2.8;
+}
+
+function measureRadioTelescopeArrayTerrain(
+  position: LocalPlanetPoint,
+  yaw: number,
+  heightAt: HeightSampler
+): RadioTelescopeTerrainFlatness {
+  const localSamples: Array<{ x: number; z: number }> = [{ x: 0, z: 0 }];
+
+  radioTelescopeDishLayouts.forEach((dish) => {
+    localSamples.push(
+      { x: dish.localX, z: dish.localZ },
+      { x: dish.localX + radioTelescopeFlatnessSampleRadius, z: dish.localZ },
+      { x: dish.localX - radioTelescopeFlatnessSampleRadius, z: dish.localZ },
+      { x: dish.localX, z: dish.localZ + radioTelescopeFlatnessSampleRadius },
+      { x: dish.localX, z: dish.localZ - radioTelescopeFlatnessSampleRadius },
+      {
+        x: dish.localX + radioTelescopeFlatnessSampleRadius * 0.78,
+        z: dish.localZ + radioTelescopeFlatnessSampleRadius * 0.78,
+      },
+      {
+        x: dish.localX - radioTelescopeFlatnessSampleRadius * 0.78,
+        z: dish.localZ - radioTelescopeFlatnessSampleRadius * 0.78,
+      }
+    );
+  });
+
+  const samples = localSamples.map((sample) => {
+    const world = radioArrayLocalToWorld(position, yaw, sample.x, sample.z);
+    return { x: world.x, z: world.z, height: heightAt(world.x, world.z) };
+  });
+  const heights = samples.map((sample) => sample.height);
+  const minHeight = Math.min(...heights);
+  const maxHeight = Math.max(...heights);
+
+  return {
+    centerHeight: heightAt(position.x, position.z),
+    minHeight,
+    maxHeight,
+    heightVariation: maxHeight - minHeight,
+    sampleRadius: radioTelescopeFlatnessSampleRadius,
+    samples,
+  };
+}
+
+function createRadioTelescopeArrayCollision(position: LocalPlanetPoint, yaw: number): CollisionObstacle {
+  const blockers = radioTelescopeDishLayouts.map((dish) => ({
+    x: dish.localX,
+    z: dish.localZ,
+    radius: dish.baseRadius,
+  }));
+
+  return {
+    kind: "radio-telescope",
+    x: position.x,
+    z: position.z,
+    radius: radioTelescopeArrayCollisionRadius,
+    blocksAt: (x, z, playerRadius) => {
+      const local = radioArrayWorldToLocal(position, yaw, x, z);
+      return blockers.some((blocker) => {
+        const minDistance = blocker.radius + playerRadius;
+        const dx = local.x - blocker.x;
+        const dz = local.z - blocker.z;
+        return dx * dx + dz * dz < minDistance * minDistance;
+      });
+    },
+  };
+}
+
+function makeRadioTelescopeCollisionSamples(
+  dishes: RadioTelescopeDishState[]
+): { bases: Array<{ name: string; position: LocalPlanetPoint; radius: number }> } {
+  return {
+    bases: dishes.map((dish) => ({ name: dish.name, position: dish.position, radius: dish.baseRadius })),
+  };
+}
+
+function radioArrayLocalToWorld(position: LocalPlanetPoint, yaw: number, localX: number, localZ: number): LocalPlanetPoint {
+  return normalizePlanetCoords(
+    position.x + localX * Math.cos(yaw) + localZ * Math.sin(yaw),
+    position.z - localX * Math.sin(yaw) + localZ * Math.cos(yaw)
+  );
+}
+
+function radioArrayWorldToLocal(position: LocalPlanetPoint, yaw: number, x: number, z: number): { x: number; z: number } {
+  const dx = x - position.x;
+  const dz = z - position.z;
+  return {
+    x: dx * Math.cos(yaw) - dz * Math.sin(yaw),
+    z: dx * Math.sin(yaw) + dz * Math.cos(yaw),
+  };
 }
 
 function offsetLocal(origin: LocalPlanetPoint, direction: LocalPlanetPoint, distance: number): LocalPlanetPoint {
@@ -982,6 +1406,403 @@ function makeObservatoryNoteMarker(): THREE.Group {
   group.add(glyph);
 
   return group;
+}
+
+function makeTalkingStatue(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "single-talking-stone-statue-landmark";
+
+  const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x354058 });
+  const darkStoneMaterial = new THREE.MeshBasicMaterial({ color: 0x20283d });
+  const faceMaterial = new THREE.MeshBasicMaterial({ color: 0x6e7893 });
+  const warmStoneMaterial = new THREE.MeshBasicMaterial({ color: 0x9c8fc1 });
+  const browMaterial = new THREE.MeshBasicMaterial({ color: 0x161b2c });
+  const eyeMaterial = new THREE.MeshBasicMaterial({
+    color: 0x82ffea,
+    transparent: true,
+    opacity: 0.22,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mouthMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff77c8,
+    transparent: true,
+    opacity: 0.48,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x8fffee,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(2.9, 3.4, 0.62, 7), baseMaterial);
+  plinth.position.y = 0.31;
+  plinth.scale.z = 0.82;
+  group.add(plinth);
+
+  const lowerBust = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 2.65, 1.2, 7), darkStoneMaterial);
+  lowerBust.position.y = 1.08;
+  lowerBust.scale.z = 0.68;
+  group.add(lowerBust);
+
+  const shoulder = new THREE.Mesh(new THREE.BoxGeometry(4.7, 0.72, 1.35), baseMaterial);
+  shoulder.position.set(0, 1.58, -0.04);
+  shoulder.rotation.y = 0.03;
+  group.add(shoulder);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(1.08, 1.32, 1.48, 6), faceMaterial);
+  neck.position.y = 2.16;
+  neck.scale.z = 0.62;
+  group.add(neck);
+
+  const head = new THREE.Group();
+  const headBaseY = 4.05;
+  head.position.y = headBaseY;
+  group.add(head);
+
+  const skull = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.34, 4.7, 7), faceMaterial);
+  skull.scale.z = 0.62;
+  skull.rotation.y = Math.PI / 7;
+  head.add(skull);
+
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.54, 1.12), warmStoneMaterial);
+  crown.position.set(0, 2.12, 0.02);
+  crown.rotation.z = -0.03;
+  head.add(crown);
+
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(2.02, 0.62, 1.02), darkStoneMaterial);
+  jaw.position.set(0, -2.05, 0.03);
+  jaw.rotation.z = 0.02;
+  head.add(jaw);
+
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.38, 0.42), browMaterial);
+  brow.position.set(0, 0.88, 0.72);
+  brow.rotation.x = -0.08;
+  head.add(brow);
+
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.48, 1.38, 0.54), warmStoneMaterial);
+  nose.position.set(0.02, -0.02, 0.84);
+  nose.rotation.x = -0.08;
+  head.add(nose);
+
+  const noseBridge = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.26, 0.38), darkStoneMaterial);
+  noseBridge.position.set(0.02, 0.56, 0.87);
+  head.add(noseBridge);
+
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(1.28, 0.16, 0.09), mouthMaterial);
+  mouth.position.set(0, -1.1, 0.82);
+  head.add(mouth);
+
+  const lowerMouth = new THREE.Mesh(new THREE.BoxGeometry(1.06, 0.18, 0.12), browMaterial);
+  lowerMouth.position.set(0, -1.25, 0.8);
+  head.add(lowerMouth);
+
+  const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.08), eyeMaterial.clone());
+  leftEye.position.set(-0.48, 0.62, 0.86);
+  head.add(leftEye);
+
+  const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.12, 0.08), eyeMaterial.clone());
+  rightEye.position.set(0.48, 0.62, 0.86);
+  head.add(rightEye);
+
+  const leftCheek = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.65, 0.36), darkStoneMaterial);
+  leftCheek.position.set(-1.03, -0.52, 0.47);
+  leftCheek.rotation.z = -0.08;
+  head.add(leftCheek);
+
+  const rightCheek = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.65, 0.36), darkStoneMaterial);
+  rightCheek.position.set(1.03, -0.52, 0.47);
+  rightCheek.rotation.z = 0.08;
+  head.add(rightCheek);
+
+  const glow = new THREE.Mesh(new THREE.TorusGeometry(1.62, 0.045, 4, 18), glowMaterial);
+  glow.position.set(0, -0.2, 0.98);
+  glow.scale.y = 1.55;
+  glow.rotation.x = Math.PI / 2;
+  head.add(glow);
+
+  const sideGlyphMaterial = new THREE.MeshBasicMaterial({ color: 0xffd36a });
+  [-1, 1].forEach((side) => {
+    const glyph = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.78, 0.12), sideGlyphMaterial);
+    glyph.position.set(side * 1.5, 0.18, 0.18);
+    glyph.rotation.set(0.05, side * 0.22, side * 0.2);
+    head.add(glyph);
+  });
+
+  group.userData = { head, headBaseY, mouth, lowerMouth, leftEye, rightEye, glow };
+  return group;
+}
+
+function makeRadioTelescopeArray(dishes: RadioTelescopeDishBuildState[]): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "massive-radio-telescope-array-landmark";
+
+  const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x16234f });
+  const darkMaterial = new THREE.MeshBasicMaterial({ color: 0x0e1433 });
+  const supportMaterial = new THREE.MeshBasicMaterial({ color: 0x4bc7c9 });
+  const dishMaterial = new THREE.MeshBasicMaterial({ color: 0xc9f0e8, side: THREE.DoubleSide });
+  const dishBackMaterial = new THREE.MeshBasicMaterial({ color: 0x7d68d6 });
+  const feedMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf71 });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x87fff0,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const glows: Array<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>> = [];
+
+  dishes.forEach((dish, index) => {
+    addRadioTelescopeDish(group, dish, index, {
+      baseMaterial,
+      darkMaterial,
+      supportMaterial,
+      dishMaterial,
+      dishBackMaterial,
+      feedMaterial,
+      glowMaterial,
+      glows,
+    });
+  });
+
+  addRadioBeam(
+    group,
+    new THREE.Vector3(dishes[0].localX, dishes[0].baseY + 0.58, dishes[0].localZ),
+    new THREE.Vector3(dishes[1].localX, dishes[1].baseY + 0.58, dishes[1].localZ),
+    0.18,
+    supportMaterial
+  );
+  addRadioBeam(
+    group,
+    new THREE.Vector3(dishes[1].localX, dishes[1].baseY + 0.58, dishes[1].localZ),
+    new THREE.Vector3(dishes[2].localX, dishes[2].baseY + 0.58, dishes[2].localZ),
+    0.18,
+    supportMaterial
+  );
+  addRadioBeam(
+    group,
+    new THREE.Vector3(dishes[2].localX, dishes[2].baseY + 0.58, dishes[2].localZ),
+    new THREE.Vector3(dishes[0].localX, dishes[0].baseY + 0.58, dishes[0].localZ),
+    0.18,
+    supportMaterial
+  );
+
+  group.userData = { radioPulseGlows: glows };
+  return group;
+}
+
+function addRadioTelescopeDish(
+  group: THREE.Group,
+  dish: RadioTelescopeDishBuildState,
+  index: number,
+  materials: {
+    baseMaterial: THREE.Material;
+    darkMaterial: THREE.Material;
+    supportMaterial: THREE.Material;
+    dishMaterial: THREE.Material;
+    dishBackMaterial: THREE.Material;
+    feedMaterial: THREE.Material;
+    glowMaterial: THREE.MeshBasicMaterial;
+    glows: Array<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>;
+  }
+): void {
+  const baseY = dish.baseY;
+  const dishRadius = index === 1 ? 7.8 : 7.15;
+  const dishDepth = index === 1 ? 2.55 : 2.25;
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(dish.baseRadius * 0.92, dish.baseRadius * 1.12, 0.62, 8), materials.baseMaterial);
+  base.position.set(dish.localX, baseY + 0.31, dish.localZ);
+  base.rotation.y = Math.PI / 8 + index * 0.13;
+  group.add(base);
+
+  const baseRim = new THREE.Mesh(new THREE.TorusGeometry(dish.baseRadius * 0.92, 0.12, 4, 8), materials.supportMaterial);
+  baseRim.position.set(dish.localX, baseY + 0.66, dish.localZ);
+  baseRim.rotation.x = Math.PI / 2;
+  group.add(baseRim);
+
+  const mastHeight = 6.4 + index * 0.35;
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.72, mastHeight, 5), materials.darkMaterial);
+  mast.position.set(dish.localX, baseY + 0.62 + mastHeight * 0.5, dish.localZ);
+  mast.rotation.y = index * 0.22;
+  group.add(mast);
+
+  const legTop = new THREE.Vector3(dish.localX, baseY + 5.45, dish.localZ);
+  [
+    [-2.7, -2.15],
+    [2.7, -1.9],
+    [-2.35, 2.3],
+    [2.42, 2.12],
+  ].forEach(([x, z], legIndex) => {
+    addRadioBeam(
+      group,
+      new THREE.Vector3(dish.localX + x, baseY + 0.66, dish.localZ + z),
+      legTop,
+      legIndex % 2 === 0 ? 0.13 : 0.16,
+      materials.supportMaterial
+    );
+  });
+
+  const mount = new THREE.Group();
+  mount.position.set(dish.localX, baseY + mastHeight + 0.18, dish.localZ);
+  mount.rotation.y = dish.yawOffset;
+  group.add(mount);
+
+  const cradle = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.58, 0.9), materials.supportMaterial);
+  cradle.position.set(0, 0.28, 0);
+  cradle.rotation.z = index === 1 ? -0.04 : 0.04;
+  mount.add(cradle);
+
+  const leftYoke = new THREE.Mesh(new THREE.BoxGeometry(0.42, 2.9, 0.52), materials.darkMaterial);
+  leftYoke.position.set(-2.62, 1.4, 0.08);
+  leftYoke.rotation.z = 0.05;
+  mount.add(leftYoke);
+
+  const rightYoke = new THREE.Mesh(new THREE.BoxGeometry(0.42, 2.9, 0.52), materials.darkMaterial);
+  rightYoke.position.set(2.62, 1.4, 0.08);
+  rightYoke.rotation.z = -0.05;
+  mount.add(rightYoke);
+
+  const dishAssembly = new THREE.Group();
+  dishAssembly.position.set(0, 2.2, 0.24);
+  dishAssembly.rotation.x = -dish.pitch;
+  mount.add(dishAssembly);
+
+  const backPlate = new THREE.Mesh(new THREE.CylinderGeometry(dishRadius * 0.42, dishRadius * 0.5, 0.36, 8), materials.dishBackMaterial);
+  backPlate.rotation.x = Math.PI / 2;
+  backPlate.position.z = -dishDepth - 0.15;
+  dishAssembly.add(backPlate);
+
+  const bowl = new THREE.Mesh(makeParabolicDishGeometry(dishRadius, dishDepth, 5, 20), materials.dishMaterial);
+  bowl.rotation.z = Math.PI / 20;
+  dishAssembly.add(bowl);
+
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(dishRadius, 0.18, 4, 20), materials.supportMaterial);
+  rim.position.z = 0.02;
+  dishAssembly.add(rim);
+
+  const feedPoint = new THREE.Vector3(0, 0, dishRadius * 0.86);
+  const feed = new THREE.Mesh(new THREE.OctahedronGeometry(0.44, 0), materials.feedMaterial);
+  feed.position.copy(feedPoint);
+  feed.rotation.y = Math.PI / 4;
+  dishAssembly.add(feed);
+
+  [Math.PI * 0.16, Math.PI * 0.84, Math.PI * 1.5].forEach((angle) => {
+    addRadioBeam(
+      dishAssembly,
+      new THREE.Vector3(Math.cos(angle) * dishRadius * 0.82, Math.sin(angle) * dishRadius * 0.82, 0),
+      feedPoint,
+      0.055,
+      materials.darkMaterial
+    );
+  });
+
+  addRadioBeam(mount, new THREE.Vector3(0, 1.2, -0.1), new THREE.Vector3(0, 2.2, -dishDepth - 0.2), 0.18, materials.darkMaterial);
+
+  const innerGlow = new THREE.Mesh(new THREE.TorusGeometry(dishRadius * 0.42, 0.045, 4, 18), materials.glowMaterial.clone());
+  innerGlow.position.z = 0.08;
+  dishAssembly.add(innerGlow);
+  materials.glows.push(innerGlow);
+
+  const outerGlow = new THREE.Mesh(new THREE.TorusGeometry(dishRadius * 0.72, 0.035, 4, 20), materials.glowMaterial.clone());
+  outerGlow.position.z = 0.11;
+  outerGlow.rotation.z = Math.PI / 7;
+  dishAssembly.add(outerGlow);
+  materials.glows.push(outerGlow);
+}
+
+function makeRadioTelescopeNoteMarker(): THREE.Group {
+  const group = new THREE.Group();
+  group.name = "radio-array-field-note-signal-marker";
+
+  const baseMaterial = new THREE.MeshBasicMaterial({ color: 0x16234f });
+  const signalMaterial = new THREE.MeshBasicMaterial({ color: 0xffcf71 });
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    color: 0x87fff0,
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.86, 1.2, 0.3, 6), baseMaterial);
+  base.position.y = 0.15;
+  group.add(base);
+
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, 1.45, 5), baseMaterial);
+  mast.position.y = 0.98;
+  group.add(mast);
+
+  const miniDish = new THREE.Mesh(makeParabolicDishGeometry(0.62, 0.28, 3, 10), signalMaterial);
+  miniDish.position.set(0, 1.48, 0.12);
+  miniDish.rotation.set(-0.62, 0.2, 0.05);
+  group.add(miniDish);
+
+  const signal = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.035, 4, 18, Math.PI * 1.35), glowMaterial);
+  signal.position.set(0, 1.56, 0.32);
+  signal.rotation.set(0.86, 0, -0.42);
+  group.add(signal);
+
+  return group;
+}
+
+function makeParabolicDishGeometry(radius: number, depth: number, radialSegments: number, angularSegments: number): THREE.BufferGeometry {
+  const positions: number[] = [0, 0, -depth];
+  const indices: number[] = [];
+
+  for (let radial = 1; radial <= radialSegments; radial += 1) {
+    const amount = radial / radialSegments;
+    const ringRadius = radius * amount;
+    const z = -depth + depth * amount * amount;
+    for (let segment = 0; segment < angularSegments; segment += 1) {
+      const angle = (segment / angularSegments) * Math.PI * 2;
+      positions.push(Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius, z);
+    }
+  }
+
+  for (let segment = 0; segment < angularSegments; segment += 1) {
+    const current = 1 + segment;
+    const next = 1 + ((segment + 1) % angularSegments);
+    indices.push(0, current, next);
+  }
+
+  for (let radial = 1; radial < radialSegments; radial += 1) {
+    const innerStart = 1 + (radial - 1) * angularSegments;
+    const outerStart = innerStart + angularSegments;
+    for (let segment = 0; segment < angularSegments; segment += 1) {
+      const innerA = innerStart + segment;
+      const innerB = innerStart + ((segment + 1) % angularSegments);
+      const outerA = outerStart + segment;
+      const outerB = outerStart + ((segment + 1) % angularSegments);
+      indices.push(innerA, outerA, innerB, innerB, outerA, outerB);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addRadioBeam(
+  group: THREE.Group,
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  radius: number,
+  material: THREE.Material
+): void {
+  const direction = end.clone().sub(start);
+  const length = direction.length();
+  if (length <= 0.001) return;
+
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, length, 4), material);
+  beam.position.copy(start).add(end).multiplyScalar(0.5);
+  beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+  group.add(beam);
 }
 
 function addGateSegment(
