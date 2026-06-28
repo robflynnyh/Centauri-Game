@@ -225,3 +225,7 @@ Added a stable README screenshot capture for the starter tree-biome landscape so
 ## 2026-06-27
 
 Fixed night-sky occlusion by rendering camera-anchored sky elements into the pixel target before world geometry, then clearing depth for the terrain pass so mountains and ridges cover stars, glows, and meteors while the twinkly sky remains visible above them.
+
+## 2026-06-28
+
+Added deterministic local alien weather pockets with pink rain, reverse ash, and glowing mote variants, including a `?debug=weather` review spawn, soft distance fade, bounded local particles, light sky/fog tinting, and PR-demo visibility.
