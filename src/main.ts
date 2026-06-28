@@ -63,6 +63,7 @@ import {
   type OceanRegion,
   type OceanState,
 } from "./water";
+import { createWeatherSystem, getWeatherDebugSpawn, type WeatherDebugState } from "./weather";
 import "./style.css";
 
 type ObservatoryDebugState = {
@@ -343,6 +344,7 @@ declare global {
       };
       getBeetleState: () => { total: number; visible: number; nearestObstacleClearance: number };
       getMistState: () => MistDebugState;
+      getWeatherState: () => WeatherDebugState;
       getBirdState: () => BirdDebugState;
       getMassiveMountainState: () => {
         center: { x: number; z: number };
@@ -423,6 +425,7 @@ const enableDiamondDebug =
   diamondDebugRoute === "crystals" ||
   diamondDebugRoute === "diamond2" ||
   diamondDebugRoute === "diamond3";
+const enableWeatherDebug = params.get("debug") === "weather";
 const enableParamotorDebug = params.get("debug") === "paramotor";
 const enableCollisionDebug = params.get("test") === "collision";
 const enableSleepDebug = params.get("test") === "sleep";
@@ -442,6 +445,7 @@ const enableDebugTools =
   enableMountainDebug ||
   enableOceanDebug ||
   enableDiamondDebug ||
+  enableWeatherDebug ||
   enableParamotorDebug ||
   enableSleepDebug ||
   enableIsolationDebug ||
@@ -488,6 +492,8 @@ const hudBadgeText = isDemo
                       : "ocean debug"
                     : enableDiamondDebug
                       ? `${diamondDebugName} debug`
+                      : enableWeatherDebug
+                        ? "weather debug"
                       : enableParamotorDebug
                         ? "paramotor debug"
                         : enableSleepDebug
@@ -647,6 +653,7 @@ const birdDebugAnchor = mountainBirds.getState().nearestAnchor;
 const mountainDebugState = getMassiveMountainDebugState();
 const oceanDebugSpawn = getOceanDebugSpawn(oceanDebugRegionId);
 const diamondDebugSpawn = getDiamondDebugSpawn(diamondDebugName);
+const weatherDebugSpawn = getWeatherDebugSpawn();
 
 function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableTempleDebug) return new THREE.Vector3(temple.approachPosition.x, 0, temple.approachPosition.z);
@@ -662,6 +669,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableMountainDebug) return new THREE.Vector3(mountainDebugState.base.x, 0, mountainDebugState.base.z);
   if (enableOceanDebug) return new THREE.Vector3(oceanDebugSpawn.x, 0, oceanDebugSpawn.z);
   if (enableDiamondDebug) return new THREE.Vector3(diamondDebugSpawn.x, 0, diamondDebugSpawn.z);
+  if (enableWeatherDebug) return new THREE.Vector3(weatherDebugSpawn.x, 0, weatherDebugSpawn.z);
   if (enableIsolationDebug) return new THREE.Vector3(-128, 0, -464);
   return new THREE.Vector3(0, 0, 24);
 }
@@ -698,6 +706,7 @@ function getInitialPlayerYaw(): number {
   }
   if (enableOceanDebug) return oceanDebugSpawn.yaw;
   if (enableDiamondDebug) return diamondDebugSpawn.yaw;
+  if (enableWeatherDebug) return weatherDebugSpawn.yaw;
   return 0;
 }
 
@@ -713,6 +722,7 @@ function getInitialPlayerPitch(): number {
   if (enableMountainDebug) return 0.08;
   if (enableOceanDebug) return -0.05;
   if (enableDiamondDebug) return 0.2;
+  if (enableWeatherDebug) return weatherDebugSpawn.pitch;
   return -0.12;
 }
 
@@ -785,6 +795,7 @@ const terrain = createTerrainSystem(effectiveHeightAt, terrainColourOverride);
 const oceans = createOceanSystem();
 const diamondCrystals = createDiamondCrystalSystem(heightAt);
 const mist = createMistSystem(scene, effectiveHeightAt, isDemo);
+const weather = createWeatherSystem(scene, effectiveHeightAt, isDemo);
 
 scene.add(terrain.group);
 scene.add(oceans.group);
@@ -838,7 +849,7 @@ let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome, observatory, crashedShip, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor);
+}, temple, dome, observatory, crashedShip, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor, weatherDebugSpawn);
 let skyElapsed = enableRadioTelescopeDebug ? 36 : clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
@@ -848,6 +859,7 @@ let effectiveTimeMultiplier = 1;
 terrain.update(player.localPosition.x, player.localPosition.z);
 oceans.update(player.localPosition.x, player.localPosition.z);
 updateNatureChunks(player.localPosition.x, player.localPosition.z);
+weather.update(clock.elapsedTime, player.localPosition, { nearestBiomePatchDistance: getNatureState().nearestBiomePatchDistance });
 updatePlayerWorldPosition();
 
 if (enableDebugTools) {
@@ -991,7 +1003,8 @@ if (enableDebugTools) {
     setSkyElapsed: (elapsed: number) => {
       skyElapsed = elapsed;
       updateDomeTimeMultiplier(0, player.localPosition);
-      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed));
+      weather.update(clock.elapsedTime, player.localPosition, { nearestBiomePatchDistance: getNatureState().nearestBiomePatchDistance });
+      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, elapsed), weather.getSkyInfluence());
       return sky.getDebugState();
     },
     getCreatureState: waterCreatures.getState,
@@ -999,6 +1012,10 @@ if (enableDebugTools) {
     getMistState: () => {
       mist.update(clock.elapsedTime, player.localPosition);
       return mist.getDebugState();
+    },
+    getWeatherState: () => {
+      weather.update(clock.elapsedTime, player.localPosition, { nearestBiomePatchDistance: getNatureState().nearestBiomePatchDistance });
+      return weather.getDebugState();
     },
     getBirdState: mountainBirds.getState,
     getMassiveMountainState: getMassiveMountainDebugState,
@@ -1067,7 +1084,8 @@ if (enableDebugTools) {
       sleepTimeMultiplier = getSleepTimeMultiplier(sleepState);
       effectiveTimeMultiplier = activeDomeTimeMultiplier * sleepTimeMultiplier;
       skyElapsed += delta * effectiveTimeMultiplier;
-      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, skyElapsed));
+      weather.update(clock.elapsedTime, player.localPosition, { nearestBiomePatchDistance: getNatureState().nearestBiomePatchDistance });
+      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, skyElapsed), weather.getSkyInfluence());
       dome.update(clock.elapsedTime, activeDomeTimeMultiplier);
       return { sleep: sleepState, sky: sky.getDebugState(), time: window.__centauriDebug!.getTimeState() };
     },
@@ -1086,8 +1104,9 @@ if (enableDebugTools) {
       oceans.update(player.localPosition.x, player.localPosition.z);
       diamondCrystals.update(player.localPosition.x, player.localPosition.z, clock.elapsedTime);
       updateNatureChunks(player.localPosition.x, player.localPosition.z);
+      weather.update(clock.elapsedTime, player.localPosition, { nearestBiomePatchDistance: getNatureState().nearestBiomePatchDistance });
       updateDomeTimeMultiplier(0, player.localPosition);
-	      sky.update(skyElapsed, player.localPosition);
+	      sky.update(skyElapsed, player.localPosition, temple.getInfluence(player.localPosition, clock.elapsedTime), weather.getSkyInfluence());
 	      updateLookStatus();
 	    },
 	    attemptMove: (x: number, z: number) => {
@@ -2120,6 +2139,18 @@ function animate(): void {
     );
   }
 
+  if (enableWeatherDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      weatherDebugSpawn.x,
+      weatherDebugSpawn.z,
+      effectiveHeightAt(weatherDebugSpawn.x, weatherDebugSpawn.z) + 4.6,
+      weatherDebugSpawn.lookAtX,
+      weatherDebugSpawn.lookAtZ,
+      effectiveHeightAt(weatherDebugSpawn.lookAtX, weatherDebugSpawn.lookAtZ) + 7.4
+    );
+  }
+
   const movementAmount = isDemo
     ? 0
     : telescopeMode.active
@@ -2163,13 +2194,14 @@ function animate(): void {
   skyElapsed += delta * effectiveTimeMultiplier;
   updateFieldNoteDiscovery(templeFocus, elapsed);
   dome.update(elapsed, activeDomeTimeMultiplier);
-  sky.update(skyElapsed, floraFocus, temple.getInfluence(templeFocus, elapsed));
   terrain.update(floraFocus.x, floraFocus.z);
   oceans.update(floraFocus.x, floraFocus.z);
   diamondCrystals.update(floraFocus.x, floraFocus.z, elapsed);
   updateNatureChunks(floraFocus.x, floraFocus.z);
   updateFloraReactivity(floraFocus, delta, elapsed);
   updateVisionState(delta, floraFocus);
+  weather.update(elapsed, floraFocus, { nearestBiomePatchDistance: getNatureState().nearestBiomePatchDistance });
+  sky.update(skyElapsed, floraFocus, temple.getInfluence(templeFocus, elapsed), weather.getSkyInfluence());
   mist.update(elapsed, floraFocus);
   updateLookStatus();
   if (!isDemo) updateUnderwaterCue();
@@ -2195,7 +2227,7 @@ function animate(): void {
   pixelRenderer.render(scene, camera, {
     elapsed,
     isolationAmount: visionState.isolationAmount,
-    prismAmount: visionState.prismAmount,
+    prismAmount: Math.max(visionState.prismAmount, weather.getSkyInfluence().prismAmount),
   });
   requestAnimationFrame(animate);
 }

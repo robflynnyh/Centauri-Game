@@ -219,6 +219,91 @@ test("diamond prism vision and gravity fade out beyond the biome", async ({ page
   expect((inside.vision?.prismAmount ?? 0) - (outside.vision?.prismAmount ?? 0)).toBeGreaterThan(0.15);
 });
 
+test("weather debug starts in a deterministic pocket and fades by distance", async ({ page }) => {
+  await page.goto("/?debug=weather&test=collision");
+  await expect(page.getByText("weather debug")).toBeVisible();
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getWeatherState();
+    return Boolean(state && state.debugPocketIntensity > 0.25 && state.visibleParticleCount > 0);
+  });
+
+  const inside = await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri weather debug hook");
+    return {
+      player: debug.getPlayer(),
+      weather: debug.getWeatherState(),
+    };
+  });
+
+  expect(inside.weather.pocketTypes).toEqual(expect.arrayContaining(["pink-rain", "reverse-ash", "glow-motes"]));
+  expect(inside.weather.activePocketKey).toBe(inside.weather.debugSpawn.pocket.key);
+  expect(inside.weather.currentPocketType).toBe(inside.weather.debugSpawn.pocket.type);
+  expect(inside.weather.activePalette).toEqual(
+    expect.objectContaining({
+      primary: expect.stringMatching(/^#[0-9a-f]{6}$/),
+      secondary: expect.stringMatching(/^#[0-9a-f]{6}$/),
+      fog: expect.stringMatching(/^#[0-9a-f]{6}$/),
+      background: expect.stringMatching(/^#[0-9a-f]{6}$/),
+    })
+  );
+  expect(inside.weather.debugPocketDistance).toBeLessThan(inside.weather.fadeStart);
+  expect(inside.weather.debugPocketIntensity).toBeGreaterThan(0.25);
+  expect(inside.weather.visibleParticleCount).toBeGreaterThan(0);
+  expect(inside.weather.visibleParticleCount).toBeLessThanOrEqual(inside.weather.particleLimit);
+  expect(Math.hypot(inside.player.x - inside.weather.debugSpawn.x, inside.player.z - inside.weather.debugSpawn.z)).toBeLessThan(0.5);
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri weather debug hook");
+    const edge = debug.getWeatherState().debugSpawn.edgeSample;
+    debug.setPlayer(edge.x, edge.z);
+  });
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getWeatherState();
+    return Boolean(state && state.debugPocketDistance > state.fadeStart && state.debugPocketIntensity > 0.02);
+  });
+  const edge = await page.evaluate(() => window.__centauriDebug?.getWeatherState());
+
+  await page.evaluate(() => {
+    const debug = window.__centauriDebug;
+    if (!debug) throw new Error("Missing Centauri weather debug hook");
+    const outside = debug.getWeatherState().debugSpawn.outsideSample;
+    debug.setPlayer(outside.x, outside.z);
+  });
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getWeatherState();
+    return Boolean(state && state.debugPocketDistance > state.fadeEnd && state.debugPocketIntensity < 0.02);
+  });
+  const outside = await page.evaluate(() => window.__centauriDebug?.getWeatherState());
+
+  expect(edge?.debugPocketDistance).toBeGreaterThan(inside.weather.debugPocketDistance);
+  expect(edge?.debugPocketIntensity).toBeLessThan(0.75);
+  expect(outside?.debugPocketDistance).toBeGreaterThan(edge?.debugPocketDistance ?? 0);
+  expect(outside?.debugPocketIntensity).toBeLessThan(0.02);
+});
+
+test("weather debug renders visible nonblank local particles", async ({ page }, testInfo) => {
+  await page.goto("/?debug=weather&test=collision");
+  await expect(page.getByText("weather debug")).toBeVisible();
+  await page.waitForFunction(() => {
+    const state = window.__centauriDebug?.getWeatherState();
+    return Boolean(state && state.visibleParticleCount > 12 && state.intensity > 0.2);
+  });
+  await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
+  await page.waitForTimeout(700);
+
+  const weather = await page.evaluate(() => window.__centauriDebug?.getWeatherState());
+  const signal = await getCanvasSignal(page, testInfo.outputPath("weather-debug-canvas.png"));
+
+  expect(weather?.currentPocketType).toBeTruthy();
+  expect(weather?.visibleParticleCount).toBeGreaterThan(12);
+  expect(weather?.visibleParticleCount).toBeLessThanOrEqual(weather?.particleLimit ?? 0);
+  expect(signal.litPixels).toBeGreaterThan(2_500);
+  expect(signal.meanBrightness).toBeGreaterThan(20);
+  expect(signal.variance).toBeGreaterThan(12);
+});
+
 test("renders nonblank moving PR demo canvas on desktop and mobile", async ({ page }, testInfo) => {
   for (const viewport of [
     { name: "desktop", width: 1280, height: 720 },

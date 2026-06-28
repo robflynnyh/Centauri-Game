@@ -3,6 +3,7 @@ import { getDiamondDebugSpawn } from "./diamond-biome";
 import { lookAtPlanetPoint, PLANET_RADIUS, setCameraOnPlanet, type LocalPlanetPoint } from "./planet";
 import { getSunFacingLongitude } from "./sky";
 import { getOceanRegions } from "./water";
+import { getWeatherDebugSpawn, type WeatherDebugSpawn } from "./weather";
 
 type HeightSampler = (x: number, z: number) => number;
 type ResolveMove = (position: THREE.Vector3, movement: THREE.Vector3) => void;
@@ -114,6 +115,22 @@ function showDiamondDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, on
   );
 }
 
+function showWeatherDemoRegion(camera: THREE.Camera, heightAt: HeightSampler, onWalk: WalkObserver | undefined, elapsed: number, weather: WeatherDebugSpawn): void {
+  const sway = elapsed * 0.38;
+  const x = weather.x + Math.sin(sway) * 2.4;
+  const z = weather.z + Math.cos(sway * 0.8) * 1.8;
+  onWalk?.(new THREE.Vector3(weather.x, 0, weather.z), 0);
+  lookAtPlanetPoint(
+    camera,
+    x,
+    z,
+    heightAt(x, z) + 4.8,
+    weather.lookAtX,
+    weather.lookAtZ,
+    heightAt(weather.lookAtX, weather.lookAtZ) + 7.4
+  );
+}
+
 export function createPrDemoController(
   camera: THREE.PerspectiveCamera,
   heightAt: HeightSampler,
@@ -145,7 +162,8 @@ export function createPrDemoController(
   },
   talkingStatue?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
   mountain?: { center: LocalPlanetPoint; base: LocalPlanetPoint; pathSamples: LocalPlanetPoint[] },
-  paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number }
+  paramotor?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint; takeoffYaw: number },
+  weather?: WeatherDebugSpawn
 ): { update: (elapsed: number, delta: number) => void } {
   const demoPlayer = new THREE.Vector3(9, 0, 18);
 
@@ -285,10 +303,15 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 17.2) {
+      if (elapsed < 16.9) {
+        showWeatherDemoRegion(camera, heightAt, onWalk, elapsed, weather ?? getWeatherDebugSpawn());
+        return;
+      }
+
+      if (elapsed < 18.2) {
         const statuePosition = talkingStatue?.position ?? { x: 168, z: 346 };
         const approach = talkingStatue?.approachPosition ?? { x: 158, z: 362 };
-        const beat = elapsed - 15.8;
+        const beat = elapsed - 16.9;
         const x = approach.x + Math.sin(beat * 1.4) * 1.2;
         const z = approach.z + Math.cos(beat * 1.2) * 1.0;
         onWalk?.(new THREE.Vector3(statuePosition.x, 0, statuePosition.z), 0);

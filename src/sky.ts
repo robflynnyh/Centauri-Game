@@ -40,6 +40,13 @@ export type SkyDebugState = {
   starVisibility: number;
 };
 
+export type SkyWeatherInfluence = {
+  amount: number;
+  fogHex: number;
+  backgroundHex: number;
+  fogDensityBoost: number;
+};
+
 type SkyLocationState = SkyDebugState & {
   frame: PlanetFrameSnapshot;
   spunFrame: PlanetFrameSnapshot;
@@ -52,7 +59,10 @@ export function createSkySystem(
   scene: THREE.Scene,
   camera: THREE.Camera,
   isDemo: boolean
-): { update: (elapsed: number, location?: LocalPlanetPoint, templeInfluence?: number) => void; getDebugState: () => SkyDebugState } {
+): {
+  update: (elapsed: number, location?: LocalPlanetPoint, templeInfluence?: number, weatherInfluence?: SkyWeatherInfluence) => void;
+  getDebugState: () => SkyDebugState;
+} {
   const dayBackgroundColour = new THREE.Color(0x5d91ff);
   const nightBackgroundColour = new THREE.Color(0x171044);
   const dayFogColour = new THREE.Color(0x74e7ff);
@@ -130,7 +140,7 @@ export function createSkySystem(
   skyAnchor.traverse((object) => object.layers.set(SKY_RENDER_LAYER));
 
   return {
-    update: (elapsed, location = { x: 0, z: 24 }, templeInfluence = 0) => {
+    update: (elapsed, location = { x: 0, z: 24 }, templeInfluence = 0, weatherInfluence) => {
       locationState = getSkyLocationState(location, elapsed, isDemo);
       skyAnchor.position.copy(camera.position);
       const dayAmount = locationState.dayAmount;
@@ -152,6 +162,10 @@ export function createSkySystem(
       locationNightBackground.copy(nightBackgroundColour).lerp(locationNightBackgroundAccent, locationState.regionB * 0.22);
       (scene.background as THREE.Color).copy(locationNightBackground).lerp(locationDayBackground, dayAmount);
       (scene.background as THREE.Color).lerp(templeBackgroundColour, phaseAmount * 0.38);
+      if (weatherInfluence && weatherInfluence.amount > 0) {
+        skyWeatherBackgroundColour.set(weatherInfluence.backgroundHex);
+        (scene.background as THREE.Color).lerp(skyWeatherBackgroundColour, weatherInfluence.amount * 0.12);
+      }
       const fogPulse = Math.sin(elapsed * 0.16) * 0.5 + 0.5;
       dayFog
         .copy(dayFogColour)
@@ -163,10 +177,15 @@ export function createSkySystem(
         .lerp(nightFogAccentColour, fogPulse * 0.42);
       worldFog.color.copy(nightFog).lerp(dayFog, dayAmount);
       worldFog.color.lerp(templeFogColour, phaseAmount * 0.46);
+      if (weatherInfluence && weatherInfluence.amount > 0) {
+        skyWeatherFogColour.set(weatherInfluence.fogHex);
+        worldFog.color.lerp(skyWeatherFogColour, weatherInfluence.amount * 0.24);
+      }
       worldFog.density =
         THREE.MathUtils.lerp(0.031, 0.022, dayAmount) +
         locationState.twilightAmount * 0.003 +
-        fogPulse * 0.0025;
+        fogPulse * 0.0025 +
+        (weatherInfluence?.fogDensityBoost ?? 0) * (weatherInfluence?.amount ?? 0);
 
       hemi.intensity = THREE.MathUtils.lerp(0.14, 0.35, dayAmount);
       sun.intensity = THREE.MathUtils.lerp(0.04, 0.22, dayAmount);
@@ -276,6 +295,8 @@ const skyLocationCelestialDirection = new THREE.Vector3();
 const skyLocationRingDirection = new THREE.Vector3();
 const skyColourScratchA = new THREE.Color();
 const skyColourScratchB = new THREE.Color();
+const skyWeatherBackgroundColour = new THREE.Color();
+const skyWeatherFogColour = new THREE.Color();
 const skyPaletteDayHorizonAccent = new THREE.Color(0xffc67a);
 const skyPaletteDayMiddleAccent = new THREE.Color(0x90ffca);
 const skyPaletteDayUpperAccent = new THREE.Color(0x8f75ff);
