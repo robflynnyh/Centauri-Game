@@ -14,11 +14,13 @@ import {
 import { createFieldNotesHud, createFieldNotesState, type FieldNoteId, type FieldNotesSnapshot } from "./field-notes";
 import { createFootstepTrail } from "./footsteps";
 import {
+  createCrashedShipLandmark,
   createGlassDomeLandmark,
   createObservatoryLandmark,
   createRadioTelescopeArrayLandmark,
   createTalkingStatueLandmark,
   createTempleLandmark,
+  type CrashedShipSmokeState,
   type RadioTelescopeTerrainFlatness,
 } from "./landmarks";
 import { createMistSystem, type MistDebugState } from "./mist";
@@ -124,6 +126,28 @@ type TalkingStatueDebugState = {
   headBob: number;
   nearby: boolean;
   obstacleCount: number;
+};
+
+type CrashedShipDebugState = {
+  x: number;
+  z: number;
+  approachX: number;
+  approachZ: number;
+  noteX: number;
+  noteZ: number;
+  noteRadius: number;
+  yaw: number;
+  hullLength: number;
+  hullWidth: number;
+  tiltPitch: number;
+  tiltRoll: number;
+  buriedDepth: number;
+  reservedRadius: number;
+  obstacleCount: number;
+  blockedSamples: Array<{ x: number; z: number; blocked: boolean }>;
+  clearSamples: Array<{ x: number; z: number; blocked: boolean }>;
+  nearestGeneratedObstacleDistance: number;
+  smoke: CrashedShipSmokeState;
 };
 
 type ParamotorDebugState = ParamotorPlacementState & {
@@ -262,6 +286,7 @@ declare global {
         influenceRadius: number;
         fullInfluenceRadius: number;
       };
+      getCrashedShipState: () => CrashedShipDebugState;
       getDomeState: () => {
         x: number;
         z: number;
@@ -381,6 +406,7 @@ const enableObservatoryDebug = params.get("debug") === "observatory";
 const enableTelescopeDebug = params.get("debug") === "telescope";
 const enableRadioTelescopeDebug = params.get("debug") === "radio" || params.get("debug") === "radio-telescope";
 const enableStatueDebug = params.get("debug") === "statue";
+const enableShipDebug = params.get("debug") === "ship" || params.get("debug") === "crash";
 const isBeetleDebug = params.get("debug") === "beetle";
 const isBirdDebug = params.get("debug") === "birds";
 const enableMountainDebug = params.get("debug") === "mountain";
@@ -410,6 +436,7 @@ const enableDebugTools =
   enableTelescopeDebug ||
   enableRadioTelescopeDebug ||
   enableStatueDebug ||
+  enableShipDebug ||
   isBeetleDebug ||
   isBirdDebug ||
   enableMountainDebug ||
@@ -437,19 +464,21 @@ const hudBadgeText = isDemo
   ? "PR demo mode"
   : enableTempleDebug
     ? "temple debug"
-  : enableDomeDebug
+    : enableDomeDebug
       ? "dome debug"
       : enableObservatoryDebug
         ? "observatory debug"
         : enableTelescopeDebug
           ? "telescope debug"
-    : enableRadioTelescopeDebug
+          : enableRadioTelescopeDebug
             ? "radio telescope debug"
             : enableStatueDebug
               ? "statue debug"
-            : isBeetleDebug
-              ? "beetle debug"
-          : isBirdDebug
+              : enableShipDebug
+                ? "ship debug"
+                : isBeetleDebug
+                  ? "beetle debug"
+                  : isBirdDebug
                 ? "birds debug"
                 : enableMountainDebug
                   ? "mountain debug"
@@ -458,16 +487,16 @@ const hudBadgeText = isDemo
                       ? "purple ocean debug"
                       : "ocean debug"
                     : enableDiamondDebug
-                    ? `${diamondDebugName} debug`
-                    : enableParamotorDebug
-                      ? "paramotor debug"
-                      : enableSleepDebug
-                        ? "sleep debug"
-                        : enableIsolationDebug
-                          ? "isolation debug"
-                          : enablePerfDebug
-                            ? "perf debug"
-                            : "exploration mode";
+                      ? `${diamondDebugName} debug`
+                      : enableParamotorDebug
+                        ? "paramotor debug"
+                        : enableSleepDebug
+                          ? "sleep debug"
+                          : enableIsolationDebug
+                            ? "isolation debug"
+                            : enablePerfDebug
+                              ? "perf debug"
+                              : "exploration mode";
 
 function readInitialSleepAmount(): number {
   const fromQuery = params.get("sleepAmount");
@@ -565,16 +594,24 @@ const keys = new Set<string>();
 const temple = createTempleLandmark(scene, heightAt);
 const dome = createGlassDomeLandmark(scene, heightAt, [temple.reservedZone, ...massiveMountainReservedZones]);
 const observatory = createObservatoryLandmark(scene, heightAt, [temple.reservedZone, dome.reservedZone, ...massiveMountainReservedZones]);
+const crashedShip = createCrashedShipLandmark(scene, heightAt, [
+  temple.reservedZone,
+  dome.reservedZone,
+  observatory.reservedZone,
+  ...massiveMountainReservedZones,
+]);
 const radioTelescopeArray = createRadioTelescopeArrayLandmark(scene, heightAt, [
   temple.reservedZone,
   dome.reservedZone,
   observatory.reservedZone,
+  crashedShip.reservedZone,
   ...massiveMountainReservedZones,
 ]);
 const talkingStatue = createTalkingStatueLandmark(scene, heightAt, [
   temple.reservedZone,
   dome.reservedZone,
   observatory.reservedZone,
+  crashedShip.reservedZone,
   radioTelescopeArray.reservedZone,
   ...massiveMountainReservedZones,
 ]);
@@ -586,12 +623,14 @@ const fieldNoteSources: Array<{ noteId: FieldNoteId; position: { x: number; z: n
   temple.noteSource,
   dome.noteSource,
   observatory.noteSource,
+  crashedShip.noteSource,
   radioTelescopeArray.noteSource,
 ];
 const paramotor = createParamotorDevice(scene, effectiveHeightAt, [
   temple.reservedZone,
   dome.reservedZone,
   observatory.reservedZone,
+  crashedShip.reservedZone,
   radioTelescopeArray.reservedZone,
   talkingStatue.reservedZone,
   ...massiveMountainReservedZones,
@@ -614,6 +653,7 @@ function getInitialPlayerLocalPosition(): THREE.Vector3 {
   if (enableDomeDebug) return new THREE.Vector3(dome.approachPosition.x, 0, dome.approachPosition.z);
   if (enableTelescopeDebug) return new THREE.Vector3(observatory.telescope.usePosition.x, 0, observatory.telescope.usePosition.z);
   if (enableObservatoryDebug) return new THREE.Vector3(observatory.approachPosition.x, 0, observatory.approachPosition.z);
+  if (enableShipDebug) return new THREE.Vector3(crashedShip.approachPosition.x, 0, crashedShip.approachPosition.z);
   if (enableRadioTelescopeDebug) return new THREE.Vector3(radioTelescopeArray.approachPosition.x, 0, radioTelescopeArray.approachPosition.z);
   if (enableStatueDebug) return new THREE.Vector3(talkingStatue.approachPosition.x, 0, talkingStatue.approachPosition.z);
   if (enableParamotorDebug) return new THREE.Vector3(paramotor.approachPosition.x, 0, paramotor.approachPosition.z);
@@ -632,6 +672,9 @@ function getInitialPlayerYaw(): number {
   if (enableTelescopeDebug) return observatory.telescope.yaw;
   if (enableObservatoryDebug) {
     return Math.atan2(initialPlayerLocalPosition.x - observatory.position.x, initialPlayerLocalPosition.z - observatory.position.z);
+  }
+  if (enableShipDebug) {
+    return Math.atan2(initialPlayerLocalPosition.x - crashedShip.position.x, initialPlayerLocalPosition.z - crashedShip.position.z);
   }
   if (enableRadioTelescopeDebug) {
     return Math.atan2(
@@ -662,6 +705,7 @@ function getInitialPlayerPitch(): number {
   if (enableTelescopeDebug) return observatory.telescope.pitch;
   if (enableDomeDebug) return -0.36;
   if (enableObservatoryDebug) return -0.08;
+  if (enableShipDebug) return -0.14;
   if (enableRadioTelescopeDebug) return -0.12;
   if (enableStatueDebug) return -0.04;
   if (enableParamotorDebug) return -0.2;
@@ -749,6 +793,7 @@ scene.add(makeHorizonLandforms());
 collisionWorld.addObstacle(temple.collision);
 collisionWorld.addObstacle(dome.collision);
 collisionWorld.addObstacle(observatory.collision);
+collisionWorld.addObstacle(crashedShip.collision);
 collisionWorld.addObstacle(radioTelescopeArray.collision);
 collisionWorld.addObstacle(talkingStatue.collision);
 
@@ -761,6 +806,7 @@ const { updateFloraReactivity, updateNatureChunks, getNatureState, getNaturePerf
     temple.reservedZone,
     dome.reservedZone,
     observatory.reservedZone,
+    crashedShip.reservedZone,
     radioTelescopeArray.reservedZone,
     talkingStatue.reservedZone,
     paramotor.reservedZone,
@@ -792,7 +838,7 @@ let isolationOverrideAmount: number | null = enableDomeDebug ? 0 : null;
 const prDemo = createPrDemoController(camera, effectiveHeightAt, resolvePlayerMove, (position, delta) => {
   demoFloraFocus.copy(position);
   if (delta > 0) footsteps.walk(position, delta);
-}, temple, dome, observatory, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor);
+}, temple, dome, observatory, crashedShip, radioTelescopeArray, talkingStatue, mountainDebugState, paramotor);
 let skyElapsed = enableRadioTelescopeDebug ? 36 : clock.elapsedTime;
 let domeTimeMultiplier = 1;
 let domeTargetTimeMultiplier = 1;
@@ -921,8 +967,9 @@ if (enableDebugTools) {
       groundingOuterRadius: dome.radius + domeGroundingBandWidth,
       timeMultiplier: domeTimeMultiplier,
 	      targetTimeMultiplier: domeTargetTimeMultiplier,
-	    }),
+    }),
     getObservatoryState: getObservatoryDebugState,
+    getCrashedShipState: getCrashedShipDebugState,
     getRadioTelescopeArrayState: getRadioTelescopeArrayDebugState,
     getTalkingStatueState: getTalkingStatueDebugState,
     enterTelescope: () => {
@@ -1806,6 +1853,48 @@ function getObservatoryDebugState(): ObservatoryDebugState {
   };
 }
 
+function getCrashedShipDebugState(): CrashedShipDebugState {
+  return {
+    x: crashedShip.position.x,
+    z: crashedShip.position.z,
+    approachX: crashedShip.approachPosition.x,
+    approachZ: crashedShip.approachPosition.z,
+    noteX: crashedShip.noteSource.position.x,
+    noteZ: crashedShip.noteSource.position.z,
+    noteRadius: crashedShip.noteSource.radius,
+    yaw: crashedShip.yaw,
+    hullLength: crashedShip.hullLength,
+    hullWidth: crashedShip.hullWidth,
+    tiltPitch: crashedShip.tiltPitch,
+    tiltRoll: crashedShip.tiltRoll,
+    buriedDepth: crashedShip.buriedDepth,
+    reservedRadius: crashedShip.reservedZone.radius,
+    obstacleCount: collisionWorld.obstacles.filter((obstacle) => obstacle.kind === "crashed-ship").length,
+    blockedSamples: crashedShip.collisionSamples.blocked.map((sample) => ({
+      x: sample.x,
+      z: sample.z,
+      blocked: collisionWorld.isBlockedAt(sample.x, sample.z),
+    })),
+    clearSamples: crashedShip.collisionSamples.clear.map((sample) => ({
+      x: sample.x,
+      z: sample.z,
+      blocked: collisionWorld.isBlockedAt(sample.x, sample.z),
+    })),
+    nearestGeneratedObstacleDistance: nearestGeneratedObstacleDistanceTo(crashedShip.position),
+    smoke: crashedShip.getSmokeState(),
+  };
+}
+
+function nearestGeneratedObstacleDistanceTo(point: { x: number; z: number }): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const obstacle of collisionWorld.obstacles) {
+    if (obstacle.kind === "crashed-ship") continue;
+    const distance = surfaceDistanceBetweenLocal(point, obstacle) - obstacle.radius;
+    if (distance < nearest) nearest = distance;
+  }
+  return nearest;
+}
+
 function getRadioTelescopeArrayDebugState(): RadioTelescopeArrayDebugState {
   return {
     x: radioTelescopeArray.position.x,
@@ -2007,6 +2096,18 @@ function animate(): void {
     );
   }
 
+  if (enableShipDebug && !mouseLookActive && !movementIntent) {
+    lookAtPlanetPoint(
+      camera,
+      crashedShip.approachPosition.x,
+      crashedShip.approachPosition.z,
+      effectiveHeightAt(crashedShip.approachPosition.x, crashedShip.approachPosition.z) + 6.4,
+      crashedShip.position.x,
+      crashedShip.position.z,
+      effectiveHeightAt(crashedShip.position.x, crashedShip.position.z) + 3.4
+    );
+  }
+
   if (enableParamotorDebug && !mouseLookActive && !movementIntent && !paramotorFlight.mounted) {
     lookAtPlanetPoint(
       camera,
@@ -2045,6 +2146,7 @@ function animate(): void {
   footsteps.update(delta);
   temple.update(elapsed);
   observatory.update(elapsed);
+  crashedShip.update(elapsed);
   radioTelescopeArray.update(elapsed);
   if (telescopeMode.active) {
     telescopeFloraFocus.set(observatory.telescope.viewPosition.x, 0, observatory.telescope.viewPosition.z);

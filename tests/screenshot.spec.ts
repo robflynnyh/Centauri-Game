@@ -7,15 +7,19 @@ test.use({
 
 test.describe.configure({ mode: "serial" });
 
-test("captures a deterministic Centauri PR screenshot with the talking statue", async ({ page }) => {
-  await page.goto("/?debug=statue&test=collision");
+test("captures a deterministic Centauri PR screenshot with the crashed ship", async ({ page }) => {
+  await page.goto("/?debug=ship&test=collision");
   await expect(page.getByText("Field Note 001")).toBeVisible();
-  await expect(page.getByText("statue debug")).toBeVisible();
+  await expect(page.getByText("ship debug")).toBeVisible();
   await page.addStyleTag({ content: ".hud, .eyelids { display: none !important; }" });
-  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getTalkingStatueState));
-  await page.waitForFunction(() => (window.__centauriDebug?.getTalkingStatueState().wakeAmount ?? 0) > 0.2);
-  await page.waitForTimeout(120);
-  await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+  await page.waitForFunction(() => Boolean(window.__centauriDebug?.getCrashedShipState));
+  await page.waitForFunction(() => (window.__centauriDebug?.getCrashedShipState().smoke.samples.some((sample) => sample.opacity > 0.08) ?? false));
+  await page.waitForTimeout(1_000);
+  const screenshot = await page.screenshot({ path: "docs/demo/pr-preview.png", fullPage: false });
+  const signal = await getScreenshotSignal(page, screenshot);
+  expect(signal.litPixels).toBeGreaterThan(2_500);
+  expect(signal.meanBrightness).toBeGreaterThan(20);
+  expect(signal.variance).toBeGreaterThan(12);
 });
 
 test("statue debug renders a visible talking stone landmark", async ({ page }, testInfo) => {
@@ -643,6 +647,17 @@ async function getCanvasSignal(page: Page, screenshotPath: string): Promise<{
   signature: number;
 }> {
   const screenshot = await page.locator("canvas").screenshot({ path: screenshotPath });
+  return getScreenshotSignal(page, screenshot);
+}
+
+async function getScreenshotSignal(page: Page, screenshot: Buffer): Promise<{
+  width: number;
+  height: number;
+  litPixels: number;
+  meanBrightness: number;
+  variance: number;
+  signature: number;
+}> {
   return page.evaluate(async (source) => {
     const image = new Image();
     image.src = source;

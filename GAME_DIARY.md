@@ -6,6 +6,10 @@ Added a massive three-dish radio telescope array on a flat reserved site, with s
 
 ## 2026-06-26
 
+Added one deterministic crashed spaceship landmark with a rounded low-poly buried hull, composed debris, collision, reserved nature clearance, `?debug=ship`/`?debug=crash`, a collection-order field note, and PR demo/screenshot visibility.
+
+Added subtle bounded smoke puffs from the crashed ship's damaged side and revised the field note so the quietly venting hull is described instead of contradicted.
+
 Added Shift sprinting with a compact stamina HUD, Ctrl/C-only crouch, walking/idle stamina recovery, and a running fatigue multiplier so sleep drains faster during sustained exertion.
 
 Deepened the star pass with layered full-dome pixel-cloud ribbons, glow-backed glints, stronger slow twinkle, and a steeper PR-demo sky gaze so the night sky feels richer and more alive without turning into random star noise.

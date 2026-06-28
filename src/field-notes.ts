@@ -3,7 +3,8 @@ export type FieldNoteId =
   | "dome-chronoglass"
   | "observatory-sightline"
   | "radio-array-listening"
-  | "talking-stone-statue";
+  | "talking-stone-statue"
+  | "crashed-ship-log";
 export type FieldNotePageId = FieldNoteId | "arrival";
 
 export type FieldNoteDefinition = {
@@ -57,6 +58,10 @@ export const FIELD_NOTE_DEFINITIONS: DiscoverableFieldNoteDefinition[] = [
   {
     id: "talking-stone-statue",
     body: "The long-faced stone opens one eye. \"Tiny walker. I was ignoring you on purpose.\"",
+  },
+  {
+    id: "crashed-ship-log",
+    body: "Rounded hull half under the grass. Thin blue vapour slips from one cracked side, warm panels clicking softly as the soil takes it in.",
   },
 ];
 

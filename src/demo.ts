@@ -137,6 +137,7 @@ export function createPrDemoController(
       pitch: number;
     };
   },
+  crashedShip?: { position: LocalPlanetPoint; approachPosition: LocalPlanetPoint },
   radioArray?: {
     position: LocalPlanetPoint;
     approachPosition: LocalPlanetPoint;
@@ -187,7 +188,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 8.8) {
+      if (elapsed < 8.6) {
         const templePosition = temple?.position ?? { x: 260, z: -240 };
         const approach = temple?.approachPosition ?? { x: 278, z: -248 };
         onWalk?.(new THREE.Vector3(templePosition.x, 0, templePosition.z), 0);
@@ -204,6 +205,25 @@ export function createPrDemoController(
       }
 
       if (elapsed < 10.0) {
+        const shipPosition = crashedShip?.position ?? { x: 166, z: 386 };
+        const approach = crashedShip?.approachPosition ?? { x: 150, z: 405 };
+        const drift = elapsed - 8.6;
+        const x = approach.x + Math.sin(elapsed * 0.58) * 1.2;
+        const z = approach.z + Math.cos(elapsed * 0.52) * 1.2;
+        onWalk?.(new THREE.Vector3(approach.x, 0, approach.z), 0);
+        lookAtPlanetPoint(
+          camera,
+          x,
+          z,
+          heightAt(x, z) + 6.4 + drift * 0.45,
+          shipPosition.x,
+          shipPosition.z,
+          heightAt(shipPosition.x, shipPosition.z) + 3.4
+        );
+        return;
+      }
+
+      if (elapsed < 11.4) {
         const observatoryPosition = observatory?.position ?? { x: -430, z: 312 };
         const approach = observatory?.approachPosition ?? { x: -442, z: 324 };
         onWalk?.(new THREE.Vector3(observatoryPosition.x, 0, observatoryPosition.z), 0);
@@ -219,7 +239,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 11.2) {
+      if (elapsed < 12.6) {
         const arrayPosition = radioArray?.position ?? { x: 472, z: 306 };
         const approach = radioArray?.approachPosition ?? { x: 430, z: 350 };
         const targetDish = radioArray?.dishes[1]?.position ?? arrayPosition;
@@ -239,7 +259,7 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 12.4) {
+      if (elapsed < 13.8) {
         const telescope = observatory?.telescope;
         const viewPosition = telescope?.viewPosition ?? { x: -432, z: 316 };
         setDemoFov(camera, 26);
@@ -255,20 +275,20 @@ export function createPrDemoController(
         return;
       }
 
-      if (elapsed < 13.2) {
+      if (elapsed < 14.6) {
         showOceanDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
 
-      if (elapsed < 14.4) {
+      if (elapsed < 15.8) {
         showDiamondDemoRegion(camera, heightAt, onWalk, elapsed);
         return;
       }
 
-      if (elapsed < 15.8) {
+      if (elapsed < 17.2) {
         const statuePosition = talkingStatue?.position ?? { x: 168, z: 346 };
         const approach = talkingStatue?.approachPosition ?? { x: 158, z: 362 };
-        const beat = elapsed - 14.4;
+        const beat = elapsed - 15.8;
         const x = approach.x + Math.sin(beat * 1.4) * 1.2;
         const z = approach.z + Math.cos(beat * 1.2) * 1.0;
         onWalk?.(new THREE.Vector3(statuePosition.x, 0, statuePosition.z), 0);
@@ -284,7 +304,7 @@ export function createPrDemoController(
         return;
       }
 
-      const shiftedElapsed = elapsed - 3.8;
+      const shiftedElapsed = elapsed - 5.2;
 
       if (shiftedElapsed < 10.6) {
         showSkyRegion(camera, heightAt, onWalk, shiftedElapsed, 0, -0.15, 0.18);
